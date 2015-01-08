@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Smalltalk Graph Demo</title>
+</head>
+
+
+<body>
+
+<div id="container">
+    <div id="checkboxes">
+    </div>
+    <div id="canvas">
+      <canvas id="test_canvas"></canvas>
+    </div>
+</div>
+
+<script src="collections.js"></script>
+<script src="data_models.js"></script>
+<script src="diagrams.js"></script>
+<script src="geometry.js"></script>
+<script src="graph_layout.js"></script>
+<script src="smalltalk_graphs.js"></script>
+<script src="smalltalk_parsers.js"></script>
+
+<script type="text/javascript" language="JavaScript">
+'use strict';
+
+document.bgColor = 'white';
+var canvas = document.getElementById('test_canvas');
+
+var ctx = canvas.getContext('2d');
+canvas.width  = window.innerWidth;
+canvas.height = window.innerHeight;
+// ctx.font = "24pt Helvetica";
+// ctx.translate(0.5, 0.5);
+
+// Update function, called when editor has changed the data.
+var onUpdate = function(editor) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  editor.draw();
+}
+
+var editor = new smalltalkGraphs.Editor();
+
+var graph = graphlParser.parse(graphl_data_1);
+var model = { root: graph };
+
+var vertices = graph.vertices;
+var edges = graph.edges;
+
+// Convert hierarchy edges to hierarchical vertex structure.
+for (var i = 0; i < edges.length; ) {
+  var e = edges[i];
+  if (e.label == 'utterance') {
+    var child = e._vertex1, parent = e._vertex2;
+    child._parent = parent;
+    parent.vertices.push(child);
+    edges.splice(i, 1);
+  } else if (e.label == 'parent_phrase') {
+    edges.splice(i, 1);
+  } else {
+    i++;
+  }
+};
+
+// Remove vertices that were reparented from the root vertex list.
+for (var i = 0; i < vertices.length; ) {
+  var v = vertices[i];
+  if (v._parent) {
+    vertices.splice(i, 1);
+  } else {
+    v.arrayIndex = i++;
+  }
+}
+
+// dataModels.dataModel.extend(model);
+// dataModels.selectionModel.extend(model);
+
+// Make id to vertex map.
+var graphMap = new HashMap();
+smalltalkGraphs.visitVertices(
+  graph,
+  function(vertex) {
+    graphMap.add(vertex.id, vertex);
+  });
+
+// Resolve the edge's vertex references.
+smalltalkGraphs.visitEdges(
+  graph,
+  function(edge) {
+    edge._vertex1Id = graphMap.find(edge.vertex1Id);
+    edge._vertex2Id = graphMap.find(edge.vertex2Id);
+  });
+
+editor.bind(model, canvas, onUpdate);
+
+// var properties = editor.getPropertyNames();
+// var checkboxes = document.getElementById("checkboxes");
+// properties.forEach(function(prop) {
+//   var checkbox = document.createElement("input");
+//   checkbox.setAttribute("type", 'checkbox');
+//   checkbox.setAttribute("name", prop);
+//   checkbox.onchange = function() {
+//     if (this.checked)
+//       editor.showProperty(this.name);
+//     else
+//       editor.hideProperty(this.name);
+//     onUpdate(editor);
+//   }
+
+//   var label = document.createElement('label')
+//   label.appendChild(document.createTextNode(prop));
+
+//   var br = document.createElement('br')
+
+//   checkboxes.appendChild(checkbox);
+//   checkboxes.appendChild(label);
+//   checkboxes.appendChild(br);
+// });
+
+onUpdate(editor);
+
+canvas.onmousedown = function(e) {
+  editor.onMouseDown(e);
+};
+
+canvas.onmousemove = function(e) {
+  editor.onMouseMove(e);
+};
+
+canvas.onmouseup = function(e) {
+  editor.onMouseUp(e);
+};
+
+canvas.onmouseout = function(e) {
+  editor.onMouseOut(e);
+};
+
+document.onkeydown = function(e) {
+  editor.onKeyDown(e);
+}
+
+document.onkeyup = function(e) {
+  editor.onKeyUp(e);
+}
+
+</script>
+
+</body>
+</html>

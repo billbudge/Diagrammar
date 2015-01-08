@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Javascript Sandbox</title>
+</head>
+<body>
+
+<select id="selector">
+  <option value="statecharts">Statecharts</option>
+  <option value="pcs">PCS</option>
+</select>
+
+<canvas id="test_canvas"></canvas>
+
+  <script src="collections.js"></script>
+  <script src="data_models.js"></script>
+  <script src="diagrams.js"></script>
+  <script src="vector_math.js"></script>
+  <script src="geometry.js"></script>
+  <script src="shape_editors.js"></script>
+  <script src="statecharts.js"></script>
+  <script src="smalltalk_graphs.js"></script>
+  <script src="smalltalk_parsers.js"></script>
+  <script src="clipper_unminified.js"></script>
+
+<script type="text/javascript" language="JavaScript">
+'use strict';
+
+document.bgColor = 'white';
+var canvas = document.getElementById('test_canvas');
+
+var ctx = canvas.getContext('2d');
+canvas.width  = window.innerWidth;
+canvas.height = window.innerHeight;
+ctx.font = '16px Helvetica';
+ctx.translate(0.5, 0.5);
+
+var selector = document.getElementById('selector');
+selector.onchange = function() {
+  var option = this.options[this.selectedIndex];
+  startEditor(option.value);
+}
+
+var editor;
+// statechart_data.root = statechart_data;
+// shape_data.root = shape_data;
+var statechart_model = { root: statechart_data };
+// var shape_model = { root: shape_data };
+
+
+// Update function, called when editor has changed the data.
+var onUpdate = function(editor) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  editor.draw();
+}
+
+function startEditor(option) {
+  var model;
+  switch (option) {
+    case 'statecharts':
+      document.bgColor = '#6666cc';
+      editor = new statecharts.Editor(statechart_model, diagrams.theme.createBlueprint(), canvas, onUpdate);
+      break;
+    case 'pcs':
+      document.bgColor = '#6666cc';
+      editor = shapeEditors;
+      model = shape_model;
+      dataModels.dataModel.extend(model);
+      dataModels.observableModel.extend(model);
+      dataModels.transactionModel.extend(model);
+      dataModels.transactionHistory.extend(model);
+      // referencingModel.extend(model);
+      dataModels.selectionModel.extend(model);
+      dataModels.instancingModel.extend(model);
+      dataModels.hierarchicalModel.extend(model);
+      dataModels.transformableModel.extend(model);
+
+      editor.bind(model, canvas, onUpdate);
+      break;
+  }
+
+
+  onUpdate(editor);
+}
+
+startEditor('statecharts');
+
+canvas.onmousedown = function(e) {
+  editor.onMouseDown(e);
+};
+
+canvas.onmousemove = function(e) {
+  editor.onMouseMove(e);
+};
+
+canvas.onmouseup = function(e) {
+  editor.onMouseUp(e);
+};
+
+document.onkeydown = function(e) {
+  editor.onKeyDown(e);
+}
+
+document.onkeyup = function(e) {
+  editor.onKeyUp(e);
+}
+
+</script>
+
+</body>
+</html>
