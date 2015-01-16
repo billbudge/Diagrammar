@@ -135,6 +135,27 @@ var geometry = (function() {
     // Otherwise, return nothing.
   }
 
+  function matMulNew(m1, m2) {
+    var m11 = m1[0] * m2[0] + m1[1] * m2[2];
+    var m12 = m1[0] * m2[1] + m1[1] * m2[3];
+    var m21 = m1[2] * m2[0] + m1[3] * m2[2];
+    var m22 = m1[2] * m2[1] + m1[3] * m2[3];
+    var m31 = m1[4] * m2[0] + m1[5] * m2[2] + m2[4];
+    var m32 = m1[4] * m2[1] + m1[5] * m2[3] + m2[5];
+    return [ m11, m12, m21, m22, m31, m32 ];
+  }
+
+  function matMulVec(v, m) {
+    var vx = v.x, vy = v.y;
+    v.x = vx * m[0] + vy * m[2] + m[4],
+    v.y = vx * m[1] + vy * m[3] + m[5]
+    return v;
+  }
+
+  function matMulVecNew(v, m) {
+    return matMulVec({ x: v.x, y: v.y }, m);
+  }
+
   return {
     lineLength: lineLength,
     vecLength: vecLength,
@@ -147,32 +168,13 @@ var geometry = (function() {
     hitTestLine: hitTestLine,
     lineIntersection: lineIntersection,
     hitTestCurveSegment: hitTestCurveSegment,
+    matMulNew: matMulNew,
+    matMulVec: matMulVec,
+    matMulVecNew: matMulVecNew,
   };
 })();
 
 //TODO namespace the rest.
-function MatMat(m1, m2) {
-  var m11 = m1[0] * m2[0] + m1[1] * m2[2];
-  var m12 = m1[0] * m2[1] + m1[1] * m2[3];
-  var m21 = m1[2] * m2[0] + m1[3] * m2[2];
-  var m22 = m1[2] * m2[1] + m1[3] * m2[3];
-  var m31 = m1[4] * m2[0] + m1[5] * m2[2] + m2[4];
-  var m32 = m1[4] * m2[1] + m1[5] * m2[3] + m2[5];
-  return [ m11, m12, m21, m22, m31, m32 ];
-}
-
-function VecMat(v, m) {
-  var vx = v.x, vy = v.y;
-  v.x = vx * m[0] + vy * m[2] + m[4],
-  v.y = vx * m[1] + vy * m[3] + m[5]
-}
-
-function VecMatNew(v, m) {
-  var result = { x: v.x, y: v.y };
-  VecMat(result, m);
-  return result;
-}
-
   var smoothValue = 0.75;
 
 function GetCurveSegment(p0, p1, p2, p3) {

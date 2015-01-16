@@ -7,22 +7,20 @@
 <body>
 
 <select id="selector">
+  <option value="shapes">Shapes</option>
   <option value="statecharts">Statecharts</option>
-  <option value="pcs">PCS</option>
 </select>
 
 <canvas id="test_canvas"></canvas>
 
   <script src="collections.js"></script>
+  <script src="geometry.js"></script>
   <script src="data_models.js"></script>
   <script src="diagrams.js"></script>
   <script src="vector_math.js"></script>
-  <script src="geometry.js"></script>
   <script src="shape_editors.js"></script>
   <script src="statecharts.js"></script>
-  <script src="smalltalk_graphs.js"></script>
-  <script src="smalltalk_parsers.js"></script>
-  <script src="clipper_unminified.js"></script>
+  <script src="third_party/clipper.js"></script>
 
 <script type="text/javascript" language="JavaScript">
 'use strict';
@@ -34,7 +32,7 @@ var ctx = canvas.getContext('2d');
 canvas.width  = window.innerWidth;
 canvas.height = window.innerHeight;
 ctx.font = '16px Helvetica';
-ctx.translate(0.5, 0.5);
+// ctx.translate(0.5, 0.5);
 
 var selector = document.getElementById('selector');
 selector.onchange = function() {
@@ -42,44 +40,29 @@ selector.onchange = function() {
   startEditor(option.value);
 }
 
-var editor;
-// statechart_data.root = statechart_data;
-// shape_data.root = shape_data;
-var statechart_model = { root: statechart_data };
-// var shape_model = { root: shape_data };
+document.bgColor = '#6666cc';
 
+var editor,
+    theme = diagrams.theme.createBlueprint(),
+    statechart_model = { root: statechart_data },
+    shape_model = { root: shape_data };
 
-// Update function, called when editor has changed the data.
+// Update function, called after editor has changed the data.
 var onUpdate = function(editor) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   editor.draw();
 }
 
-function startEditor(option) {
+function startEditor(name) {
   var model;
-  switch (option) {
+  switch (name) {
     case 'statecharts':
-      document.bgColor = '#6666cc';
-      editor = new statecharts.Editor(statechart_model, diagrams.theme.createBlueprint(), canvas, onUpdate);
+      editor = new statecharts.Editor(statechart_model, theme, canvas, onUpdate);
       break;
-    case 'pcs':
-      document.bgColor = '#6666cc';
-      editor = shapeEditors;
-      model = shape_model;
-      dataModels.dataModel.extend(model);
-      dataModels.observableModel.extend(model);
-      dataModels.transactionModel.extend(model);
-      dataModels.transactionHistory.extend(model);
-      // referencingModel.extend(model);
-      dataModels.selectionModel.extend(model);
-      dataModels.instancingModel.extend(model);
-      dataModels.hierarchicalModel.extend(model);
-      dataModels.transformableModel.extend(model);
-
-      editor.bind(model, canvas, onUpdate);
+    case 'shapes':
+      editor = new shapeEditors.Editor(shape_model, theme, canvas, onUpdate);
       break;
   }
-
 
   onUpdate(editor);
 }

@@ -43,7 +43,40 @@ var statecharts = (function() {
 
 //------------------------------------------------------------------------------
 
-  var editingContext = (function() {
+//TODO is this useful?
+var graphModel = (function() {
+  var proto = {
+    getVertexRect: function(state) {
+      var transform = this.model.transformableModel.transform(state),
+          x = transform[4], y = transform[5];
+      if (isState(state))
+        return { x: x, y: y, width: v.width, height: v.height };
+      // Pseudo-state.
+      return { x: x, y: y };
+    },
+  }
+
+  function extend(model) {
+    if (model.graphModel)
+      return model.graphModel;
+
+    transformableModel.extend(model);
+
+    var instance = Object.create(proto);
+    instance.model = model;
+
+    model.graphModel = instance;
+    return instance;
+  }
+
+  return {
+    extend: extend,
+  };
+})();
+
+//------------------------------------------------------------------------------
+
+  var editingModel = (function() {
     var functions = {
       reduceSelection: function () {
         var model = this.model;
@@ -112,7 +145,7 @@ var statecharts = (function() {
         items.forEach(function(item) {
           var copy = map.find(self.model.dataModel.getId(item));
           if (isState(copy)) {
-            var transform = transformableModel.transform(item);
+            var transform = transformableModel.getLocal(item);
             if (transform) {
               copy.x = transform[4];
               copy.y = transform[5];
@@ -169,8 +202,8 @@ var statecharts = (function() {
       addItem: function(item, oldParent, parent) {
         var model = this.model, transformableModel = model.transformableModel;
         if (oldParent !== parent && isState(item)) {
-          var transform = transformableModel.transform(item),
-              parentTransform = transformableModel.transform(parent);
+          var transform = transformableModel.getAbsolute(item),
+              parentTransform = transformableModel.getAbsolute(parent);
           item.x = transform[4] - parentTransform[4];
           item.y = transform[5] - parentTransform[5];
         }
@@ -214,9 +247,9 @@ var statecharts = (function() {
       dataModels.transactionModel.extend(model);
       dataModels.transactionHistory.extend(model);
       dataModels.instancingModel.extend(model);
-      dataModels.editingContext.extend(model);
+      dataModels.editingModel.extend(model);
 
-      var instance = Object.create(model.editingContext);
+      var instance = Object.create(model.editingModel);
       instance.prototype = Object.getPrototypeOf(instance);
       for (var prop in functions)
         instance[prop] = functions[prop];
@@ -224,7 +257,7 @@ var statecharts = (function() {
       instance.model = model;
       instance.statechart = model.root;
 
-      model.editingContext = instance;
+      model.editingModel = instance;
       return instance;
     }
 
@@ -236,7 +269,7 @@ var statecharts = (function() {
 //------------------------------------------------------------------------------
 
   function Renderer(model, ctx, theme) {
-    diagrams.HigraphRenderer.call(this, ctx, theme);
+    diagrams.GraphRenderer.call(this, ctx, theme);
     this.model = model;
     this.transformableModel = model.transformableModel;
     this.stateMinWidth = 100;
@@ -244,10 +277,10 @@ var statecharts = (function() {
     this.knobbySize = 4;
   }
 
-  Renderer.prototype = Object.create(diagrams.HigraphRenderer.prototype);
+  Renderer.prototype = Object.create(diagrams.GraphRenderer.prototype);
 
   Renderer.prototype.getVertexRect = function(v) {
-    var transform = this.transformableModel.transform(v),
+    var transform = this.transformableModel.getAbsolute(v),
         x = transform[4], y = transform[5];
     if (isState(v))
       return { x: x, y: y, width: v.width, height: v.height };
@@ -297,12 +330,14 @@ var statecharts = (function() {
   Renderer.prototype.getKnobbies = function(state) {
     var rect = this.getVertexRect(state),
         x = rect.x, y = rect.y, width = rect.width, height = rect.height,
-        xOffset = 2 * this.radius,
+        r = this.radius, xOffset = 2 * r,
         knobbies = {};
     if (state.type == 'state') {
       knobbies.transition = {
         x: x + width + xOffset,
-        y: y + this.textSize + this.textLeading
+        y: y + this.textSize + this.textLeading,
+        nx: -1,
+        ny: 0
       }
       if (state.items) {
         knobbies.vertStatechart = {
@@ -311,10 +346,11 @@ var statecharts = (function() {
         }
       }
     } else {
-      var r = this.radius;
       knobbies.transition = {
         x: x + r + r + xOffset,
-        y: y + r
+        y: y + r,
+        nx: -1,
+        ny: 0
       }
     }
     return knobbies;
@@ -325,10 +361,27 @@ var statecharts = (function() {
         knobbies = this.getKnobbies(state),
         transition = knobbies.transition,
         vertStatechart = knobbies.vertStatechart;
-    if (transition)
-      ctx.strokeRect(transition.x - knobbySize, transition.y - knobbySize, 2 * knobbySize, 2 * knobbySize);
+    if (transition) {
+      ctx.beginPath();
+      diagrams.arrowPath(transition, ctx, this.arrowSize);
+      ctx.stroke();
+    }
     if (vertStatechart)
       ctx.strokeRect(vertStatechart.x - knobbySize, vertStatechart.y - knobbySize, 2 * knobbySize, 2 * knobbySize);
+  }
+
+  Renderer.prototype.hitTestState = function(state, p) {
+    var hitInfo = this.hitTestVertex(state, p);
+    if (hitInfo)
+      hitInfo.item = state;
+    return hitInfo;
+  }
+
+  Renderer.prototype.hitTestTransition = function(transition, p) {
+    var hitInfo = this.hitTestEdge(transition, p);
+    if (hitInfo)
+      hitInfo.item = transition;
+    return hitInfo;
   }
 
   Renderer.prototype.hitKnobby = function(state, p) {
@@ -345,7 +398,7 @@ var statecharts = (function() {
     var self = this;
     this.model = model;
     this.statechart = model.root;
-    editingContext.extend(model);
+    editingModel.extend(model);
 
     this.canvas = canvas;
     this.updateFn = updateFn;
@@ -492,7 +545,7 @@ var statecharts = (function() {
     renderer.endDraw();
   }
 
-  // hitTest filter functions.
+  // filter functions.
   function firstHit(item, hitInfo) {
     return hitInfo;
   }
@@ -512,7 +565,7 @@ var statecharts = (function() {
     reverseVisit(palette.root, isState, function(state) {
       if (filterFn(state, hitInfo))
         return;
-      hitInfo = renderer.hitTestVertex(state, p);
+      hitInfo = renderer.hitTestState(state, p);
     });
     if (hitInfo)
       return hitInfo;
@@ -520,7 +573,7 @@ var statecharts = (function() {
     reverseVisit(statechart, isTransition, function(transition) {
       if (filterFn(transition, hitInfo))
         return;
-      hitInfo = renderer.hitTestEdge(transition, p);
+      hitInfo = renderer.hitTestTransition(transition, p);
     });
     if (hitInfo)
       return hitInfo;
@@ -534,11 +587,11 @@ var statecharts = (function() {
             hitInfo = { item: state, transition: true };
             break;
           default:
-            hitInfo = renderer.hitTestVertex(state, p);
+            hitInfo = renderer.hitTestState(state, p);
             break;
         }
       } else {
-        hitInfo = renderer.hitTestVertex(state, p);
+        hitInfo = renderer.hitTestState(state, p);
       }
     });
     return hitInfo;
@@ -553,11 +606,11 @@ var statecharts = (function() {
       // Clone palette item and add the clone to the top level statechart. Don't
       // notify observers yet.
       this.dragItem = model.instancingModel.clone(mouseHitInfo.item);
-      model.editingContext.addTemporaryItem(this.dragItem);
+      model.editingModel.addTemporaryItem(this.dragItem);
       model.selectionModel.set([ this.dragItem ]);
       this.addingNewItem = true;
     } else if (!isTransition(this.dragItem)) {
-      model.editingContext.reduceSelection();
+      model.editingModel.reduceSelection();
     }
     switch (this.dragItem.type) {
       case 'state':
@@ -590,7 +643,7 @@ var statecharts = (function() {
         t2: 0,
       };
       model.dataModel.assignId(this.dragItem),
-      model.editingContext.addTemporaryItem(this.dragItem);
+      model.editingModel.addTemporaryItem(this.dragItem);
       model.selectionModel.set([ this.dragItem ]);
       mouseHitInfo.item = this.dragItem;
       this.dragType = 'connectingP2';
@@ -605,7 +658,7 @@ var statecharts = (function() {
         selectionModel = model.selectionModel;
     // Remove any item that have been temporarily added before starting the
     // transaction.
-    var newItem = this.addingNewItem ? model.editingContext.removeTemporaryItem() : null;
+    var newItem = this.addingNewItem ? model.editingModel.removeTemporaryItem() : null;
 
     model.transactionModel.beginTransaction("Drag");
 
@@ -619,14 +672,14 @@ var statecharts = (function() {
         parent = hitInfo.item;
       // Add new items.
       if (this.addingNewItem) {
-        model.editingContext.addItem(newItem, null, parent, this.renderer);
+        model.editingModel.addItem(newItem, null, parent, this.renderer);
       } else {
         // Reparent existing items.
         model.selectionModel.forEach(function(item) {
           if (isState(item)) {
             var oldParent = model.hierarchicalModel.getParent(item);
             if (oldParent != parent)
-              model.editingContext.addItem(item, oldParent, parent, self.renderer);
+              model.editingModel.addItem(item, oldParent, parent, self.renderer);
           }
         });
       }
@@ -642,10 +695,10 @@ var statecharts = (function() {
     if (isTransition(this.dragItem)) {
       var transition = this.dragItem;
       if (!transition.state1Id || !transition.state2Id) {
-        model.editingContext.deleteItem(transition);
+        model.editingModel.deleteItem(transition);
         model.selectionModel.remove(transition);
       } else if (this.addingNewItem) {
-        model.editingContext.addItem(transition, null, statechart, this.renderer);
+        model.editingModel.addItem(transition, null, statechart, this.renderer);
       }
     }
 
@@ -762,14 +815,14 @@ var statecharts = (function() {
     var model = this.model,
         statechart = this.statechart,
         selectionModel = model.selectionModel,
-        editingContext = model.editingContext,
+        editingModel = model.editingModel,
         transactionHistory = model.transactionHistory,
         updateFn = this.updateFn;
 
     this.shiftKeyDown = e.shiftKey;
     if (e.keyCode == 8) {
       e.preventDefault();
-      editingContext.doDelete();
+      editingModel.doDelete();
       updateFn(this);
     } else if (e.ctrlKey) {
       if (e.keyCode == 65) {  // 'a'
@@ -790,14 +843,14 @@ var statecharts = (function() {
           updateFn(this);
         }
       } else if (e.keyCode == 88) { // 'x'
-        editingContext.doCut();
+        editingModel.doCut();
         updateFn(this);
       } else if (e.keyCode == 67) { // 'c'
-        editingContext.doCopy();
+        editingModel.doCopy();
         updateFn(this);
       } else if (e.keyCode == 86) { // 'v'
-        if (editingContext.getScrap()) {
-          editingContext.doPaste();
+        if (editingModel.getScrap()) {
+          editingModel.doPaste();
           updateFn(this);
         }
       } else if (e.keyCode == 71) { // 'g'
@@ -823,7 +876,8 @@ var statecharts = (function() {
   }
 
   return {
-    editingContext: editingContext,
+    graphModel: graphModel,
+    editingModel: editingModel,
     Renderer: Renderer,
     Editor: Editor,
   };
@@ -835,8 +889,8 @@ var statechart_data = {
   "id": 1001,
   "x": 0,
   "y": 0,
-  "width": 0,
-  "height": 0,
+  "width": 845,
+  "height": 422,
   "name": "Example",
   "items": [
     {
@@ -859,8 +913,8 @@ var statechart_data = {
           "id": 1004,
           "x": 0,
           "y": 0,
-          "width": 0,
-          "height": 0,
+          "width": 250,
+          "height": 145,
           "items": [
             {
               "type": "state",
@@ -869,7 +923,8 @@ var statechart_data = {
               "y": 45,
               "width": 100,
               "height": 100,
-              "name": "State_3"
+              "name": "State_3",
+              "items": []
             },
             {
               "type": "state",
@@ -887,17 +942,18 @@ var statechart_data = {
     {
       "type": "state",
       "id": 1007,
-      "x": 551,
-      "y": 142,
+      "x": 545,
+      "y": 222,
       "width": 300,
       "height": 200,
-      "name": "State_2"
+      "name": "State_2",
+      "items": []
     },
     {
       "type": "transition",
       "id": 1008,
       "state1Id": 1003,
-      "t1": 1.9,
+      "t1": 1.4019607843137254,
       "state2Id": 1007,
       "t2": 2.3
     }

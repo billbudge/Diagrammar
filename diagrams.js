@@ -244,7 +244,7 @@ var diagrams = (function() {
 
   function diskPath(x, y, r, ctx) {
     ctx.beginPath();
-    ctx.arc(x + r, y + r, r, 0, 360, false);
+    ctx.arc(x, y, r, 0, 360, false);
   }
 
   function getEdgePoint(x, y, w, h, t) {
@@ -265,20 +265,23 @@ var diagrams = (function() {
     return [p1, c1, c2, p2];
   }
 
+  function arrowPath(p, ctx, arrowSize) {
+    var cos45 = 0.866, sin45 = 0.500,
+        nx = p.nx, ny = p.ny;
+    ctx.moveTo(p.x + arrowSize * (nx * cos45 - ny * sin45),
+               p.y + arrowSize * (nx * sin45 + ny * cos45));
+    ctx.lineTo(p.x, p.y);
+    ctx.lineTo(p.x + arrowSize * (nx * cos45 + ny * sin45),
+               p.y + arrowSize * (ny * cos45 - nx * sin45));
+  }
+
   function edgePath(bezier, ctx, arrowSize) {
     var p1 = bezier[0], c1 = bezier[1], c2 = bezier[2], p2 = bezier[3];
     ctx.beginPath();
     ctx.moveTo(p1.x, p1.y);
     ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, p2.x, p2.y);
-    if (arrowSize) {
-      var cos45 = 0.866;
-      var sin45 = 0.500;
-      ctx.lineTo(p2.x + arrowSize * (p2.nx * cos45 - p2.ny * sin45),
-                 p2.y + arrowSize * (p2.nx * sin45 + p2.ny * cos45));
-      ctx.moveTo(p2.x, p2.y);
-      ctx.lineTo(p2.x + arrowSize * (p2.nx * cos45 + p2.ny * sin45),
-                 p2.y + arrowSize * (p2.ny * cos45 - p2.nx * sin45));
-    }
+    if (arrowSize)
+      arrowPath(p2, ctx, arrowSize);
   }
 
   // Check if p is within tolerance of (x, y). Useful for knobbies.
@@ -308,7 +311,7 @@ var diagrams = (function() {
   }
 
   function hitTestDisk(x, y, r, p, tol) {
-    var dx = x + r - p.x, dy = y + r - p.y,
+    var dx = x - p.x, dy = y - p.y,
         dSquared = dx * dx + dy * dy,
         inner = Math.max(0, r - tol), outer = r + tol;
     if (dSquared < outer * outer) {
@@ -335,7 +338,7 @@ var diagrams = (function() {
   //    which it stores on the graph objects.
   // 2  Renders vertices as round-rects, and edges as bezier curve segments.
   // 3) Performs hit detection on vertices and edges.
-  function HigraphRenderer(ctx, theme) {
+  function GraphRenderer(ctx, theme) {
     this.ctx = ctx;
 
     this.radius = 8;
@@ -354,18 +357,18 @@ var diagrams = (function() {
     this.hitTolerance = 8;
   }
 
-  HigraphRenderer.prototype.beginDraw = function() {
+  GraphRenderer.prototype.beginDraw = function() {
     var ctx = this.ctx;
     ctx.save();
     ctx.strokeStyle = this.strokeColor;
     ctx.lineWidth = 1;
   }
 
-  HigraphRenderer.prototype.endDraw = function() {
+  GraphRenderer.prototype.endDraw = function() {
     this.ctx.restore();
   }
 
-  HigraphRenderer.prototype.getVertexRect = function(v) {
+  GraphRenderer.prototype.getVertexRect = function(v) {
     return {
       x: v.x,
       y: v.y,
@@ -374,15 +377,15 @@ var diagrams = (function() {
     }
   }
 
-  HigraphRenderer.prototype.measureText = function(text) {
+  GraphRenderer.prototype.measureText = function(text) {
     return this.ctx.measureText(text).width;
   }
 
-  HigraphRenderer.prototype.getLabel = function(v) {
+  GraphRenderer.prototype.getLabel = function(v) {
     return v.label || v.name;
   }
 
-  HigraphRenderer.prototype.vertexPointToParam = function(v, p) {
+  GraphRenderer.prototype.vertexPointToParam = function(v, p) {
     var r = this.radius, rect = this.getVertexRect(v);
     if (rect.width && rect.height)
       return rectPointToParam(rect.x, rect.y, rect.width, rect.height, p);
@@ -391,7 +394,7 @@ var diagrams = (function() {
     //TODO circlePointToParam
   }
 
-  HigraphRenderer.prototype.vertexParamToPoint = function(v, t) {
+  GraphRenderer.prototype.vertexParamToPoint = function(v, t) {
     var r = this.radius, rect = this.getVertexRect(v);
     if (rect.width && rect.height)
       return roundRectParamToPoint(rect.x, rect.y, rect.width, rect.height, r, t);
@@ -399,7 +402,7 @@ var diagrams = (function() {
     return circleParamToPoint(rect.x + r, rect.y + r, r, t);
   }
 
-  HigraphRenderer.prototype.updateBezier = function(e, v1, t1, v2, t2, endPt) {
+  GraphRenderer.prototype.updateBezier = function(e, v1, t1, v2, t2, endPt) {
     var p1, p2;
     if (v1) {
       p1 = this.vertexParamToPoint(v1, t1);
@@ -411,7 +414,7 @@ var diagrams = (function() {
     e._bezier = getEdgeBezier(p1, p2, endPt);
   }
 
-  HigraphRenderer.prototype.drawVertex = function(v) {
+  GraphRenderer.prototype.drawVertex = function(v) {
     var ctx = this.ctx, r = this.radius,
         type = v.type, rect = this.getVertexRect(v),
         x = rect.x, y = rect.y, w = rect.width, h = rect.height;
@@ -419,36 +422,36 @@ var diagrams = (function() {
     if (w && h)
       roundRectPath(x, y, w, h, r, ctx);
     else
-      diskPath(x, y, r, ctx);
+      diskPath(x + r, y + r, r, ctx);
 
     ctx.fillStyle = this.bgColor;
     ctx.fill();
     ctx.stroke();
   }
 
-  HigraphRenderer.prototype.strokeVertex = function(v) {
+  GraphRenderer.prototype.strokeVertex = function(v) {
     var ctx = this.ctx, r = this.radius,
         rect = this.getVertexRect(v),
         x = rect.x, y = rect.y, w = rect.width, h = rect.height;
     if (w && h)
       roundRectPath(x, y, w, h, r, ctx);
     else
-      diskPath(x, y, r, ctx);
+      diskPath(x + r, y + r, r, ctx);
 
     ctx.stroke();
   }
 
-  HigraphRenderer.prototype.drawEdge = function(e) {
+  GraphRenderer.prototype.drawEdge = function(e) {
     this.strokeEdge(e, this.ctx);
   }
 
-  HigraphRenderer.prototype.strokeEdge = function(e) {
+  GraphRenderer.prototype.strokeEdge = function(e) {
     var ctx = this.ctx;
     edgePath(e._bezier, ctx, this.arrowSize);
     ctx.stroke();
   }
 
-  HigraphRenderer.prototype.hitTestVertex = function(v, p) {
+  GraphRenderer.prototype.hitTestVertex = function(v, p) {
     var tol = this.hitTolerance, r = this.radius,
         rect = this.getVertexRect(v),
         x = rect.x, y = rect.y, w = rect.width, h = rect.height,
@@ -458,22 +461,17 @@ var diagrams = (function() {
     else
       hitInfo = hitTestDisk(x, y, r, p, tol);
 
-    if (hitInfo)
-      hitInfo.item = v;
     return hitInfo;
   }
 
-  HigraphRenderer.prototype.hitTestEdge = function(e, p) {
-    var hitInfo = hitTestEdge(e._bezier, p, this.hitTolerance);
-    if (hitInfo)
-      hitInfo.item = e;
-    return hitInfo;
+  GraphRenderer.prototype.hitTestEdge = function(e, p) {
+    return hitTestEdge(e._bezier, p, this.hitTolerance);
   }
 
   return {
     MouseController: MouseController,
 
-    theme, theme,
+    theme: theme,
 
     roundRectPath: roundRectPath,
     rectParamToPoint: rectParamToPoint,
@@ -482,13 +480,14 @@ var diagrams = (function() {
     rectPointToParam: rectPointToParam,
     diskPath: diskPath,
     getEdgeBezier: getEdgeBezier,
+    arrowPath: arrowPath,
     edgePath: edgePath,
     hitPoint: hitPoint,
     hitTestRect: hitTestRect,
     hitTestDisk: hitTestDisk,
     hitTestEdge: hitTestEdge,
 
-    HigraphRenderer: HigraphRenderer,
+    GraphRenderer: GraphRenderer,
   }
 })();
 

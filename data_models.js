@@ -716,7 +716,7 @@ var instancingModel = (function() {
 
 //------------------------------------------------------------------------------
 
-var editingContext = (function() {
+var editingModel = (function() {
   var proto = {
     addItems: function(items) {
       // Implement.
@@ -777,8 +777,8 @@ var editingContext = (function() {
   }
 
   function extend(model) {
-    if (model.editingContext)
-      return model.editingContext;
+    if (model.editingModel)
+      return model.editingModel;
 
     transactionModel.extend(model);
     selectionModel.extend(model);
@@ -787,7 +787,7 @@ var editingContext = (function() {
     var instance = Object.create(proto);
     instance.model = model;
 
-    model.editingContext = instance;
+    model.editingModel = instance;
     return instance;
   }
 
@@ -961,26 +961,23 @@ var transformableModel = (function() {
       return item.rotation || item._rotation || 0;
     },
 
-    localTransform: function(item) {
+    getLocal: function(item) {
       return item._transform;
     },
 
-    inverseLocalTransform: function(item) {
+    getInverseLocal: function(item) {
       return item._itransform;
     },
 
-    transform: function(item) {
+    getAbsolute: function(item) {
       return item._atransform;
     },
 
-    inverseTransform: function(item) {
+    getInverseAbsolute: function(item) {
       return item._aitransform;
     },
 
-    updateTransform: function(item, parent) {
-      if (!this.hasTransform(item))
-        return;
-      // build local transform, world transform, and inverses.
+    updateLocal: function(item) {
       var tx = item.x, ty = item.y,
           rot = this.getRotation(item),
           cos = Math.cos(rot), sin = Math.sin(rot),
@@ -991,13 +988,18 @@ var transformableModel = (function() {
       item._itransform = [ cos, sin,
                           -sin, cos,
                           -tx * cos + ty * sin, -tx * sin - ty * cos ];
+    },
 
+    updateTransforms: function(item, parent) {
+      if (!this.hasTransform(item))
+        return;
+      this.updateLocal(item);
       while (parent && !this.hasTransform(parent))
         parent = this.model.hierarchicalModel.getParent(parent);
 
       if (parent) {
-        item._atransform = MatMat(item._transform, parent._atransform);
-        item._aitransform = MatMat(parent._aitransform, item._itransform);
+        item._atransform = geometry.matMulNew(item._transform, parent._atransform);
+        item._aitransform = geometry.matMulNew(parent._aitransform, item._itransform);
       } else {
         item._atransform = item._aitransform = [1, 0, 0, 1, 0, 0];
       }
@@ -1005,9 +1007,9 @@ var transformableModel = (function() {
 
     update: function(item, parent) {
       var self = this, hierarchicalModel = this.model.hierarchicalModel;
-      this.updateTransform(item, parent);
+      this.updateTransforms(item, parent);
       hierarchicalModel.visitDescendants(item, function(child, parent) {
-        self.updateTransform(child, parent);
+        self.updateTransforms(child, parent);
       });
     },
 
@@ -1061,7 +1063,55 @@ var transformableModel = (function() {
 
 //------------------------------------------------------------------------------
 
-// var layoutModel = (function() {
+// var provisionalEditingModel = (function() {
+//   var proto = {
+//     begin: function() {
+//       this.temporaryItems = [];
+//     },
+//     addTemporaryItem: function(item) {
+//       this.temporaryItems.push(item);
+//     },
+//     getTemporaryItems: function() {
+//       return this.temporaryItems;
+//     },
+//     cancel: function() {
+//       this.temporaryItems = null;
+//     },
+//     end: function() {
+//       var editingModel = this.model.editingModel;
+//       this.cancel();
+//     },
+//   }
+
+//       // Clone palette item and add the clone to the top level statechart. Don't
+//       // notify observers yet.
+//       this.dragItem = model.instancingModel.clone(mouseHitInfo.item);
+//       model.editingModel.addTemporaryItem(this.dragItem);
+//       model.selectionModel.set([ this.dragItem ]);
+//       this.addingNewItem = true;
+
+//   function extend(model) {
+//     if (model.provisionalEditingModel)
+//       return model.provisionalEditingModel;
+
+//     editingModel.extend(model);
+//     transactionModel.extend(model);
+
+//     var instance = Object.create(proto);
+//     instance.model = model;
+
+//     model.provisionalEditingModel = instance;
+//     return instance;
+//   }
+
+//   return {
+//     extend: extend,
+//   };
+// })();
+
+//------------------------------------------------------------------------------
+
+// var myModel = (function() {
 //   var proto = {
 //     getParent: function(item) {
 //       return item._parent;
@@ -1069,13 +1119,13 @@ var transformableModel = (function() {
 //   }
 
 //   function extend(model) {
-//     if (model.layoutModel)
-//       return model.layoutModel;
+//     if (model.myModel)
+//       return model.myModel;
 
 //     var instance = Object.create(proto);
 //     instance.model = model;
 
-//     model.layoutModel = instance;
+//     model.myModel = instance;
 //     return instance;
 //   }
 
@@ -1096,7 +1146,7 @@ var transformableModel = (function() {
     // referenceValidator: referenceValidator,
     selectionModel: selectionModel,
     instancingModel: instancingModel,
-    editingContext: editingContext,
+    editingModel: editingModel,
     hierarchicalModel: hierarchicalModel,
     transformableModel: transformableModel,
 
