@@ -868,7 +868,6 @@ var statecharts = (function() {
   }
 
   return {
-    graphModel: graphModel,
     editingModel: editingModel,
     Renderer: Renderer,
     Editor: Editor,
