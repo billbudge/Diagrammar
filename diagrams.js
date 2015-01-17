@@ -7,7 +7,7 @@ var diagrams = (function() {
     this.dragThreshold = 4;
     this.hoverThreshold = 4;
     this.hoverTimeout = 250;  // milliseconds
-    this.mouse = { x: 0, y: 0 };
+    this.mouse = this.dragOffset = { x: 0, y: 0 };
     dataModels.eventMixin.extend(this);
   }
 

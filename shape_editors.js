@@ -634,9 +634,9 @@ var shapeEditors = (function() {
     // if (this.dragType == 'newTransition') {
     //   this.dragItem = {
     //     type: 'transition',
-    //     state1Id: model.dataModel.getId(mouseHitInfo.item),  // state1 was hit.
+    //     srcId: model.dataModel.getId(mouseHitInfo.item),  // state1 was hit.
     //     t1: 0,
-    //     state2Id: 0,
+    //     dstId: 0,
     //     t2: 0,
     //   };
     //   model.dataModel.assignId(this.dragItem),
@@ -688,7 +688,7 @@ var shapeEditors = (function() {
 
     // if (isTransition(this.dragItem)) {
     //   var transition = this.dragItem;
-    //   if (!transition.state1Id || !transition.state2Id) {
+    //   if (!transition.srcId || !transition.dstId) {
     //     model.editingModel.deleteItem(transition);
     //     model.selectionModel.remove(transition);
     //   } else if (this.addingNewItem) {

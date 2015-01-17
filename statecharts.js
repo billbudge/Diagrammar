@@ -43,39 +43,6 @@ var statecharts = (function() {
 
 //------------------------------------------------------------------------------
 
-//TODO is this useful?
-var graphModel = (function() {
-  var proto = {
-    getVertexRect: function(state) {
-      var transform = this.model.transformableModel.transform(state),
-          x = transform[4], y = transform[5];
-      if (isState(state))
-        return { x: x, y: y, width: v.width, height: v.height };
-      // Pseudo-state.
-      return { x: x, y: y };
-    },
-  }
-
-  function extend(model) {
-    if (model.graphModel)
-      return model.graphModel;
-
-    transformableModel.extend(model);
-
-    var instance = Object.create(proto);
-    instance.model = model;
-
-    model.graphModel = instance;
-    return instance;
-  }
-
-  return {
-    extend: extend,
-  };
-})();
-
-//------------------------------------------------------------------------------
-
   var editingModel = (function() {
     var functions = {
       reduceSelection: function () {
@@ -93,8 +60,8 @@ var graphModel = (function() {
         });
         var transitions = [];
         visit(this.statechart, isTransition, function(item) {
-          var contains1 = statesAndChildren.contains(item._state1Id);
-          var contains2 = statesAndChildren.contains(item._state2Id);
+          var contains1 = statesAndChildren.contains(item._srcId);
+          var contains2 = statesAndChildren.contains(item._dstId);
           if (copying) {
             if (contains1 && contains2)
               transitions.push(item);
@@ -289,8 +256,8 @@ var graphModel = (function() {
   }
 
   Renderer.prototype.updateTransition = function(transition, endPt) {
-    var v1 = transition._state1Id, t1 = transition.t1,
-        v2 = transition._state2Id, t2 = transition.t2;
+    var v1 = transition._srcId, t1 = transition.t1,
+        v2 = transition._dstId, t2 = transition.t2;
     this.updateBezier(transition, v1, t1, v2, t2, endPt);
   }
 
@@ -597,81 +564,162 @@ var graphModel = (function() {
     return hitInfo;
   }
 
+  Editor.prototype.hitTestUnselectedStates = function(p) {
+    var selectionModel = this.model.selectionModel;
+    return this.hitTest(p, function(item, hitInfo) {
+      return firstStateHit(item, hitInfo) || selectionModel.contains(item);
+    });
+  }
+
   Editor.prototype.beginDrag = function() {
-    var mouseHitInfo = this.mouseHitInfo, model = this.model;
+    var mouseHitInfo = this.mouseHitInfo,
+        dragItem = mouseHitInfo.item,
+        model = this.model,
+        drag;
     if (!mouseHitInfo)
       return;
-    this.dragItem = mouseHitInfo.item;
-    if (this.isPaletteItem(this.dragItem)) {
+    if (this.isPaletteItem(dragItem)) {
       // Clone palette item and add the clone to the top level statechart. Don't
       // notify observers yet.
-      this.dragItem = model.instancingModel.clone(mouseHitInfo.item);
-      model.editingModel.addTemporaryItem(this.dragItem);
-      model.selectionModel.set([ this.dragItem ]);
-      this.addingNewItem = true;
-    } else if (!isTransition(this.dragItem)) {
-      model.editingModel.reduceSelection();
-    }
-    switch (this.dragItem.type) {
-      case 'state':
-        if (mouseHitInfo.transition)
-          this.dragType = 'newTransition';
-        else if (mouseHitInfo.border)
-          this.dragType = 'sizing';
-        else
-          this.dragType = 'moving';
-        break;
-      case 'start':
-        if (mouseHitInfo.transition)
-          this.dragType = 'newTransition';
-        else
-          this.dragType = 'moving'
-        break;
-      case 'transition':
-        if (mouseHitInfo.p1)
-          this.dragType = 'connectingP1';
-        else
-          this.dragType = 'connectingP2';
-        break;
-    }
-    if (this.dragType == 'newTransition') {
-      this.dragItem = {
+      dragItem = model.instancingModel.clone(dragItem);
+      model.editingModel.addTemporaryItem(dragItem);
+      model.selectionModel.set([ dragItem ]);
+      drag = {
+        type: 'moveSelection',
+        isNewItem: true,
+        name: 'Add new ' + dragItem.type,
+      }
+    } else if (mouseHitInfo.transition) {
+      // Start a new transition from the hit state.
+      dragItem = {
         type: 'transition',
-        state1Id: model.dataModel.getId(mouseHitInfo.item),  // state1 was hit.
+        srcId: model.dataModel.getId(dragItem),  // dragItem is src state.
         t1: 0,
-        state2Id: 0,
+        dstId: 0,
         t2: 0,
       };
-      model.dataModel.assignId(this.dragItem),
-      model.editingModel.addTemporaryItem(this.dragItem);
-      model.selectionModel.set([ this.dragItem ]);
-      mouseHitInfo.item = this.dragItem;
-      this.dragType = 'connectingP2';
-      this.addingNewItem = true;
+      model.dataModel.assignId(dragItem),
+      model.editingModel.addTemporaryItem(dragItem);
+      model.selectionModel.set([ dragItem ]);
+      drag = {
+        type: 'connectingP2',
+        isNewItem: true,
+        namd: 'Add new transition',
+      }
+    } else {
+      switch (dragItem.type) {
+        case 'state':
+          if (mouseHitInfo.border)
+            drag = { type: 'resizeState', name: 'Resize state' };
+          else
+            drag = { type: 'moveSelection', name: 'Move states' };
+          break;
+        case 'start':
+          drag = { type: 'moveSelection', name: 'Move states' };
+          break;
+        case 'transition':
+          if (mouseHitInfo.p1)
+            drag = { type: 'connectingP1', name: 'Edit transition' };
+          else
+            drag = { type: 'connectingP2', name: 'Edit transition' };
+          break;
+      }
+    }
+    if (drag) {
+      if (drag.type == 'moveSelection')
+        model.editingModel.reduceSelection();
+      drag.item = dragItem;
+      this.drag = drag;
     }
 
     this.valueTracker = new dataModels.ValueChangeTracker(model);
   }
 
+  Editor.prototype.doDrag = function(p, offset) {
+    var drag = this.drag, dragItem = drag.item,
+        model = this.model,
+        dataModel = model.dataModel,
+        observableModel = model.observableModel,
+        referencingModel = model.referencingModel,
+        selectionModel = model.selectionModel,
+        renderer = this.renderer,
+        valueTracker = this.valueTracker,
+        mouseHitInfo = this.mouseHitInfo,
+        snapshot = valueTracker.getSnapshot(drag.item),
+        hitInfo, srcState, dstState, srcStateId, dstStateId, t1, t2;
+    switch (drag.type) {
+      case 'moveSelection':
+        var hitInfo = this.hotTrackInfo = this.hitTestUnselectedStates(p);
+        selectionModel.forEach(function(item) {
+          var snapshot = valueTracker.getSnapshot(item);
+          if (snapshot) {
+            observableModel.changeValue(item, 'x', snapshot.x + offset.x);
+            observableModel.changeValue(item, 'y', snapshot.y + offset.y);
+          }
+        });
+        break;
+      case 'resizeState':
+        if (mouseHitInfo.left) {
+          observableModel.changeValue(dragItem, 'x', snapshot.x + offset.x);
+          observableModel.changeValue(dragItem, 'width', snapshot.width - offset.x);
+        }
+        if (mouseHitInfo.top) {
+          observableModel.changeValue(dragItem, 'y', snapshot.y + offset.y);
+          observableModel.changeValue(dragItem, 'height', snapshot.height - offset.y);
+        }
+        if (mouseHitInfo.right)
+          observableModel.changeValue(dragItem, 'width', snapshot.width + offset.x);
+        if (mouseHitInfo.bottom)
+          observableModel.changeValue(dragItem, 'height', snapshot.height + offset.y);
+        break;
+      case 'connectingP1':
+        hitInfo = this.hotTrackInfo = this.hitTest(p, firstStateHit);
+        srcStateId = hitInfo && hitInfo.border ? dataModel.getId(hitInfo.item) : 0;
+        observableModel.changeValue(dragItem, 'srcId', srcStateId);
+        srcState = referencingModel.getReference(dragItem, 'srcId');
+        if (srcState) {
+          t1 = renderer.vertexPointToParam(srcState, p);
+          observableModel.changeValue(dragItem, 't1', t1);
+        }
+        break;
+      case 'connectingP2':
+        if (drag.isNewItem) {
+          srcState = referencingModel.getReference(dragItem, 'srcId');
+          t1 = renderer.vertexPointToParam(srcState, p);
+          observableModel.changeValue(dragItem, 't1', t1);
+        }
+        hitInfo = this.hotTrackInfo = this.hitTest(p, firstStateHit);
+        dstStateId = hitInfo && hitInfo.border ? dataModel.getId(hitInfo.item) : 0;
+        observableModel.changeValue(dragItem, 'dstId', dstStateId);
+        dstState = referencingModel.getReference(dragItem, 'dstId');
+        if (dstState) {
+          t2 = renderer.vertexPointToParam(dstState, p);
+          observableModel.changeValue(dragItem, 't2', t2);
+        }
+        break;
+    }
+  }
+
   Editor.prototype.endDrag = function() {
-    var model = this.model, statechart = this.statechart,
+    var drag = this.drag,
+        p = this.mouseController.getMouse(),
+        model = this.model,
+        statechart = this.statechart,
         selectionModel = model.selectionModel;
     // Remove any item that have been temporarily added before starting the
     // transaction.
-    var newItem = this.addingNewItem ? model.editingModel.removeTemporaryItem() : null;
+    var newItem = drag.isNewItem ? model.editingModel.removeTemporaryItem() : null;
 
-    model.transactionModel.beginTransaction("Drag");
+    model.transactionModel.beginTransaction(drag.name);
 
-    if (this.dragType == 'moving') {
+    if (drag.type == 'moveSelection') {
       // Find state beneath mouse.
-      var hitInfo = this.hitTest(this.mouseController.getMouse(), function(item, hitInfo) {
-        return firstStateHit(item, hitInfo) || selectionModel.contains(item);
-      });
+      var hitInfo = this.hitTestUnselectedStates(p);
       var parent = statechart;
       if (hitInfo)
         parent = hitInfo.item;
       // Add new items.
-      if (this.addingNewItem) {
+      if (drag.isNewItem) {
         model.editingModel.addItem(newItem, null, parent, this.renderer);
       } else {
         // Reparent existing items.
@@ -683,93 +731,30 @@ var graphModel = (function() {
           }
         });
       }
-    } else if (this.dragType == 'newTransition') {
-      var parent = this.statechart;
-      model.observableModel.onElementInserted(parent, parent.items, parent.items.length - 1);
+    } else if (isTransition(drag.item) && drag.isNewItem) {
+      model.observableModel.insertElement(
+          statechart, statechart.items, statechart.items.length - 1, newItem);
     }
 
     this.validateLayout();
     this.valueTracker.end();
     this.valueTracker = null;
 
-    if (isTransition(this.dragItem)) {
-      var transition = this.dragItem;
-      if (!transition.state1Id || !transition.state2Id) {
+    if (isTransition(drag.item)) {
+      var transition = drag.item;
+      if (!transition.srcId || !transition.dstId) {
         model.editingModel.deleteItem(transition);
         model.selectionModel.remove(transition);
-      } else if (this.addingNewItem) {
+      } else if (drag.isNewItem) {
         model.editingModel.addItem(transition, null, statechart, this.renderer);
       }
     }
 
     model.transactionModel.endTransaction();
 
-    this.addingNewItem = false;
-    this.dragItem = null;
+    this.drag = null;
     this.mouseHitInfo = null;
     this.hotTrackInfo = null;
-  }
-
-  Editor.prototype.drag = function() {
-    var self = this,
-        model = this.model,
-        dataModel = model.dataModel,
-        observableModel = model.observableModel,
-        referencingModel = model.referencingModel,
-        selectionModel = model.selectionModel,
-        renderer = this.renderer,
-        mouseHitInfo = this.mouseHitInfo, dragItem = this.dragItem,
-        mouseController = this.mouseController,
-        p = mouseController.getMouse(),
-        dP = mouseController.getDragOffset(),
-        snapshot = this.valueTracker.getSnapshot(dragItem),
-        hitInfo, state;
-    switch (this.dragType) {
-      case 'moving':
-        hitInfo = this.hotTrackInfo = this.hitTest(p, function(item, hitInfo) {
-          return firstStateHit(item, hitInfo) || selectionModel.contains(item);
-        });
-        selectionModel.forEach(function(item) {
-          var snapshot = self.valueTracker.getSnapshot(item);
-          if (snapshot) {
-            observableModel.changeValue(item, 'x', snapshot.x + dP.x);
-            observableModel.changeValue(item, 'y', snapshot.y + dP.y);
-          }
-        });
-        break;
-      case 'sizing':
-        if (mouseHitInfo.left) {
-          observableModel.changeValue(dragItem, 'x', snapshot.x + dP.x);
-          observableModel.changeValue(dragItem, 'width', snapshot.width - dP.x);
-        }
-        if (mouseHitInfo.top) {
-          observableModel.changeValue(dragItem, 'y', snapshot.y + dP.y);
-          observableModel.changeValue(dragItem, 'height', snapshot.height - dP.y);
-        }
-        if (mouseHitInfo.right)
-          observableModel.changeValue(dragItem, 'width', snapshot.width + dP.x);
-        if (mouseHitInfo.bottom)
-          observableModel.changeValue(dragItem, 'height', snapshot.height + dP.y);
-        break;
-      case 'connectingP1':
-        hitInfo = this.hotTrackInfo = this.hitTest(p, firstStateHit);
-        observableModel.changeValue(dragItem, 'state1Id', hitInfo && hitInfo.border ? dataModel.getId(hitInfo.item) : 0);
-        state = referencingModel.getReference(dragItem, 'state1Id');
-        if (state)
-          observableModel.changeValue(dragItem, 't1', renderer.vertexPointToParam(state, p));
-        break;
-      case 'connectingP2':
-        if (this.addingNewItem) {
-          var srcState = referencingModel.getReference(dragItem, 'state1Id');
-          observableModel.changeValue(dragItem, 't1', renderer.vertexPointToParam(srcState, p));
-        }
-        hitInfo = this.hotTrackInfo = this.hitTest(p, firstStateHit);
-        observableModel.changeValue(dragItem, 'state2Id', hitInfo && hitInfo.border ? dataModel.getId(hitInfo.item) : 0);
-        state = referencingModel.getReference(dragItem, 'state2Id');
-        if (state)
-          observableModel.changeValue(dragItem, 't2', renderer.vertexPointToParam(state, p));
-        break;
-    }
   }
 
   Editor.prototype.onMouseDown = function(e) {
@@ -792,18 +777,25 @@ var graphModel = (function() {
   }
 
   Editor.prototype.onMouseMove = function(e) {
-    var mouseController = this.mouseController, mouseHitInfo = this.mouseHitInfo;
+    var mouseController = this.mouseController,
+        mouseHitInfo = this.mouseHitInfo,
+        didClickItem = mouseHitInfo && mouseHitInfo.item;
     mouseController.onMouseMove(e);
-    var didClickItem = mouseHitInfo && mouseHitInfo.item;
+    var mouse = mouseController.getMouse(),
+        dragOffset = mouseController.getDragOffset();
     if (didClickItem && mouseController.isDragging) {
-      this.drag();
+      this.doDrag(mouse, dragOffset);
       this.updateFn(this);
     }
   }
 
   Editor.prototype.onMouseUp = function(e) {
-    var mouseController = this.mouseController, mouseHitInfo = this.mouseHitInfo;
+    var mouseController = this.mouseController,
+        mouse = mouseController.getMouse(),
+        dragOffset = mouseController.getDragOffset(),
+        mouseHitInfo = this.mouseHitInfo;
     if (mouseHitInfo && mouseHitInfo.item && mouseController.isDragging) {
+      this.doDrag(mouse, dragOffset);
       this.endDrag();
       this.updateFn(this);
       this.mouseHitInfo = null;
@@ -952,9 +944,9 @@ var statechart_data = {
     {
       "type": "transition",
       "id": 1008,
-      "state1Id": 1003,
+      "srcId": 1003,
       "t1": 1.4019607843137254,
-      "state2Id": 1007,
+      "dstId": 1007,
       "t2": 2.3
     }
   ]
