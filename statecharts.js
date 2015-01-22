@@ -565,9 +565,19 @@ var statecharts = (function() {
   }
 
   Editor.prototype.hitTestUnselectedStates = function(p) {
-    var selectionModel = this.model.selectionModel;
+    var model = this.model,
+        hierarchicalModel = model.hierarchicalModel,
+        selectionModel = model.selectionModel;
     return this.hitTest(p, function(item, hitInfo) {
-      return firstStateHit(item, hitInfo) || selectionModel.contains(item);
+      if (firstStateHit(item, hitInfo))
+        return true;
+      var state = item;
+      while (state) {
+        if (selectionModel.contains(state))
+          return true;
+        state = hierarchicalModel.getParent(state);
+      }
+      return false;
     });
   }
 
@@ -612,10 +622,10 @@ var statecharts = (function() {
           if (mouseHitInfo.border)
             drag = { type: 'resizeState', name: 'Resize state' };
           else
-            drag = { type: 'moveSelection', name: 'Move states' };
+            drag = { type: 'moveSelection', name: 'Move selection' };
           break;
         case 'start':
-          drag = { type: 'moveSelection', name: 'Move states' };
+          drag = { type: 'moveSelection', name: 'Move selection' };
           break;
         case 'transition':
           if (mouseHitInfo.p1)
@@ -720,14 +730,14 @@ var statecharts = (function() {
         parent = hitInfo.item;
       // Add new items.
       if (drag.isNewItem) {
-        model.editingModel.addItem(newItem, null, parent, this.renderer);
+        model.editingModel.addItem(newItem, null, parent);
       } else {
         // Reparent existing items.
         model.selectionModel.forEach(function(item) {
           if (isState(item)) {
             var oldParent = model.hierarchicalModel.getParent(item);
             if (oldParent != parent)
-              model.editingModel.addItem(item, oldParent, parent, self.renderer);
+              model.editingModel.addItem(item, oldParent, parent);
           }
         });
       }
@@ -746,7 +756,7 @@ var statecharts = (function() {
         model.editingModel.deleteItem(transition);
         model.selectionModel.remove(transition);
       } else if (drag.isNewItem) {
-        model.editingModel.addItem(transition, null, statechart, this.renderer);
+        model.editingModel.addItem(transition, null, statechart);
       }
     }
 

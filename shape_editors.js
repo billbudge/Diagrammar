@@ -92,54 +92,13 @@ var shapeEditors = (function() {
         this.prototype.doCopy.call(this);
       },
 
-    // addPaletteItem: function(item) {
-    //   clearSelection();
-    //   // Clone palette item and add the clone to the top level group. Don't
-    //   // notify observers yet.
-    //   item = model.instancingModel.clone(item);
-    //   board.items.push(item);
-    //   hierarchicalModel.init(item, board);
-    //   select(item);
-    //   addingNewItem = true;
-    // }
-
-    // function addItemToParent(item, parent) {
-    //   var oldParent = hierarchicalModel.getParent(item);
-
-    //   if (parent === board) {
-    //     var shape = {
-    //       type: 'group',
-    //       op: 'hull',
-    //       x: item.x,
-    //       y: -item.y,
-    //       items: [],
-    //     };
-    //     dataModel.assignId(shape);
-    //     shape.items.push(item);
-    //     item.x = 0;
-    //     item.y = 0;
-    //     item = shape;
-    //   }
-    //   geometry.matMulVec(item, oldParent._atransform);
-    //   geometry.matMulVec(item, parent._aitransform);
-
-    //   // if (item.type == 'bezier') {
-    //   //   item._parent = parent;
-    //   //   autoRotateBezier(item);
-    //   // }
-
-    //   oldParent.items.pop();  // remove from temporary position.
-    //   parent.items.push(item);
-    //   observableModel.onElementInserted(parent, parent.items, parent.items.length - 1);
-    // },
-
       addItems: function(items) {
-        var model = this.model, table = this.table,
-            tableItems = table.items;
+        var model = this.model, board = this.board,
+            boardItems = board.items;
         items.forEach(function(item) {
-          table.items.push(item);
+          boardItems.push(item);
           model.selectionModel.add(item);
-          model.observableModel.onElementInserted(table, tableItems, tableItems.length - 1);
+          model.observableModel.onElementInserted(board, boardItems, boardItems.length - 1);
         });
       },
 
@@ -155,57 +114,40 @@ var shapeEditors = (function() {
 
       addTemporaryItem: function(item) {
         var model = this.model,
-            board = this.board,
+            board = model.root,
             items = board.items;
         model.observableModel.insertElement(board, items, items.length, item);
       },
 
       removeTemporaryItem: function() {
         var model = this.model,
-            board = this.board,
+            board = model.root,
             items = board.items;
         return model.observableModel.removeElement(board, items, items.length - 1);
       },
 
+
       addItem: function(item, oldParent, parent) {
-        var model = this.model, renderer = this.renderer;
-        // if (oldParent !== parent && isState(item)) {
-        //   var itemWP = renderer.getPosition(item);
-        //   var parentWP = renderer.getPosition(parent);
-        //   item.x = itemWP.x - parentWP.x;
-        //   item.y = itemWP.y - parentWP.y;
-        // }
+        var model = this.model;
+        if (oldParent === parent)
+          return;
+        var transformableModel = model.transformableModel;
+        if (oldParent) {          // if null, it's a new item.
+          geometry.matMulVec(item, transformableModel.getAbsolute(oldParent));
+          this.deleteItem(item);  // notifies observer
+        }
 
-        // var itemToAdd = item;
-        // if (parent.type != 'statechart') {
-        //   // States can't directly contain a state - add a new statechart if needed.
-        //   if (!parent.items)
-        //     parent.items = [];
-        //   if (!parent.items.length) {
-        //     var newStatechart = {
-        //       type: 'statechart',
-        //       x: 0,
-        //       y: 0,
-        //       width: 0,
-        //       height: 0,
-        //       name: '',
-        //       items: [ item ],
-        //     };
-        //     model.dataModel.assignId(newStatechart);
-        //     itemToAdd = newStatechart;
-        //   }
-        // }
+        geometry.matMulVec(item, transformableModel.getInverseAbsolute(parent));
 
-        // if (oldParent !== parent) {
-        //   if (oldParent)            // if null, it's a new item.
-        //     this.deleteItem(item);  // notifies observer
-        //   parent.items.push(itemToAdd);
-        //   model.observableModel.onElementInserted(parent, parent.items, parent.items.length - 1);
+        // if (item.type == 'bezier') {
+        //   autoRotateBezier(item);
         // }
+console.log(item, parent);
+        model.observableModel.insertElement(parent, parent.items, parent.items.length, item);
       },
     }
 
-    function extend(model, renderer) {
+    function extend(model) {
       dataModels.dataModel.extend(model);
       dataModels.observableModel.extend(model);
       dataModels.selectionModel.extend(model);
@@ -223,8 +165,7 @@ var shapeEditors = (function() {
         instance[prop] = functions[prop];
 
       instance.model = model;
-      instance.statechart = model.root;
-      instance.renderer = renderer;
+      instance.board = model.root;
 
       model.editingModel = instance;
       return instance;
@@ -273,10 +214,10 @@ var shapeEditors = (function() {
         //   break;
         ctx.beginPath();
         var r = item.radius;
-        ctx.arc(r, r, r, 0, 2 * Math.PI, false);
+        ctx.arc(0, 0, r, 0, 2 * Math.PI, false);
         ctx.lineWidth = 0.5;
         ctx.stroke();
-        ctx.strokeRect(r - knobbySize, r - knobbySize, 2 * knobbySize, 2 * knobbySize);
+        ctx.strokeRect(-knobbySize, -knobbySize, 2 * knobbySize, 2 * knobbySize);
         break;
       case 'bezier':
         // if (!isSelected(item._parent) && !item._parent._contentSelected && !isPaletteItem(item))
@@ -334,10 +275,10 @@ var shapeEditors = (function() {
       case 'disk':
         ctx.beginPath();
         var r = item.radius;
-        ctx.arc(r, r, r, 0, 2 * Math.PI, false);
+        ctx.arc(0, 0, r, 0, 2 * Math.PI, false);
         ctx.lineWidth = 0.5;
         ctx.stroke();
-        ctx.strokeRect(r - knobbySize, r - knobbySize, 2 * knobbySize, 2 * knobbySize);
+        ctx.strokeRect(-knobbySize, -knobbySize, 2 * knobbySize, 2 * knobbySize);
         break;
       case 'bezier':
         ctx.lineWidth = 1;
@@ -422,10 +363,9 @@ var shapeEditors = (function() {
     switch (item.type) {
       case 'disk':
         var r = item.radius;
-        hitInfo = diagrams.hitTestDisk(r, r, r, localP, hitTolerance);
-        console.log(p, localP, hitInfo);
+        hitInfo = diagrams.hitTestDisk(0, 0, r, localP, hitTolerance);
         if (hitInfo) {
-          if (diagrams.hitPoint(r, r, localP, knobbySize))
+          if (diagrams.hitPoint(0, 0, localP, knobbySize))
             hitInfo.center = true;
           return hitInfo;
         }
@@ -593,192 +533,114 @@ var shapeEditors = (function() {
     return hitInfo;
   }
 
+  Editor.prototype.hitTestUnselectedItems = function(p) {
+    var model = this.model,
+        hierarchicalModel = model.hierarchicalModel,
+        selectionModel = model.selectionModel;
+    return this.hitTest(p, function(item, hitInfo) {
+      if (firstHit(item, hitInfo))
+        return true;
+      var ancestor = item;
+      while (ancestor) {
+        if (selectionModel.contains(ancestor))
+          return true;
+        ancestor = hierarchicalModel.getParent(ancestor);
+      }
+      return false;
+    });
+  }
+
   Editor.prototype.beginDrag = function() {
-    var mouseHitInfo = this.mouseHitInfo, model = this.model;
+    var mouseHitInfo = this.mouseHitInfo,
+        dragItem = mouseHitInfo.item,
+        model = this.model,
+        drag;
     if (!mouseHitInfo)
       return;
-    this.dragItem = mouseHitInfo.item;
-    if (this.isPaletteItem(this.dragItem)) {
+    if (this.isPaletteItem(dragItem)) {
       // Clone palette item and add the clone to the top level statechart. Don't
       // notify observers yet.
-      this.dragItem = model.instancingModel.clone(mouseHitInfo.item);
-      model.editingModel.addTemporaryItem(this.dragItem);
-      model.selectionModel.set([ this.dragItem ]);
-      this.addingNewItem = true;
-    } else if (true) { //!isTransition(this.dragItem)) {
-      model.editingModel.reduceSelection();
+      dragItem = model.instancingModel.clone(dragItem);
+      model.editingModel.addTemporaryItem(dragItem);
+      model.selectionModel.set([ dragItem ]);
+      drag = {
+        type: 'moveSelection',
+        isNewItem: true,
+        name: 'Add new ' + dragItem.type,
+      }
+    } else {
+      switch (dragItem.type) {
+        case 'disk':
+          if (mouseHitInfo.border)
+            drag = { type: 'resizeDisk', name: 'Resize disk' };
+          else
+            drag = { type: 'moveSelection', name: 'Move selection' };
+          break;
+        case 'bezier':
+        case 'group':
+          drag = { type: 'moveSelection', name: 'Move selection' };
+          break;
+      }
     }
-    this.dragType = 'moving';
-    // switch (this.dragItem.type) {
-    //   case 'state':
-    //     if (mouseHitInfo.transition)
-    //       this.dragType = 'newTransition';
-    //     else if (mouseHitInfo.border)
-    //       this.dragType = 'sizing';
-    //     else
-    //       this.dragType = 'moving';
-    //     break;
-    //   case 'start':
-    //     if (mouseHitInfo.transition)
-    //       this.dragType = 'newTransition';
-    //     else
-    //       this.dragType = 'moving'
-    //     break;
-    //   case 'transition':
-    //     if (mouseHitInfo.p1)
-    //       this.dragType = 'connectingP1';
-    //     else
-    //       this.dragType = 'connectingP2';
-    //     break;
-    // }
-    // if (this.dragType == 'newTransition') {
-    //   this.dragItem = {
-    //     type: 'transition',
-    //     srcId: model.dataModel.getId(mouseHitInfo.item),  // state1 was hit.
-    //     t1: 0,
-    //     dstId: 0,
-    //     t2: 0,
-    //   };
-    //   model.dataModel.assignId(this.dragItem),
-    //   model.editingModel.addTemporaryItem(this.dragItem);
-    //   model.selectionModel.set([ this.dragItem ]);
-    //   mouseHitInfo.item = this.dragItem;
-    //   this.dragType = 'connectingP2';
-    //   this.addingNewItem = true;
-    // }
+    if (drag) {
+      if (drag.type == 'moveSelection')
+        model.editingModel.reduceSelection();
+      drag.item = dragItem;
+      this.drag = drag;
+    }
 
     this.valueTracker = new dataModels.ValueChangeTracker(model);
   }
 
-  Editor.prototype.endDrag = function() {
-    var model = this.model, board = this.board,
-        selectionModel = model.selectionModel;
-    // Remove any item that have been temporarily added before starting the
-    // transaction.
-    var newItem = this.addingNewItem ? model.editingModel.removeTemporaryItem() : null;
-
-    model.transactionModel.beginTransaction("Drag");
-
-    if (this.dragType == 'moving') {
-      // // Find state beneath mouse.
-      // var hitInfo = this.hitTest(this.mouseController.getMouse(), function(item, hitInfo) {
-      //   return firstStateHit(item, hitInfo) || selectionModel.contains(item);
-      // });
-      // var parent = statechart;
-      // if (hitInfo)
-      //   parent = hitInfo.item;
-      // // Add new items.
-      // if (this.addingNewItem) {
-      //   model.editingModel.addItem(newItem, null, parent, this.renderer);
-      // } else {
-      //   // Reparent existing items.
-      //   model.selectionModel.forEach(function(item) {
-      //     if (isState(item)) {
-      //       var oldParent = model.hierarchicalModel.getParent(item);
-      //       if (oldParent != parent)
-      //         model.editingModel.addItem(item, oldParent, parent, self.renderer);
-      //     }
-      //   });
-      // }
-    }
-
-    // this.validateLayout();
-    this.valueTracker.end();
-    this.valueTracker = null;
-
-    // if (isTransition(this.dragItem)) {
-    //   var transition = this.dragItem;
-    //   if (!transition.srcId || !transition.dstId) {
-    //     model.editingModel.deleteItem(transition);
-    //     model.selectionModel.remove(transition);
-    //   } else if (this.addingNewItem) {
-    //     model.editingModel.addItem(transition, null, statechart, this.renderer);
-    //   }
-    // }
-
-    model.transactionModel.endTransaction();
-
-    this.addingNewItem = false;
-    this.dragItem = null;
-    this.mouseHitInfo = null;
-    this.hotTrackInfo = null;
-  }
-
-  // function endDrag() {
-  //   transactionModel.beginTransaction("Drag");
-
-  //   // Find item beneath mouse.
-  //   var hitInfo = hitTest(mouseController.getMouse(), firstUnselectedStateHit);
-  //   var parent = board;
-  //   if (hitInfo.item) {
-  //     // Find deepest group containing hit item.
-  //     parent = hitInfo.item;
-  //     while (parent.type != 'group')
-  //       parent = hierarchicalModel.getParent(parent);
-  //   }
-
-  //   if (addingNewItem) {
-  //     selectionModel.forEach(function(item) {
-  //       addItemToParent(item, parent);
-  //     });
-  //   }
-
-  //   valueTracker.end();
-  //   valueTracker = null;
-  //   transactionModel.endTransaction();
-
-  //   // updateGeometry();
-  //   addingNewItem = false;
-  //   mouseHitInfo = null;
-
-  // }
-
-  // Calculate auto-rotation using parent hull.
-  Editor.prototype.autoRotateBezier = function(item) {
-    var observableModel = model.observableModel;
-    var parent = item._parent;
-    var p = { x: item.x, y: item.y };
-    if (parent.type == 'group' && parent.op == 'hull') {
-      var hull = parent._paths[0];
-      var i0 = findClosestPathSegment(hull, p);
-      var i1 = (i0 < hull.length - 1) ? i0 + 1 : 0;
-      var t = getTurn(hull[i0].x - hull[i1].x, hull[i0].y - hull[i1].y);
-      observableModel.changeValue(item, '_rotation', t * 2 * Math.PI);
-    }
-  }
-
-  Editor.prototype.drag = function() {
-    var model = this.model, observableModel = model.observableModel,
-        selectionModel = model.selectionModel,
-        hierarchicalModel = model.hierarchicalModel,
+  Editor.prototype.calcDrags = function(item, model, mouseController) {
+    var parent = model.hierarchicalModel.getParent(item),
         transformableModel = model.transformableModel,
-        transform = transformableModel.transform(item),
-        inverseTransform = transformableModel.inverseTransform(item);
-        mouseController = this.mouseController;
-    selectionModel.forEach(function(item) {
-      var r, distSquared,
-          parent = hierarchicalModel.getParent(item),
-          inverseTransform = transformableModel.inverseTransform(item),
-          inverseParentTransform = transformableModel.inverseTransform(parent),
-          local_click = geometry.matMulVecNew(mouseController.getMouseDown(), inverseTransform),
-          parent_click = geometry.matMulVecNew(mouseController.getMouseDown(), inverseParentTransform);
-      var local_mouse = geometry.matMulVecNew(mouseController.getMouse(), inverseTransform);
-      var parent_mouse = geometry.matMulVecNew(mouseController.getMouse(), inverseParentTransform);
-      var local_drag = { x: local_mouse.x - local_click.x, y: local_mouse.y - local_click.y };
-      var parent_drag = { x: parent_mouse.x - parent_click.x, y: parent_mouse.y - parent_click.y };
-      var snapshot = valueTracker.getSnapshot(item);
+        inverseTransform = transformableModel.getInverseAbsolute(item),
+        inverseParentTransform = transformableModel.getInverseAbsolute(parent),
+        localClick = geometry.matMulVecNew(mouseController.getMouseDown(), inverseTransform),
+        localMouse = geometry.matMulVecNew(mouseController.getMouse(), inverseTransform),
+        parentClick = geometry.matMulVecNew(mouseController.getMouseDown(), inverseParentTransform),
+        parentMouse = geometry.matMulVecNew(mouseController.getMouse(), inverseParentTransform);
+    return {
+      localClick: localClick,
+      localMouse: localMouse,
+      localDrag: { x: localMouse.x - localClick.x, y: localMouse.y - localClick.y },
+      parentDrag: { x: parentMouse.x - parentClick.x, y: parentMouse.y - parentClick.y },
+    };
+  }
 
-      switch (item.type) {
-        case 'disk':
-          if (mouseHitInfo.part == 'position') {
-            observableModel.changeValue(item, 'x', snapshot.x + parent_drag.x);
-            observableModel.changeValue(item, 'y', snapshot.y + parent_drag.y);
-          } else if (mouseHitInfo.part == 'edge') {
-            var dx1 = local_click.x, dy1 = local_click.y;
-            var dx2 = local_mouse.x, dy2 = local_mouse.y;
-            observableModel.changeValue(item, 'radius', snapshot.radius * Math.sqrt((dx2 * dx2 + dy2 * dy2) / (dx1 * dx1 + dy1 * dy1)));
-          }
-          break;
+  Editor.prototype.doDrag = function(p, offset) {
+    var self = this,
+        drag = this.drag,
+        dragItem = drag.item,
+        model = this.model,
+        renderer = this.renderer,
+        valueTracker = this.valueTracker,
+        mouseController = this.mouseController,
+        mouseHitInfo = this.mouseHitInfo,
+        snapshot = valueTracker.getSnapshot(drag.item),
+        drags = this.calcDrags(drag.item, model, mouseController),
+        hitInfo;
+    switch (drag.type) {
+      case 'moveSelection':
+        var hitInfo = this.hotTrackInfo = this.hitTestUnselectedItems(p);
+        model.selectionModel.forEach(function(item) {
+          var snapshot = valueTracker.getSnapshot(item),
+              drags = self.calcDrags(item, model, mouseController),
+              parentDrag = drags.parentDrag;
+          model.observableModel.changeValue(item, 'x', snapshot.x + parentDrag.x);
+          model.observableModel.changeValue(item, 'y', snapshot.y + parentDrag.y);
+        });
+        break;
+      case 'resizeDisk':
+        var localClick = drags.localClick,
+            localMouse = drags.localMouse,
+            dx1 = localClick.x, dy1 = localClick.y,
+            dx2 = localMouse.x, dy2 = localMouse.y;
+        model.observableModel.changeValue(dragItem, 'radius',
+            snapshot.radius * Math.sqrt((dx2 * dx2 + dy2 * dy2) / (dx1 * dx1 + dy1 * dy1)));
+        break;
+/*
         case 'bezier':
           var newLength;
           if (mouseHitInfo.part == 'position') {
@@ -829,8 +691,80 @@ var shapeEditors = (function() {
             // knot.d = (mouse_x - hullPt.x) * hullPt.nx + (mouse_y - hullPt.y) * hullPt.ny;
           }
           break;
+*/
+    }
+  }
+
+  Editor.prototype.endDrag = function() {
+    var drag = this.drag,
+        p = this.mouseController.getMouse(),
+        model = this.model,
+        board = this.board,
+        selectionModel = model.selectionModel;
+    // Remove any items that have been temporarily added before starting the
+    // transaction.
+    var newItem = drag.isNewItem ? model.editingModel.removeTemporaryItem() : null;
+
+    model.transactionModel.beginTransaction(drag.name);
+
+    if (drag.type == 'moveSelection') {
+      // Find group beneath mouse.
+      var hitInfo = this.hitTestUnselectedItems(p);
+      var parent = board;
+      if (hitInfo) {
+        parent = hitInfo.item;
+        while (parent.type != 'group')
+          parent = model.hierarchicalModel.getParent(parent);
       }
-    });
+      // Add new items.
+      if (newItem) {
+        // Items that can't be added to the board without being wrapped in a group.
+        if (parent === board) {
+          var group = {
+            type: 'group',
+            op: 'hull',
+            x: newItem.x,
+            y: newItem.y,
+            items: [ newItem ],
+          };
+          model.dataModel.assignId(group);
+          newItem.x = 0;
+          newItem.y = 0;
+          newItem = group;
+        }
+        model.editingModel.addItem(newItem, null, parent);
+      } else {
+        // Reparent items if necessary.
+        model.selectionModel.forEach(function(item) {
+          var oldParent = model.hierarchicalModel.getParent(item);
+          if (item.type != 'disk' && oldParent !== parent)
+            model.editingModel.addItem(item, oldParent, parent);
+        });
+      }
+    }
+
+    this.valueTracker.end();
+    this.valueTracker = null;
+
+    model.transactionModel.endTransaction();
+
+    this.drag = null;
+    this.mouseHitInfo = null;
+    this.hotTrackInfo = null;
+  }
+
+  // Calculate auto-rotation using parent hull.
+  Editor.prototype.autoRotateBezier = function(item) {
+    var observableModel = model.observableModel;
+    var parent = item._parent;
+    var p = { x: item.x, y: item.y };
+    if (parent.type == 'group' && parent.op == 'hull') {
+      var hull = parent._paths[0];
+      var i0 = findClosestPathSegment(hull, p);
+      var i1 = (i0 < hull.length - 1) ? i0 + 1 : 0;
+      var t = getTurn(hull[i0].x - hull[i1].x, hull[i0].y - hull[i1].y);
+      observableModel.changeValue(item, '_rotation', t * 2 * Math.PI);
+    }
   }
 
   function indices_adjacent(i1, i2, length, wraps) {
@@ -1032,7 +966,6 @@ var shapeEditors = (function() {
         mouseHitInfo = this.mouseHitInfo = this.hitTest(mouseController.getMouse());
     mouseController.onMouseDown(e);
     if (mouseHitInfo) {
-        console.log(mouseHitInfo);
       if (!model.selectionModel.contains(mouseHitInfo.item) && !this.shiftKeyDown)
         model.selectionModel.clear();
       if (!this.isPaletteItem(mouseHitInfo.item))
@@ -1047,18 +980,25 @@ var shapeEditors = (function() {
   }
 
   Editor.prototype.onMouseMove = function(e) {
-    var mouseController = this.mouseController, mouseHitInfo = this.mouseHitInfo;
+    var mouseController = this.mouseController,
+        mouseHitInfo = this.mouseHitInfo,
+        didClickItem = mouseHitInfo && mouseHitInfo.item;
     mouseController.onMouseMove(e);
-    var didClickItem = mouseHitInfo && mouseHitInfo.item;
+    var mouse = mouseController.getMouse(),
+        dragOffset = mouseController.getDragOffset();
     if (didClickItem && mouseController.isDragging) {
-      this.drag();
+      this.doDrag(mouse, dragOffset);
       this.updateFn(this);
     }
   }
 
   Editor.prototype.onMouseUp = function(e) {
-    var mouseController = this.mouseController, mouseHitInfo = this.mouseHitInfo;
+    var mouseController = this.mouseController,
+        mouse = mouseController.getMouse(),
+        dragOffset = mouseController.getDragOffset(),
+        mouseHitInfo = this.mouseHitInfo;
     if (mouseHitInfo && mouseHitInfo.item && mouseController.isDragging) {
+      this.doDrag(mouse, dragOffset);
       this.endDrag();
       this.updateFn(this);
       this.mouseHitInfo = null;
@@ -1113,7 +1053,7 @@ var shapeEditors = (function() {
         // renderEditor();
       } else if (e.keyCode == 83) { // 's'
         var text = JSON.stringify(
-          statechart,
+          this.board,
           function(key, value) {
             if (key.toString().charAt(0) == '_')
               return;
