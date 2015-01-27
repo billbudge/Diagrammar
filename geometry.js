@@ -59,20 +59,8 @@ var geometry = (function() {
     return Math.sqrt(dx * dx + dy * dy);
   }
 
-  function hitTestLine(x1, y1, x2, y2, p, tolerance) {
-    // TODO rewrite in terms of PointToSegmentDist.
-    var p1_p2_x = x2 - x1, p1_p2_y = y2 - y1;
-    var p1_p_x = p.x - x1, p1_p_y = p.y - y1;
-    var p1_p2_squared = p1_p2_x * p1_p2_x + p1_p2_y * p1_p2_y;
-    var p1_p_dot_p1_p2 = p1_p_x * p1_p2_x + p1_p_y * p1_p2_y;
-    var t = p1_p_dot_p1_p2 / p1_p2_squared;
-    if (t < 0 || t > 1)
-      return false;
-    var lx = x1 + p1_p2_x * t, ly = y1 + p1_p2_y * t;
-    var p_l_x = px - lx, p_l_y = py - ly;
-    if (p_l_x * p_l_x + p_l_y * p_l_y > tolerance * tolerance)
-      return false;
-    return true;
+  function hitTestLine(p1, p2, p, tolerance) {
+    return pointToSegmentDist(p1, p2, p) < tolerance;
   }
 
   function lineIntersection(p0, p1, p2, p3)
@@ -156,6 +144,178 @@ var geometry = (function() {
     return matMulVec({ x: v.x, y: v.y }, m);
   }
 
+  // Cosine of angle between x-axis (1, 0) and (dx, dy).
+  function getCos(dx, dy) {
+    var cos;
+    if (dx == 0 && dy == 0)
+      cos = 1;  // Point is p0 or identical to p0.
+    else
+      cos = dx / Math.sqrt(dx * dx + dy * dy);
+    return cos;
+  }
+
+  // Compares cosines, works for 0 - pi radians.
+  function compareCosines(a, b) {
+    if (a.cos > b.cos)
+      return -1;
+    else if (a.cos < b.cos)
+      return 1;
+    return 0;
+  }
+
+  // Returns index of array containing value if found, otherwise, index of
+  // position where value would be if added.
+  function binarySearch(items, value, cmpFn) {
+    var left = 0, right = items.length;
+    while (left < right - 1) {
+      var mid = (right - left) / 2 + left | 0;
+      if (cmpFn(value, items[mid]) < 0) {
+        right = mid;
+      } else {
+        left = mid;
+      }
+    }
+    return left;
+  }
+
+  // Calculate turn direction of p1-p2 to p2-p3.
+  // -1 == left, 1 = right, 0 = collinear.
+  function turnDirection(p1, p2, p3) {
+    var crossZ = (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
+    return crossZ;
+  }
+
+  // Gets the convex hull using Graham scan.
+  function getConvexHull(points) {
+    var p0 = points[0],
+        maxY = p0.y,
+        length = points.length,
+        i, pi;
+    for (i = 0; i < length; i++) {
+      pi = points[i];
+      if (pi.y > maxY) {
+        maxY = pi.y;
+        p0 = pi;
+      }
+    }
+    for (i = 0; i < length; i++) {
+      pi = points[i];
+      // Cos of angle between x-axis (1, 0) and pi - p0.
+      pi.cos = getCos(pi.x - p0.x, pi.y - p0.y);
+    }
+    points.sort(compareCosines);
+    var startIndex = binarySearch(points, p0, compareCosines),
+        hull = [],
+        i = 2;
+    hull.push(points[0]);
+    hull.push(points[1]);
+    while (i < length) {
+      var p3 = points[i];
+      while (hull.length > 1) {
+        var p1 = hull[hull.length - 2];
+        var p2 = hull[hull.length - 1];
+        if (turnDirection(p1, p2, p3) < -0.000001)  // TODO define EPS
+          break;
+        // right turn or collinear
+        hull.pop();
+      }
+      hull.push(p3);
+      i++;
+    }
+    return hull;
+  }
+
+  // Project a point onto the hull; assume the hull has been annotated to speed
+  // the search. The projection uses angle to quickly find a low quality projection.
+  function projectToConvexHull(hull, p) {
+    var length = hull.length, lastP = hull[length - 1],
+        minP0, minP1, minDist = Number.MAX_VALUE;
+    for (var i = 0; i < length; i++) {
+      var pi = hull[i],
+          dist = geometry.pointToSegmentDist(lastP, pi, p);
+      if (dist < minDist) {
+        minP0 = lastP;
+        minP1 = pi;
+        minDist = dist;
+      }
+      lastP = pi;
+    }
+    var t = geometry.projectPointToSegment(minP0, minP1, p);
+    return { x: minP0.x + t * (minP1.x - minP0.x),
+             y: minP0.y + t * (minP1.y - minP0.y) };
+  }
+
+  function getExtents(points) {
+    var p0 = points[0],
+        xmin = p0.x, ymin = p0.y, xmax = p0.x, ymax = p0.y;
+    for (var i = 0; i < length; i++) {
+      var pi = points[i];
+      xmin = Math.min(xmin, pi.x);
+      ymin = Math.min(ymin, pi.y);
+      xmax = Math.max(xmax, pi.x);
+      ymax = Math.max(ymax, pi.y);
+    }
+    return { xmin: xmin, ymin: ymin, xmax: xmax, ymax: ymax };
+  }
+
+  function getCentroid(points) {
+    var cx = 0, cy = 0, length = points.length;
+    for (var i = 0; i < length; i++) {
+      var pi = points[i];
+      cx += pi.x; cy += pi.y;
+    }
+    return { x: cx / length, y: cy / length };
+  }
+
+  function getAngle(dx, dy) {
+    var cos = 1;
+    if (dx != 0 || dy != 0)
+      cos = dx / Math.sqrt(dx * dx + dy * dy);
+    var angle = Math.acos(cos) / (2 * Math.PI);
+    if (dy > 0)
+      angle = 1.0 - angle;
+    return angle;
+  }
+
+  function compareAngles(a, b) {
+    if (a.angle < b.angle)
+      return -1;
+    else if (a.angle > b.angle)
+      return 1;
+    return 0;
+  }
+
+  function annotateConvexHull(hull, centroid) {
+    if (!centroid)
+      centroid = getCentroid(hull);
+    var cx = centroid.x, cy = centroid.y,
+        length = hull.length;
+    for (var i = 0; i < length; i++) {
+      var pi = hull[i], dx = pi.x - cx, dy = pi.y - cy;
+      pi.angle = getAngle(dx, dy);
+    }
+    hull.sort(compareAngles);
+  }
+
+  function angleToConvexHull(hull, centroid, angle) {
+    var length = hull.length,
+        value = { angle: angle },
+        i0 = binarySearch(hull, value, compareAngles),
+        p0 = hull[i0], i1;
+    if (compareAngles(value, p0) < 0) {
+      i1 = 0;
+      p0 = hull[length - 1];
+    } else {
+      i1 = i0 + 1;
+      if (i1 == length)
+        i1 = 0;
+    }
+    var p1 = hull[i1],
+        t = (value.angle - p0.angle) / (p1.angle - p0.angle);
+    // console.log(i0, i1, length, p0.angle, p1.angle, value.angle, t)
+    return { x: p0.x + t * (p1.x - p0.x), y: p0.y + t * (p1.y - p0.y) };
+  }
+
   return {
     lineLength: lineLength,
     vecLength: vecLength,
@@ -171,11 +331,21 @@ var geometry = (function() {
     matMulNew: matMulNew,
     matMulVec: matMulVec,
     matMulVecNew: matMulVecNew,
+    getCos: getCos,
+    compareCosines: compareCosines,
+    binarySearch: binarySearch,
+    getConvexHull: getConvexHull,
+    getExtents: getExtents,
+    getCentroid: getCentroid,
+    getAngle: getAngle,
+    compareAngles: compareAngles,
+    annotateConvexHull: annotateConvexHull,
+    projectToConvexHull: projectToConvexHull,
+    angleToConvexHull: angleToConvexHull,
   };
 })();
 
-//TODO namespace the rest.
-  var smoothValue = 0.75;
+var smoothValue = 0.75;
 
 function GetCurveSegment(p0, p1, p2, p3) {
   var c1 = { x: (p0.x + p1.x) * 0.5, y: (p0.y + p1.y) * 0.5 };
@@ -228,7 +398,9 @@ function generateCurveSegments(points, curves, curveLengths) {
   for (var i = 3; i < length; i++) {
     var p3 = points[i];
     curves.push(GetCurveSegment(p0, p1, p2, p3));
-    curveLengths.push((geometry.pointToPointDist(p0, p1) + geometry.pointToPointDist(p1, p2) + geometry.pointToPointDist(p2, p3)) / 3);
+    curveLengths.push((geometry.pointToPointDist(p0, p1) +
+                       geometry.pointToPointDist(p1, p2) +
+                       geometry.pointToPointDist(p2, p3)) / 3);
     p0 = p1;
     p1 = p2;
     p2 = p3;
@@ -282,130 +454,58 @@ function projectToPath(path, segment, p) {
   return { x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t };
 }
 
-// Returns index of array value closest to search value.
-function binarySearch(items, value, cmpFn) {
-  var left = 0, right = items.length;
-  while (left < right - 1) {
-    var mid = (right - left) / 2 + left | 0;
-    if (cmpFn(value, items[mid]) < 0) {
-      right = mid;
-    } else {
-      left = mid;
-    }
-  }
-  return left;
-}
 
-function getCos(dx, dy) {
-  var cos;
-  if (dx == 0 && dy == 0)
-    cos = 1;  // Point is p0 or identical to p0.
-  else
-    cos = dx / Math.sqrt(dx * dx + dy * dy);
-  return cos;
-}
+// // Gets the convex hull using Graham scan, modified to sort by angle about
+// // the centroid.
+// function convexHull(points, item) {
+//   var p0 = points[0];
+//   var maxY = p0.y;
+//   for (var i = 0; i < points.length; i++) {
+//     var pi = points[i];
+//     if (pi.y > maxY) {
+//       maxY = pi.y;
+//       p0 = pi;
+//     }
+//   }
+//   var centroid = getCentroid(points);
+//   item._cx = centroid.x; item._cy = centroid.y;
 
-// Compares cosines, works for 0 - pi radians.
-function compareAngles(a, b) {
-  if (a.cos > b.cos)
-    return -1;
-  else if (a.cos < b.cos)
-    return 1;
-  return 0;
-}
+//   for (var i = 0; i < points.length; i++) {
+//     var pi = points[i];
+//     var dx = pi.x - centroid.x, dy = pi.y - centroid.y;
+//     // Cos of angle between x-axis (1, 0) and (dx, dy).
+//     pi.t = getTurn(dx, dy);
+//   }
+//   points.sort(compareTurn);
+//   var startIndex = binarySearch(points, p0, compareTurn);
 
-function getTurn(dx, dy) {
-  var cos = 1;
-  if (dx != 0 || dy != 0)
-    cos = dx / Math.sqrt(dx * dx + dy * dy);
-  var t = Math.acos(cos) / (2 * Math.PI);
-  if (dy > 0)
-    t = 1.0 - t;
-  return t;
-}
+//   var hull = [];
+//   var length = points.length;
+//   var i = startIndex;
+//   hull.push(points[i]);
+//   i = (i + 1) % length;
+//   hull.push(points[i]);
+//   i = (i + 1) % length;
+//   while (true) {
+//     var p3 = points[i];
+//     while (hull.length > 1) {
+//       var p1 = hull[hull.length - 2];
+//       var p2 = hull[hull.length - 1];
+//       if (turn_direction(p1, p2, p3) < -0.000001)  // TODO define EPS
+//         break;
+//       // right turn or collinear
+//       hull.pop();
+//     }
+//     if (i == startIndex)
+//       break;
+//     hull.push(p3);
+//     i = (i + 1) % length;
+//   }
 
-function compareTurn(a, b) {
-  if (a.t < b.t)
-    return -1;
-  else if (a.t > b.t)
-    return 1;
-  return 0;
-}
+//   hull.sort(compareTurn);
 
-// Calculate turn direction of p1-p2 to p2-p3.
-// -1 == left, 1 = right, 0 = collinear.
-function turn_direction(p1, p2, p3) {
-  var crossZ = (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
-  return crossZ;
-}
-
-function getCentroid(points) {
-  var p0 = points[0];
-  // var xmin = p0.x, ymin = p0.y, xmax = p0.x, ymax = p0.y;
-  var cx = 0, cy = 0;
-  for (var i = 0; i < points.length; i++) {
-    var pi = points[i];
-    // xmin = Math.min(xmin, pi.x);
-    // ymin = Math.min(ymin, pi.y);
-    // xmax = Math.max(xmax, pi.x);
-    // ymax = Math.max(ymax, pi.y);
-    cx += pi.x; cy += pi.y;
-  }
-  // return { x: (xmin + xmax) / 2, y: (ymin + ymax) / 2 };
-  return { x: cx / points.length, y: cy / points.length };
-}
-
-// Gets the convex hull using Graham scan, modified to sort by angle about
-// the centroid.
-function convexHull(points, item) {
-  var p0 = points[0];
-  var maxY = p0.y;
-  for (var i = 0; i < points.length; i++) {
-    var pi = points[i];
-    if (pi.y > maxY) {
-      maxY = pi.y;
-      p0 = pi;
-    }
-  }
-  var centroid = getCentroid(points);
-  item._cx = centroid.x; item._cy = centroid.y;
-
-  for (var i = 0; i < points.length; i++) {
-    var pi = points[i];
-    var dx = pi.x - centroid.x, dy = pi.y - centroid.y;
-    // Cos of angle between x-axis (1, 0) and (dx, dy).
-    pi.t = getTurn(dx, dy);
-  }
-  points.sort(compareTurn);
-  var startIndex = binarySearch(points, p0, compareTurn);
-
-  var hull = [];
-  var length = points.length;
-  var i = startIndex;
-  hull.push(points[i]);
-  i = (i + 1) % length;
-  hull.push(points[i]);
-  i = (i + 1) % length;
-  while (true) {
-    var p3 = points[i];
-    while (hull.length > 1) {
-      var p1 = hull[hull.length - 2];
-      var p2 = hull[hull.length - 1];
-      if (turn_direction(p1, p2, p3) < -0.000001)  // TODO define EPS
-        break;
-      // right turn or collinear
-      hull.pop();
-    }
-    if (i == startIndex)
-      break;
-    hull.push(p3);
-    i = (i + 1) % length;
-  }
-
-  hull.sort(compareTurn);
-
-  return hull;
-}
+//   return hull;
+// }
 
 function turnToSlope(t) {
   var rotation = Math.PI * 2 * t;
@@ -470,7 +570,10 @@ function deformHull(hull, item) {
     while (j < knots.length - 1) {
       deforming = true;
       // x is knot.t, y id knot.d.
-      // var segment = GetCurveSegment({ x: k0.t, y: k0.d }, { x: k1.t, y: k1.d }, { x: k2.t, y: k2.d }, { x: k3.t, y: k3.d });
+      // var segment = GetCurveSegment({ x: k0.t, y: k0.d },
+                                       // { x: k1.t, y: k1.d },
+                                       // { x: k2.t, y: k2.d },
+                                       // { x: k3.t, y: k3.d });
       var segment = GetCurveSegment(k0._position, k1._position, k2._position, k3._position);
       var steps = 16;
       for (var k = 0; k < steps; k++) {
@@ -623,46 +726,6 @@ function FromClipperPath(path, offset) {
   return array;
 }
 
-// // Gets the convex hull using Graham scan.
-// function convexHull(points) {
-//   var p0 = points[0];
-//   var maxY = p0.y;
-//   for (var i = 0; i < points.length; i++) {
-//     var pi = points[i];
-//     if (pi.y > maxY) {
-//       maxY = pi.y;
-//       p0 = pi;
-//     }
-//   }
-//   for (var i = 0; i < points.length; i++) {
-//     var pi = points[i];
-//     var dx = pi.x - p0.x, dy = pi.y - p0.y;
-//     // Cos of angle between x-axis (1, 0) and (dx, dy).
-//     pi.cos = getCos(dx, dy);
-//   }
-//   points.sort(compareAngles);
-//   var startIndex = binarySearch(points, p0, compareAngles2);
-
-//   var hull = [];
-//   var length = points.length;
-//   hull.push(points[0]);
-//   hull.push(points[1]);
-//   var i = 2;
-//   while (i < length) {
-//     var p3 = points[i];
-//     while (hull.length > 1) {
-//       var p1 = hull[hull.length - 2];
-//       var p2 = hull[hull.length - 1];
-//       if (turn_direction(p1, p2, p3) < -0.000001)  // TODO define EPS
-//         break;
-//       // right turn or collinear
-//       hull.pop();
-//     }
-//     hull.push(p3);
-//     i++;
-//   }
-//   return hull;
-// }
 
   // var cx = 0, cy = 0;
   // var xmin, ymin, xmax, ymax;

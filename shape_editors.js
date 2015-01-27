@@ -26,6 +26,14 @@ var shapeEditors = (function() {
     itemFn(item);
   }
 
+  function isHullItem(item) {
+    return item.type == 'disk';
+  }
+
+  function isHullEdgeItem(item) {
+    return item.type == 'linear' || item.type == 'bezier';
+  }
+
   function isPaletteItem(item) {
     return item._palette;
   }
@@ -142,7 +150,6 @@ var shapeEditors = (function() {
         // if (item.type == 'bezier') {
         //   autoRotateBezier(item);
         // }
-console.log(item, parent);
         model.observableModel.insertElement(parent, parent.items, parent.items.length, item);
       },
     }
@@ -193,25 +200,12 @@ console.log(item, parent);
     this.hitTolerance = 8;
   }
 
-  // Renderer.prototype.beginDraw = function() {
-  //   var ctx = this.ctx;
-  //   ctx.save();
-  //   ctx.strokeStyle = this.strokeColor;
-  //   ctx.lineWidth = 1;
-  // }
-
-  // Renderer.prototype.endDraw = function() {
-  //   this.ctx.restore();
-  // }
-
   Renderer.prototype.drawItem = function(item) {
     var ctx = this.ctx, knobbySize = this.knobbySize, t = item._atransform;
     ctx.save();
     ctx.setTransform(t[0], t[2], t[1], t[3], t[4], t[5]); // local to world
     switch (item.type) {
       case 'disk':
-        // if (!isSelected(item._parent) && !item._parent._contentSelected && !isPaletteItem(item))
-        //   break;
         ctx.beginPath();
         var r = item.radius;
         ctx.arc(0, 0, r, 0, 2 * Math.PI, false);
@@ -219,9 +213,19 @@ console.log(item, parent);
         ctx.stroke();
         ctx.strokeRect(-knobbySize, -knobbySize, 2 * knobbySize, 2 * knobbySize);
         break;
+      case 'linear':
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(item.dx, item.dy);
+        ctx.stroke();
+        var p1 = item._p1, p2 = item._p2;
+        if (p1 && p2) {
+          ctx.strokeRect(p1.x - knobbySize, p1.y - knobbySize, 2 * knobbySize, 2 * knobbySize);
+          ctx.strokeRect(p2.x - knobbySize, p2.y - knobbySize, 2 * knobbySize, 2 * knobbySize);
+        }
+        break;
       case 'bezier':
-        // if (!isSelected(item._parent) && !item._parent._contentSelected && !isPaletteItem(item))
-        //   break;
         ctx.lineWidth = 0.5;
         ctx.beginPath();
         // Start at first point of first curve segment.
@@ -241,7 +245,6 @@ console.log(item, parent);
       case 'group':
         if (!item.op || !item._paths)
           return;
-        // ctx.strokeRect(item._cx - knobbySize, item._cy - knobbySize, 2 * knobbySize, 2 * knobbySize);
         for (var i = 0; i < item._paths.length; i++) {
           var path = item._paths[i];
           ctx.beginPath();
@@ -280,6 +283,15 @@ console.log(item, parent);
         ctx.stroke();
         ctx.strokeRect(-knobbySize, -knobbySize, 2 * knobbySize, 2 * knobbySize);
         break;
+      case 'linear':
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(item.dx, item.dy);
+        ctx.stroke();
+        ctx.strokeRect(-knobbySize, -knobbySize, 2 * knobbySize, 2 * knobbySize);
+        ctx.strokeRect(item.dx - knobbySize, item.dy - knobbySize, 2 * knobbySize, 2 * knobbySize);
+        break;
       case 'bezier':
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -305,7 +317,6 @@ console.log(item, parent);
         ctx.strokeRect(item.halfLength - knobbySize, -knobbySize, 2 * knobbySize, 2 * knobbySize);
         break;
       case 'group':
-        // ctx.strokeRect(item._cx - knobbySize, item._cy - knobbySize, 2 * knobbySize, 2 * knobbySize);
         for (var i = 0; i < item._paths.length; i++) {
           var path = item._paths[i];
           if (!path.length)
@@ -359,34 +370,47 @@ console.log(item, parent);
         transformableModel = this.model.transformableModel,
         inverseTransform = transformableModel.getInverseAbsolute(item),
         localP = geometry.matMulVecNew(p, inverseTransform),
-        hitInfo, r, dx, dy, distSquared;
+        hitInfo, r, distSquared;
     switch (item.type) {
       case 'disk':
-        var r = item.radius;
+        r = item.radius;
         hitInfo = diagrams.hitTestDisk(0, 0, r, localP, hitTolerance);
         if (hitInfo) {
-          if (diagrams.hitPoint(0, 0, localP, knobbySize))
+          if (diagrams.hitPoint(0, 0, localP, knobbySize)) {
             hitInfo.center = true;
-          return hitInfo;
+            return hitInfo;
+          } else if (hitInfo.border) {
+            return hitInfo;
+          }
+          return null;
         }
         break;
+      case 'linear':
+        hitInfo = diagrams.hitTestLine(
+            { x:0, y:0 }, { x: item.dx, y: item.dy }, localP, hitTolerance);
+        return hitInfo;
+        break;
       case 'bezier':
-        if (Math.abs(p.x + item.halfLength) <= knobbySize + hitTolerance && Math.abs(p.y) <= knobbySize + hitTolerance)
+        if (Math.abs(localP.x + item.halfLength) <= knobbySize + hitTolerance &&
+            Math.abs(localP.y) <= knobbySize + hitTolerance)
           return { end0: true };
-        else if (Math.abs(p.x) <= knobbySize + hitTolerance && Math.abs(p.y) <= knobbySize + hitTolerance)
+        else if (Math.abs(localP.x) <= knobbySize + hitTolerance &&
+                 Math.abs(localP.y) <= knobbySize + hitTolerance)
           return { mid: true };
-        else if (Math.abs(p.x - item.halfLength) <= knobbySize + hitTolerance && Math.abs(p.y) <= knobbySize + hitTolerance)
+        else if (Math.abs(localP.x - item.halfLength) <= knobbySize + hitTolerance &&
+                 Math.abs(localP.y) <= knobbySize + hitTolerance)
           return { end1: true };
 
         for (var i = 0; i < item.points.length; i++) {
           var pi = item.points[i];
-          if (Math.abs(p.x - pi.x) <= knobbySize + hitTolerance && Math.abs(p.y - pi.y) <= knobbySize + hitTolerance)
-            return { point: i };
+          if (Math.abs(localP.x - pi.x) <= knobbySize + hitTolerance &&
+              Math.abs(localP.y - pi.y) <= knobbySize + hitTolerance)
+            return { point: true, index: i };
         }
         for (var i = 0; i < item._curves.length; i++) {
           var curve = item._curves[i];
-          if (geometry.hitTestCurveSegment(curve[0], curve[1], curve[2], curve[3], p, hitTolerance))
-            return { position: true, curve: i };
+          if (geometry.hitTestCurveSegment(curve[0], curve[1], curve[2], curve[3], localP, hitTolerance))
+            return { curve: true, index: i };
         }
         break;
       case 'group':
@@ -399,7 +423,7 @@ console.log(item, parent);
           for (var j = 1; j < path.length; j++)
             ctx.lineTo(path[j].x, path[j].y);
           ctx.closePath();
-          if (ctx.isPointInPath(p.x, p.y))
+          if (ctx.isPointInPath(localP.x, localP.y))
             return { position: true };
         }
         break;
@@ -437,10 +461,18 @@ console.log(item, parent);
             radius: 16,
           },
           {
+            type: 'linear',
+            id : 2,
+            x: 16,
+            y: 72,
+            dx: 96,
+            dy: 0,
+          },
+          {
             type: 'bezier',
-            id: 2,
+            id: 3,
             x: 64,
-            y: 120,
+            y: 96,
             halfLength: 48,
             points: [
               { x: -24, y: 15 },
@@ -484,7 +516,7 @@ console.log(item, parent);
     });
 
     ctx.strokeStyle = '#40F040';
-    visit(this.board, function(item) {
+    this.model.selectionModel.forEach(function(item) {
       renderer.highlightItem(item);
     });
 
@@ -551,32 +583,51 @@ console.log(item, parent);
   }
 
   Editor.prototype.beginDrag = function() {
+    if (!this.mouseHitInfo)
+      return;
     var mouseHitInfo = this.mouseHitInfo,
-        dragItem = mouseHitInfo.item,
+        item = mouseHitInfo.item,
         model = this.model,
         drag;
-    if (!mouseHitInfo)
-      return;
-    if (this.isPaletteItem(dragItem)) {
-      // Clone palette item and add the clone to the top level statechart. Don't
-      // notify observers yet.
-      dragItem = model.instancingModel.clone(dragItem);
-      model.editingModel.addTemporaryItem(dragItem);
-      model.selectionModel.set([ dragItem ]);
+    if (this.isPaletteItem(item)) {
+      // Clone palette item and add the clone to the board. Don't notify
+      // observers yet.
+      item = model.instancingModel.clone(item);
+      model.editingModel.addTemporaryItem(item);
+      model.selectionModel.set([ item ]);
       drag = {
         type: 'moveSelection',
         isNewItem: true,
-        name: 'Add new ' + dragItem.type,
+        name: 'Add new ' + item.type,
       }
     } else {
-      switch (dragItem.type) {
+      switch (item.type) {
         case 'disk':
           if (mouseHitInfo.border)
             drag = { type: 'resizeDisk', name: 'Resize disk' };
+          else if (mouseHitInfo.center)
+            drag = { type: 'moveSelection', name: 'Move selection' };
+          break;
+        case 'linear':
+          if (mouseHitInfo.p1)
+            drag = { type: 'p1', name: 'Edit line' };
+          else if (mouseHitInfo.p2)
+            drag = { type: 'p2', name: 'Edit line' };
           else
             drag = { type: 'moveSelection', name: 'Move selection' };
           break;
         case 'bezier':
+          if (mouseHitInfo.end0)
+            drag = { type: 'end0', name: 'Stretch curve' };
+          else if (mouseHitInfo.mid)
+            drag = { type: 'mid', name: 'Attach curve' };
+          else if (mouseHitInfo.end1)
+            drag = { type: 'end1', name: 'Stretch curve' };
+          else if (mouseHitInfo.point)
+            drag = { type: 'point', name: 'Move control point' };
+          else
+            drag = { type: 'moveSelection', name: 'Move selection' };
+          break;
         case 'group':
           drag = { type: 'moveSelection', name: 'Move selection' };
           break;
@@ -585,7 +636,7 @@ console.log(item, parent);
     if (drag) {
       if (drag.type == 'moveSelection')
         model.editingModel.reduceSelection();
-      drag.item = dragItem;
+      drag.item = item;
       this.drag = drag;
     }
 
@@ -605,14 +656,30 @@ console.log(item, parent);
       localClick: localClick,
       localMouse: localMouse,
       localDrag: { x: localMouse.x - localClick.x, y: localMouse.y - localClick.y },
+      parentClick: parentClick,
+      parentMouse: parentMouse,
       parentDrag: { x: parentMouse.x - parentClick.x, y: parentMouse.y - parentClick.y },
     };
+  }
+
+  Editor.prototype.projectToParentHull = function(item, p) {
+    var model = this.model,
+        parent = model.hierarchicalModel.getParent(item);
+    if (parent && parent.type == 'group' && parent.op == 'hull') {
+      var centroid = parent._centroid, hull = parent._paths[0],
+          transformableModel = model.transformableModel,
+          local = transformableModel.getLocal(item),
+          pParent = geometry.matMulVecNew(p, local),
+          pProj = geometry.projectToConvexHull(hull, pParent),
+          angle = geometry.getAngle(pProj.x - centroid.x, pProj.y - centroid.y);
+      return angle;
+    }
   }
 
   Editor.prototype.doDrag = function(p, offset) {
     var self = this,
         drag = this.drag,
-        dragItem = drag.item,
+        item = drag.item,
         model = this.model,
         renderer = this.renderer,
         valueTracker = this.valueTracker,
@@ -620,7 +687,7 @@ console.log(item, parent);
         mouseHitInfo = this.mouseHitInfo,
         snapshot = valueTracker.getSnapshot(drag.item),
         drags = this.calcDrags(drag.item, model, mouseController),
-        hitInfo;
+        hitInfo, newLength;
     switch (drag.type) {
       case 'moveSelection':
         var hitInfo = this.hotTrackInfo = this.hitTestUnselectedItems(p);
@@ -632,66 +699,72 @@ console.log(item, parent);
           model.observableModel.changeValue(item, 'y', snapshot.y + parentDrag.y);
         });
         break;
+
       case 'resizeDisk':
         var localClick = drags.localClick,
             localMouse = drags.localMouse,
             dx1 = localClick.x, dy1 = localClick.y,
             dx2 = localMouse.x, dy2 = localMouse.y;
-        model.observableModel.changeValue(dragItem, 'radius',
+        model.observableModel.changeValue(item, 'radius',
             snapshot.radius * Math.sqrt((dx2 * dx2 + dy2 * dy2) / (dx1 * dx1 + dy1 * dy1)));
         break;
-/*
-        case 'bezier':
-          var newLength;
-          if (mouseHitInfo.part == 'position') {
-            observableModel.changeValue(item, 'x', snapshot.x + parent_drag.x);
-            observableModel.changeValue(item, 'y', snapshot.y + parent_drag.y);
-            autoRotateBezier(item);
-          } else if (mouseHitInfo.part == 'point') {
-            var pt = item.points[mouseHitInfo.index];
-            var oldPt = item._points[mouseHitInfo.index];
-            observableModel.changeValue(pt, 'x', oldPt.x + local_drag.x);
-            observableModel.changeValue(pt, 'y', oldPt.y + local_drag.y);
-          } else if (mouseHitInfo.part == 'end0') {
-            observableModel.changeValue(item, 'x', snapshot.x + parent_drag.x / 2);
-            observableModel.changeValue(item, 'y', snapshot.y + parent_drag.y / 2);
-            newLength = LineLength(parent_mouse.x, parent_mouse.y, item.x, item.y);
-            autoRotateBezier(item);
-          } else if (mouseHitInfo.part == 'end1') {
-            observableModel.changeValue(item, 'x', snapshot.x + parent_drag.x / 2);
-            observableModel.changeValue(item, 'y', snapshot.y + parent_drag.y / 2);
-            newLength = LineLength(parent_mouse.x, parent_mouse.y, item.x, item.y);
-            autoRotateBezier(item);
-          } else if (mouseHitInfo.part == 'mid') {
-            observableModel.changeValue(item, 'x', snapshot.x + parent_drag.x);
-            observableModel.changeValue(item, 'y', snapshot.y + parent_drag.y);
-            autoRotateBezier(item);
-          }
-          if (newLength) {
-            if (newLength > 0.00001) {
-              item.halfLength = newLength;
-              var scale = newLength / snapshot.halfLength;
-              for (var i = 0; i < item.points.length; i++) {
-                var pi = item.points[i], oldPi = item._points[i];
-                observableModel.changeValue(pi, 'x', scale * oldPi.x);
-                observableModel.changeValue(pi, 'y', scale * oldPi.y);
-              }
-            }
-          }
-          break;
-        case 'group':
-          if (mouseHitInfo.part == 'position') {
-            observableModel.changeValue(item, 'x', snapshot.x + parent_drag.x);
-            observableModel.changeValue(item, 'y', snapshot.y + parent_drag.y);
-          } else if (mouseHitInfo.part == 'knot') {
-            // var knot = item.knots[mouseHitInfo.index];
-            // knot.t = getTurn(mouse_x - item._cx, mouse_y - item._cy);
-            // var hullPt = knot._edge.p0;
-            // // Dot product with normal to get distance off edge.
-            // knot.d = (mouse_x - hullPt.x) * hullPt.nx + (mouse_y - hullPt.y) * hullPt.ny;
-          }
-          break;
-*/
+
+      case 'p1':
+        model.observableModel.changeValue(item, 'x', snapshot.x + drags.parentDrag.x);
+        model.observableModel.changeValue(item, 'y', snapshot.y + drags.parentDrag.y);
+        model.observableModel.changeValue(item, 'dx', snapshot.dx - drags.localDrag.x);
+        model.observableModel.changeValue(item, 'dy', snapshot.dy - drags.localDrag.y);
+        item._angle1 = this.projectToParentHull(item, { x: 0, y: 0 });
+        break;
+
+      case 'p2':
+        model.observableModel.changeValue(item, 'dx', snapshot.dx + drags.localDrag.x);
+        model.observableModel.changeValue(item, 'dy', snapshot.dy + drags.localDrag.y);
+        item._angle2 = this.projectToParentHull(item, { x: item.dx, y: item.dy });
+        break;
+
+      case 'end0':
+        model.observableModel.changeValue(item, 'x', snapshot.x + drags.parentDrag.x / 2);
+        model.observableModel.changeValue(item, 'y', snapshot.y + drags.parentDrag.y / 2);
+        newLength = geometry.lineLength(drags.parentMouse.x, drags.parentMouse.y, item.x, item.y);
+        model.observableModel.changeValue(item, 'halfLength', newLength);
+        this.autoRotateBezier(item);
+        break;
+
+      // case 'bezier':
+      //   var newLength;
+      //   if (mouseHitInfo.part == 'position') {
+      //     observableModel.changeValue(item, 'x', snapshot.x + parent_drag.x);
+      //     observableModel.changeValue(item, 'y', snapshot.y + parent_drag.y);
+      //     autoRotateBezier(item);
+      //   } else if (mouseHitInfo.part == 'point') {
+      //     var pt = item.points[mouseHitInfo.index];
+      //     var oldPt = item._points[mouseHitInfo.index];
+      //     observableModel.changeValue(pt, 'x', oldPt.x + local_drag.x);
+      //     observableModel.changeValue(pt, 'y', oldPt.y + local_drag.y);
+      //   } else if (mouseHitInfo.part == 'end0') {
+      //   } else if (mouseHitInfo.part == 'end1') {
+      //     observableModel.changeValue(item, 'x', snapshot.x + parent_drag.x / 2);
+      //     observableModel.changeValue(item, 'y', snapshot.y + parent_drag.y / 2);
+      //     newLength = LineLength(parent_mouse.x, parent_mouse.y, item.x, item.y);
+      //     autoRotateBezier(item);
+      //   } else if (mouseHitInfo.part == 'mid') {
+      //     observableModel.changeValue(item, 'x', snapshot.x + parent_drag.x);
+      //     observableModel.changeValue(item, 'y', snapshot.y + parent_drag.y);
+      //     autoRotateBezier(item);
+      //   }
+      //   if (newLength) {
+      //     if (newLength > 0.00001) {
+      //       item.halfLength = newLength;
+      //       var scale = newLength / snapshot.halfLength;
+      //       for (var i = 0; i < item.points.length; i++) {
+      //         var pi = item.points[i], oldPi = item._points[i];
+      //         observableModel.changeValue(pi, 'x', scale * oldPi.x);
+      //         observableModel.changeValue(pi, 'y', scale * oldPi.y);
+      //       }
+      //     }
+      //   }
+      //   break;
     }
   }
 
@@ -719,7 +792,7 @@ console.log(item, parent);
       // Add new items.
       if (newItem) {
         // Items that can't be added to the board without being wrapped in a group.
-        if (parent === board) {
+        if (parent === board && isHullItem(newItem)) {
           var group = {
             type: 'group',
             op: 'hull',
@@ -755,15 +828,15 @@ console.log(item, parent);
 
   // Calculate auto-rotation using parent hull.
   Editor.prototype.autoRotateBezier = function(item) {
-    var observableModel = model.observableModel;
-    var parent = item._parent;
-    var p = { x: item.x, y: item.y };
+    var model = this.model,
+        parent = model.hierarchicalModel.getParent(item),
+        p = { x: item.x, y: item.y };
     if (parent.type == 'group' && parent.op == 'hull') {
       var hull = parent._paths[0];
       var i0 = findClosestPathSegment(hull, p);
       var i1 = (i0 < hull.length - 1) ? i0 + 1 : 0;
       var t = getTurn(hull[i0].x - hull[i1].x, hull[i0].y - hull[i1].y);
-      observableModel.changeValue(item, '_rotation', t * 2 * Math.PI);
+      model.observableModel.changeValue(item, '_rotation', t * 2 * Math.PI);
     }
   }
 
@@ -916,7 +989,10 @@ console.log(item, parent);
             }
           }
 
-          var hull = convexHull(points, item);
+          var hull = geometry.getConvexHull(points, item),
+              centroid = geometry.getCentroid(hull);
+          geometry.annotateConvexHull(hull, centroid);
+
           var subItems = item.items;
           for (var i = 0; i < subItems.length; i++) {
             var subItem = subItems[i];
@@ -947,6 +1023,7 @@ console.log(item, parent);
               generateCurveSegments(points, subItem._curves, subItem._curveLengths);
             }
           }
+          item._centroid = centroid;
           item._paths = [ hull ];
         }
       }
@@ -956,8 +1033,25 @@ console.log(item, parent);
       for (var i = 0; i < item._paths.length; i++)
         Box2d.extendArray(item._bounds, item._paths[i]);
     }
+
+    function updatePass3(item) {
+      if (item.type == 'linear') {
+        var parent = hierarchicalModel.getParent(item);
+        if (parent && parent.type == 'group' && parent.op == 'hull') {
+          var centroid = parent._centroid, hull = parent._paths[0],
+              inverseLocal = transformableModel.getInverseLocal(item),
+              p1 = geometry.angleToConvexHull(hull, centroid, item._angle1),
+              p2 = geometry.angleToConvexHull(hull, centroid, item._angle2);
+          item._p1 = geometry.matMulVec( p1, inverseLocal),
+          item._p2 = geometry.matMulVec( p2, inverseLocal);
+        }
+      }
+
+    }
+
     visit(root, updatePass1);
     visit(root, updatePass2);
+    visit(root, updatePass3);
   }
 
   Editor.prototype.onMouseDown = function(e) {
@@ -1008,7 +1102,7 @@ console.log(item, parent);
 
   Editor.prototype.onKeyDown = function(e) {
     var model = this.model,
-        statechart = this.statechart,
+        board = this.board,
         selectionModel = model.selectionModel,
         editingModel = model.editingModel,
         transactionHistory = model.transactionHistory,
@@ -1021,7 +1115,7 @@ console.log(item, parent);
       updateFn(this);
     } else if (e.ctrlKey) {
       if (e.keyCode == 65) {  // 'a'
-        statechart.items.forEach(function(v) {
+        board.items.forEach(function(v) {
           selectionModel.add(v);
         });
         updateFn(this);
@@ -1060,7 +1154,7 @@ console.log(item, parent);
             return value;
           },
           2);
-        // Writes statechart as JSON to console.
+        // Writes board as JSON to console.
         console.log(text);
       }
     }
@@ -1079,251 +1173,49 @@ console.log(item, parent);
 
 
 
-var shape_data = {
+var shape_data =  {
   "type": "group",
   "x": 0,
   "y": 0,
   "id": 153,
-  "items": [],
-  // "items": [
-  //   {
-  //     "type": "group",
-  //     "op": "hull",
-  //     "id": 24,
-  //     "x": 125,
-  //     "y": 0,
-  //     "items": [
-  //       {
-  //         "type": "disk",
-  //         "id": 10,
-  //         "x": 113,
-  //         "y": 39,
-  //         "radius": 16.8931507768809
-  //       },
-  //       {
-  //         "type": "disk",
-  //         "id": 11,
-  //         "x": 121,
-  //         "y": 632,
-  //         "radius": 111.13066811916961
-  //       },
-  //       {
-  //         "type": "disk",
-  //         "id": 12,
-  //         "x": 516,
-  //         "y": 562,
-  //         "radius": 68.0425110401971
-  //       },
-  //       {
-  //         "type": "disk",
-  //         "id": 13,
-  //         "x": 575,
-  //         "y": 25,
-  //         "radius": 6.554923095104073
-  //       },
-  //       {
-  //         "type": "bezier",
-  //         "id": 1005,
-  //         "x": 42,
-  //         "y": 455,
-  //         "halfLength": 175,
-  //         "points": [
-  //           {
-  //             "id": 1002,
-  //             "x": -78.64501291431935,
-  //             "y": 10.55150289796996
-  //           },
-  //           {
-  //             "id": 1003,
-  //             "x": 3.165839963423892,
-  //             "y": 33.40933597730423
-  //           },
-  //           {
-  //             "id": 1004,
-  //             "x": 104.81415790364744,
-  //             "y": 15.53265921934953
-  //           }
-  //         ],
-  //       },
-  //       {
-  //         "type": "bezier",
-  //         "id": 1011,
-  //         "x": 350.5,
-  //         "y": 689,
-  //         "halfLength": 185,
-  //         "points": [
-  //           {
-  //             "id": 1008,
-  //             "x": -89.08810766810325,
-  //             "y": 10.507334730128534
-  //           },
-  //           {
-  //             "id": 1009,
-  //             "x": -53.25598017376271,
-  //             "y": 55.19850813658798
-  //           },
-  //           {
-  //             "id": 1010,
-  //             "x": 52.88397262961445,
-  //             "y": 0.9158315982501593
-  //           }
-  //         ],
-  //       }
-  //     ]
-  //   },
-  //   {
-  //     "type": "group",
-  //     "id": 5,
-  //     "op": "hull",
-  //     "x": 458,
-  //     "y": 712,
-  //     "items": [
-  //       {
-  //         "type": "disk",
-  //         "id": 111,
-  //         "x": 99,
-  //         "y": 60,
-  //         "radius": 16
-  //       },
-  //       {
-  //         "type": "disk",
-  //         "id": 112,
-  //         "x": 38,
-  //         "y": 47,
-  //         "radius": 15.947602931050417
-  //       },
-  //       {
-  //         "type": "disk",
-  //         "id": 113,
-  //         "x": 99,
-  //         "y": 129,
-  //         "radius": 17.673022423929776
-  //       }
-  //     ]
-  //   },
-  //   {
-  //     "type": "group",
-  //     "id": 50,
-  //     "op": "hull",
-  //     "x": 172,
-  //     "y": 696,
-  //     "items": [
-  //       {
-  //         "id": 111,
-  //         "type": "disk",
-  //         "x": 99,
-  //         "y": 60,
-  //         "radius": 16
-  //       },
-  //       {
-  //         "id": 112,
-  //         "type": "disk",
-  //         "x": 153,
-  //         "y": 45,
-  //         "radius": 15.947602931050417
-  //       },
-  //       {
-  //         "id": 113,
-  //         "type": "disk",
-  //         "x": 99,
-  //         "y": 129,
-  //         "radius": 17.673022423929776
-  //       }
-  //     ]
-  //   },
-  //   {
-  //     "type": "group",
-  //     "op": "hull",
-  //     "id": 10387,
-  //     "x": 381,
-  //     "y": 220,
-  //     "items": [
-  //       {
-  //         "id": 10378,
-  //         "type": "disk",
-  //         "x": -37,
-  //         "y": 4,
-  //         "radius": 28.421619177682725,
-  //       }
-  //     ]
-  //   },
-  //   {
-  //     "id": 10381,
-  //     "type": "group",
-  //     "op": "hull",
-  //     "x": 400,
-  //     "y": 304,
-  //     "items": [
-  //       {
-  //         "id": 10371,
-  //         "type": "disk",
-  //         "x": 0,
-  //         "y": 0,
-  //         "radius": 29.071357000214743,
-  //       }
-  //     ]
-  //   },
-  //   {
-  //     "id": 1039,
-  //     "type": "group",
-  //     "op": "hull",
-  //     "x": 432,
-  //     "y": 216,
-  //     "items": [
-  //       {
-  //         "id": 1037,
-  //         "type": "disk",
-  //         "x": 11,
-  //         "y": 5,
-  //         "radius": 30.117587501855482,
-  //       }
-  //     ]
-  //   },
-  //   {
-  //     "type": "group",
-  //     "op": "hull",
-  //     "id": 1054,
-  //     "x": 344,
-  //     "y": 684,
-  //     "items": [
-  //       {
-  //         "id": 1053,
-  //         "type": "disk",
-  //         "x": 0,
-  //         "y": 0,
-  //         "radius": 12.80816066388288,
-  //       },
-  //       {
-  //         "id": 1056,
-  //         "type": "disk",
-  //         "x": 47,
-  //         "y": 20,
-  //         "radius": 4.478914616788309,
-  //       }
-  //     ]
-  //   },
-  //   {
-  //     "id": 11054,
-  //     "type": "group",
-  //     "op": "hull",
-  //     "x": 465,
-  //     "y": 681,
-  //     "items": [
-  //       {
-  //         "id": 11053,
-  //         "type": "disk",
-  //         "x": 0,
-  //         "y": 0,
-  //         "radius": 12.80816066388288,
-  //       },
-  //       {
-  //         "id": 11056,
-  //         "type": "disk",
-  //         "x": -45,
-  //         "y": 27,
-  //         "radius": 4.478914616788309,
-  //       }
-  //     ]
-  //   }
-  // ]
+  "items": [
+    {
+      "type": "group",
+      "op": "hull",
+      "x": 332,
+      "y": 153,
+      "items": [
+        {
+          "type": "disk",
+          "x": 0,
+          "y": 0,
+          "radius": 73.89606281239585,
+          "id": 154
+        },
+        {
+          "type": "linear",
+          "x": 187,
+          "y": -22,
+          "dx": -18,
+          "dy": 7,
+          "id": 156
+        },
+        {
+          "type": "disk",
+          "x": 148,
+          "y": -62,
+          "radius": 30.01027146566027,
+          "id": 157
+        },
+        {
+          "type": "disk",
+          "x": 193,
+          "y": 15,
+          "radius": 16,
+          "id": 158
+        }
+      ],
+      "id": 155
+    }
+  ]
 }

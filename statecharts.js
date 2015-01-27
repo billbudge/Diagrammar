@@ -345,7 +345,7 @@ var statecharts = (function() {
   }
 
   Renderer.prototype.hitTestTransition = function(transition, p) {
-    var hitInfo = this.hitTestEdge(transition, p);
+    var hitInfo = this.hitTestBezier(transition, p);
     if (hitInfo)
       hitInfo.item = transition;
     return hitInfo;

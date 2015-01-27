@@ -320,7 +320,17 @@ var diagrams = (function() {
     }
   }
 
-  function hitTestEdge(bezier, p, tol) {
+  function hitTestLine(p1, p2, p, tol) {
+    if (geometry.pointToPointDist(p1, p) < tol) {
+      return { p1: true };
+    } else if (geometry.pointToPointDist(p2, p) < tol) {
+      return { p2: true };
+    } else if (geometry.hitTestLine(p1, p2, p, tol)) {
+      return { edge: true };
+    }
+  }
+
+  function hitTestBezier(bezier, p, tol) {
     var p1 = bezier[0], p2 = bezier[3];
     if (geometry.pointToPointDist(p1, p) < tol) {
       return { p1: true };
@@ -464,8 +474,8 @@ var diagrams = (function() {
     return hitInfo;
   }
 
-  GraphRenderer.prototype.hitTestEdge = function(e, p) {
-    return hitTestEdge(e._bezier, p, this.hitTolerance);
+  GraphRenderer.prototype.hitTestBezier = function(e, p) {
+    return hitTestBezier(e._bezier, p, this.hitTolerance);
   }
 
   return {
@@ -485,7 +495,8 @@ var diagrams = (function() {
     hitPoint: hitPoint,
     hitTestRect: hitTestRect,
     hitTestDisk: hitTestDisk,
-    hitTestEdge: hitTestEdge,
+    hitTestLine: hitTestLine,
+    hitTestBezier: hitTestBezier,
 
     GraphRenderer: GraphRenderer,
   }
