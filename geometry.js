@@ -271,9 +271,9 @@ var geometry = (function() {
     var cos = 1;
     if (dx != 0 || dy != 0)
       cos = dx / Math.sqrt(dx * dx + dy * dy);
-    var angle = Math.acos(cos) / (2 * Math.PI);
+    var angle = Math.acos(cos);
     if (dy > 0)
-      angle = 1.0 - angle;
+      angle = 2 * Math.PI - angle;
     return angle;
   }
 
@@ -311,9 +311,17 @@ var geometry = (function() {
         i1 = 0;
     }
     var p1 = hull[i1],
-        t = (value.angle - p0.angle) / (p1.angle - p0.angle);
-    // console.log(i0, i1, length, p0.angle, p1.angle, value.angle, t)
-    return { x: p0.x + t * (p1.x - p0.x), y: p0.y + t * (p1.y - p0.y) };
+        dx = Math.cos(angle),
+        dy = Math.sin(angle),
+        intersection = geometry.lineIntersection(p0, p1, centroid,
+            { x: centroid.x + dx, y: centroid.y - dy });
+    var nx = p1.y - p0.y,
+        ny = p0.x - p1.x,
+        ooNLen = 1.0 / Math.sqrt(nx * nx + ny * ny);
+    intersection.nx = nx * ooNLen;
+    intersection.ny = ny * ooNLen;
+
+    return intersection;
   }
 
   return {
@@ -587,10 +595,8 @@ function deformHull(hull, item) {
       k0 = k1; k1 = k2; k2 = k3; k3 = knots[Math.min(j + 4, knots.length - 1)];
       j++;
     }
-    console.log(i);
 
     i = binarySearch(hull, k3, compareTurn) + 1;
-    console.log(i);
     nextKnotT = 2;
   }
 

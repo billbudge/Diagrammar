@@ -1038,12 +1038,18 @@ var shapeEditors = (function() {
       if (item.type == 'linear') {
         var parent = hierarchicalModel.getParent(item);
         if (parent && parent.type == 'group' && parent.op == 'hull') {
+          if (!item._angle1)
+            item._angle1 = self.projectToParentHull(item, { x: 0, y: 0 });
+          if (!item._angle2)
+            item._angle2 = self.projectToParentHull(item, { x: item.dx, y: item.dy });
+          item._attached = true;
+
           var centroid = parent._centroid, hull = parent._paths[0],
               inverseLocal = transformableModel.getInverseLocal(item),
               p1 = geometry.angleToConvexHull(hull, centroid, item._angle1),
               p2 = geometry.angleToConvexHull(hull, centroid, item._angle2);
-          item._p1 = geometry.matMulVec( p1, inverseLocal),
-          item._p2 = geometry.matMulVec( p2, inverseLocal);
+          item._p1 = geometry.matMulVec(p1, inverseLocal),
+          item._p2 = geometry.matMulVec(p2, inverseLocal);
         }
       }
 
@@ -1173,7 +1179,7 @@ var shapeEditors = (function() {
 
 
 
-var shape_data =  {
+var shape_data = {
   "type": "group",
   "x": 0,
   "y": 0,
@@ -1182,8 +1188,8 @@ var shape_data =  {
     {
       "type": "group",
       "op": "hull",
-      "x": 332,
-      "y": 153,
+      "x": 281,
+      "y": 373,
       "items": [
         {
           "type": "disk",
@@ -1194,10 +1200,10 @@ var shape_data =  {
         },
         {
           "type": "linear",
-          "x": 187,
-          "y": -22,
-          "dx": -18,
-          "dy": 7,
+          "x": -9,
+          "y": -59,
+          "dx": 17,
+          "dy": 113,
           "id": 156
         },
         {
