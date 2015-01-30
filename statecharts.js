@@ -9,6 +9,10 @@ var statecharts = (function() {
     return item.type != 'transition' && item.type != 'statechart';
   }
 
+  function isStatechart(item) {
+    return item.type == 'statechart';
+  }
+
   function isStateOrStatechart(item) {
     return item.type != 'transition';
   }
@@ -166,6 +170,39 @@ var statecharts = (function() {
         return model.observableModel.removeElement(statechart, items, items.length - 1);
       },
 
+      // Returns a value indicating if the item can be added to the state
+      // without violating statechart constraints.
+      canAddItemToStatechart: function(item, statechart) {
+        function containsType(type) {
+          var items = statechart.items, length = items.length;
+          for (var i = 0; i < length; i++)
+            if (items[i].type == type)
+              return true;
+          return false;
+        }
+
+        switch (item.type) {
+          case 'start':
+            return !containsType('start');
+        }
+        return true;
+      },
+
+      // Creates a new statechart to hold the given item.
+      createStatechart: function(item) {
+        var statechart = {
+          type: 'statechart',
+          x: 0,
+          y: 0,
+          width: 0,
+          height: 0,
+          name: '',
+          items: [ item ],
+        };
+        this.model.dataModel.assignId(statechart);
+        return statechart
+      },
+
       addItem: function(item, oldParent, parent) {
         var model = this.model, transformableModel = model.transformableModel;
         if (oldParent !== parent && isState(item)) {
@@ -174,27 +211,18 @@ var statecharts = (function() {
           item.x = transform[4] - parentTransform[4];
           item.y = transform[5] - parentTransform[5];
         }
-
         var itemToAdd = item;
-        if (parent.type != 'statechart') {
-          // States can't directly contain a state - add a new statechart if needed.
+        if (isState(parent)) {
+          // If the state is primitive, add a new statechart to hold sub-items.
           if (!parent.items)
             parent.items = [];
-          if (!parent.items.length) {
-            var newStatechart = {
-              type: 'statechart',
-              x: 0,
-              y: 0,
-              width: 0,
-              height: 0,
-              name: '',
-              items: [ item ],
-            };
-            model.dataModel.assignId(newStatechart);
-            itemToAdd = newStatechart;
-          }
+          if (!parent.items.length)
+            itemToAdd = this.createStatechart(item);
+        } else if (isStatechart(parent) &&
+                   !this.canAddItemToStatechart(item, parent)) {
+          parent = model.hierarchicalModel.getParent(parent);
+          itemToAdd = this.createStatechart(item);
         }
-
         if (oldParent !== parent) {
           if (oldParent)            // if null, it's a new item.
             this.deleteItem(item);  // notifies observer
@@ -249,7 +277,7 @@ var statecharts = (function() {
   Renderer.prototype.getVertexRect = function(v) {
     var transform = this.transformableModel.getAbsolute(v),
         x = transform[4], y = transform[5];
-    if (isState(v))
+    if (isStateOrStatechart(v))
       return { x: x, y: y, width: v.width, height: v.height };
 
     return { x: x, y: y };
@@ -277,6 +305,21 @@ var statecharts = (function() {
 
       ctx.fillStyle = this.textColor;
       ctx.fillText(state.name, x + r, y + this.textSize);
+
+      var items = state.items;
+      if (items) {
+        var separatorY = y, length = items.length;
+        for (var i = 0; i < length - 1; i++) {
+          var statechart = items[i];
+          separatorY += statechart.height;
+          ctx.setLineDash([5]);
+          ctx.beginPath();
+          ctx.moveTo(x, separatorY);
+          ctx.lineTo(x + w, separatorY);
+          ctx.stroke();
+          ctx.setLineDash([0]);
+        }
+      }
     } else if (type == 'start') {
       ctx.fillStyle = this.strokeColor;
       ctx.fill();
@@ -306,12 +349,6 @@ var statecharts = (function() {
         nx: -1,
         ny: 0
       }
-      if (state.items) {
-        knobbies.vertStatechart = {
-          x: x + width / 2,
-          y: y + height
-        }
-      }
     } else {
       knobbies.transition = {
         x: x + r + r + xOffset,
@@ -326,21 +363,34 @@ var statecharts = (function() {
   Renderer.prototype.drawKnobbies = function(state) {
     var ctx = this.ctx, knobbySize = this.knobbySize,
         knobbies = this.getKnobbies(state),
-        transition = knobbies.transition,
-        vertStatechart = knobbies.vertStatechart;
+        transition = knobbies.transition;
     if (transition) {
       ctx.beginPath();
       diagrams.arrowPath(transition, ctx, this.arrowSize);
       ctx.stroke();
     }
-    if (vertStatechart)
-      ctx.strokeRect(vertStatechart.x - knobbySize, vertStatechart.y - knobbySize, 2 * knobbySize, 2 * knobbySize);
   }
 
   Renderer.prototype.hitTestState = function(state, p) {
     var hitInfo = this.hitTestVertex(state, p);
-    if (hitInfo)
+    if (hitInfo) {
       hitInfo.item = state;
+      if (!hitInfo.border) {
+        var items = state.items;
+        if (!items)
+          return hitInfo;
+        var rect = this.getVertexRect(state),
+            x = rect.x, y = rect.y, w = rect.width, h = rect.height,
+            separatorY = y,
+            length = items.length;
+        for (var i = 0; i < length; i++) {
+          var statechart = items[i];
+          separatorY += statechart.height;
+          if (p.y < separatorY)
+            return { item: statechart };
+        }
+      }
+    }
     return hitInfo;
   }
 
@@ -421,19 +471,26 @@ var statecharts = (function() {
         stateMinWidth = renderer.stateMinWidth,
         stateMinHeight = renderer.stateMinHeight;
     reverseVisit(statechart, isStateOrStatechart, function(item) {
+      var items = item.items;
       if (item.type == 'state') {
         var minSize = renderer.getStateMinSize(item);
         item.width = Math.max(item.width || 0, minSize.width);
         item.height = Math.max(item.height || 0, minSize.height);
       }
 
-      if (item.items) {
-        var minX = 0, minY = 0, maxX = 0, maxY = 0;
-        var items = item.items;
-        for (var i = 0; i < items.length; i++) {
+      if (items) {
+        var minX = 0, minY = 0, maxX = 0, maxY = 0,
+            statechartOffsetY = 0,
+            length = items.length;
+        for (var i = 0; i < length; i++) {
           var subItem = items[i];
           if (isTransition(subItem))
             continue;
+          if (isStatechart(subItem)) {
+            subItem.y = statechartOffsetY;
+            subItem.width = item.width;
+            statechartOffsetY += subItem.height;
+          }
           minX = Math.min(minX, subItem.x);
           minY = Math.min(minY, subItem.y);
           var subItemWidth = subItem.width || stateMinWidth;
@@ -443,7 +500,6 @@ var statecharts = (function() {
 
           maxX = Math.max(maxX, subItem.x + subItemWidth);
           maxY = Math.max(maxY, subItem.y + subItemHeight);
-
         }
         var minWidth = maxX - minX, minHeight = maxY - minY;
         if (item.type == 'state') {
@@ -451,6 +507,13 @@ var statecharts = (function() {
             item.width = minWidth;
           if (item.height < minHeight)
             item.height = minHeight;
+
+          if (items && items.length == 1) {
+            var statechart = items[0];
+            statechart.width = item.width;
+            statechart.height = item.height;
+          }
+
         } else {
           item.width = minWidth;
           item.height = minHeight;
@@ -582,12 +645,12 @@ var statecharts = (function() {
   }
 
   Editor.prototype.beginDrag = function() {
+    if (!this.mouseHitInfo)
+      return;
     var mouseHitInfo = this.mouseHitInfo,
         dragItem = mouseHitInfo.item,
         model = this.model,
         drag;
-    if (!mouseHitInfo)
-      return;
     if (this.isPaletteItem(dragItem)) {
       // Clone palette item and add the clone to the top level statechart. Don't
       // notify observers yet.
@@ -635,6 +698,7 @@ var statecharts = (function() {
           break;
       }
     }
+
     if (drag) {
       if (drag.type == 'moveSelection')
         model.editingModel.reduceSelection();
@@ -755,8 +819,6 @@ var statecharts = (function() {
       if (!transition.srcId || !transition.dstId) {
         model.editingModel.deleteItem(transition);
         model.selectionModel.remove(transition);
-      } else if (drag.isNewItem) {
-        model.editingModel.addItem(transition, null, statechart);
       }
     }
 
@@ -767,12 +829,24 @@ var statecharts = (function() {
     this.hotTrackInfo = null;
   }
 
+  Editor.prototype.getDraggableHit = function(hitInfo) {
+    if (hitInfo) {
+      var item = hitInfo.item;
+      // Statecharts can't be dragged, move up to the parent state.
+      if (isStatechart(item))
+        return { item: this.model.hierarchicalModel.getParent(item) };
+    }
+    return hitInfo;
+  }
+
   Editor.prototype.onMouseDown = function(e) {
     var model = this.model,
         mouseController = this.mouseController,
-        mouseHitInfo = this.mouseHitInfo = this.hitTest(mouseController.getMouse());
+        mouseHitInfo = this.mouseHitInfo =
+            this.getDraggableHit(this.hitTest(mouseController.getMouse()));
     mouseController.onMouseDown(e);
     if (mouseHitInfo) {
+      var item = mouseHitInfo.item;
       if (!model.selectionModel.contains(mouseHitInfo.item) && !this.shiftKeyDown)
         model.selectionModel.clear();
       if (!this.isPaletteItem(mouseHitInfo.item))

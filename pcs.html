@@ -7,8 +7,8 @@
 <body>
 
 <select id="selector">
-  <option value="shapes">Shapes</option>
   <option value="statecharts">Statecharts</option>
+  <option value="shapes">Shapes</option>
 </select>
 
 <canvas id="test_canvas"></canvas>
@@ -67,7 +67,7 @@ function startEditor(name) {
   onUpdate(editor);
 }
 
-startEditor('shapes');
+startEditor('statecharts');
 
 canvas.onmousedown = function(e) {
   editor.onMouseDown(e);
