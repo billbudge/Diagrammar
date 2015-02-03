@@ -341,10 +341,9 @@ var transactionModel = (function () {
     var instance = Object.create(proto);
     instance.model = model;
     eventMixin.extend(instance);
-    instance.changed_ = function (change) {
+    model.observableModel.addHandler('changed', function (change) {
       instance.onChanged_(change);
-    }
-    model.observableModel.addHandler('changed', instance.changed_);
+    });
 
     model.transactionModel = instance;
     return instance;
@@ -400,12 +399,11 @@ var transactionHistory = (function () {
 
     var instance = Object.create(proto);
     instance.model = model;
-    instance.transactionEnded_ = function (op) {
-      instance.onTransactionEnded_(op);
-    }
-    model.transactionModel.addHandler('transactionEnded', instance.transactionEnded_);
     instance.done = [];
     instance.undone = [];
+    model.transactionModel.addHandler('transactionEnded', function (transaction) {
+      instance.onTransactionEnded_(transaction);
+    });
 
     model.transactionHistory = instance;
     return instance;
@@ -422,9 +420,10 @@ var transactionHistory = (function () {
 // reference properties from ids to actual references.
 var referencingModel = (function () {
   var proto = {
-    //
+    // Gets the object that is referenced by item[attr]. Default is to return
+    // item[_attr].
     getReference: function (item, attr) {
-      return item['_' + attr];
+      return item['_' + attr] || this.resolveReference(item, attr);
     },
 
     // Resolves an id to a target item if possible.
@@ -434,8 +433,8 @@ var referencingModel = (function () {
 
     // Resolves a reference to a target item if possible.
     resolveReference: function (item, attr) {
-      var newId = item[attr];
-      var newTarget = this.resolveId(newId);
+      var newId = item[attr],
+          newTarget = this.resolveId(newId);
       item['_' + attr] = newTarget;
       return newTarget;
     },
@@ -507,10 +506,9 @@ var referencingModel = (function () {
     instance.model = model;
     if (model.observableModel) {
       // Create wrappers here to capture 'instance'.
-      instance.changed_ = function (change) {
+      model.observableModel.addHandler('changed', function (change) {
         instance.onChanged_(change);
-      }
-      model.observableModel.addHandler('changed', instance.changed_);
+      });
     }
     instance.targets_ = new HashMap();
     instance.addTargets_(model.root);
@@ -526,52 +524,58 @@ var referencingModel = (function () {
 
 //------------------------------------------------------------------------------
 
-// var referenceValidator = (function () {
-//   var proto = {
-//     onDanglingReference: function (item, attr) {
-//       console.log(item, attr);
-//     },
+var referenceValidator = (function () {
+  var proto = {
+    onDanglingReference: function (item, attr) {
+      this.onEvent('danglingReference', function (handler) {
+        handler(item, attr);
+      });
+    },
 
-//     onTransactionEnding_: function (transaction) {
-//       var self = this, dataModel = this.model.dataModel,
-//           referencingModel = this.model.referencingModel;
-//       dataModel.visitSubtree(this.model.root, function (item) {
-//         dataModel.visitReferences(item, function (item, attr) {
-//           if (!referencingModel.resolveId(item[attr]))
-//             self.onDanglingReference(item, attr);
-//         });
-//       });
-//     },
-//   }
+    onTransactionEnding_: function (transaction) {
+      var self = this, dataModel = this.model.dataModel,
+          referencingModel = this.model.referencingModel;
+      dataModel.visitSubtree(this.model.root, function (item) {
+        dataModel.visitReferences(item, function (item, attr) {
+          if (!referencingModel.resolveId(item[attr]))
+            self.onDanglingReference(item, attr);
+        });
+      });
+    },
+  }
 
-//   function extend(model) {
-//     if (model.referenceValidator)
-//       return model.referenceValidator;
+  function extend(model) {
+    if (model.referenceValidator)
+      return model.referenceValidator;
 
-//     var instance = Object.create(proto);
-//     instance.model = model;
-//     dataModel.extend(model);
-//     transactionModel.extend(model);
-//     referencingModel.extend(model);
-//     // Create wrappers here to capture 'instance'.
-//     instance.transactionEnding_ = function (transaction) {
-//       instance.onTransactionEnding_(transaction);
-//     }
-//     model.transactionModel.addHandler('transactionEnding', instance.transactionEnding_);
+    var instance = Object.create(proto);
+    instance.model = model;
+    eventMixin.extend(instance);
+    dataModel.extend(model);
+    transactionModel.extend(model);
+    referencingModel.extend(model);
+    // Create wrappers here to capture 'instance'.
+    model.transactionModel.addHandler('transactionEnding', function (transaction) {
+      instance.onTransactionEnding_(transaction);
+    });
 
-//     model.referenceValidator = instance;
-//     return instance;
-//   }
+    model.referenceValidator = instance;
+    return instance;
+  }
 
-//   return {
-//     extend: extend,
-//   };
-// })();
+  return {
+    extend: extend,
+  };
+})();
 
 //------------------------------------------------------------------------------
 
 var selectionModel = (function () {
   var proto = {
+    getLength: function () {
+      return this.selection.length;
+    },
+
     contains: function (item) {
       return this.selection.contains(item);
     },
@@ -826,21 +830,32 @@ var hierarchicalModel = (function () {
       });
     },
 
-    // Reduces the selection to the roots of the current selection. Thus, a
-    // parent and child can't be simultaneously selected.
-    reduceSelection: function (selectionModel) {  // TODO eliminate parameter
+    // Finds the roots of the given set of items, i.e. filters out descendant
+    // items whose parents are in items.
+    reduceToRoots: function (items) {
       var roots = [];
+      var set = new HashSet(this.model.dataModel.getId);
+      items.forEach(function(item) { set.add(item); });
       var self = this;
-      selectionModel.forEach(function (item) {
+      items.forEach(function (item) {
         var ancestor = self.getParent(item);
         while (ancestor) {
-          if (selectionModel.contains(ancestor))
+          if (set.contains(ancestor))
             return;
           ancestor = self.getParent(ancestor);
         }
         roots.push(item);
       });
-      selectionModel.set(roots);
+      return roots;
+    },
+
+    // Reduces the selection to the roots of the current selection. Thus, a
+    // parent and child can't be simultaneously selected.
+    reduceSelection: function () {
+      var selectionModel = this.model.selectionModel;
+      var roots = this.reduceToRoots(selectionModel);
+      if (roots.length != selectionModel.getLength())
+        selectionModel.set(roots);
     },
 
     init: function (item, parent) {
@@ -879,16 +894,16 @@ var hierarchicalModel = (function () {
 
     dataModel.extend(model);
     observableModel.extend(model);
+    selectionModel.extend(model);
 
     var instance = Object.create(proto);
     instance.model = model;
 
     if (model.observableModel) {
       // Create wrappers here to capture 'instance'.
-      instance.changed_ = function (change) {
+      model.observableModel.addHandler('changed', function (change) {
         instance.onChanged_(change);
-      }
-      model.observableModel.addHandler('changed', instance.changed_);
+      });
     }
 
     instance.init(model.root, null);
@@ -1048,10 +1063,9 @@ var transformableModel = (function () {
 
     if (model.observableModel) {
       // Create wrappers here to capture 'instance'.
-      instance.changed_ = function (change) {
+      model.observableModel.addHandler('changed', function (change) {
         instance.onChanged_(change);
-      }
-      model.observableModel.addHandler('changed', instance.changed_);
+      });
     }
 
     instance.update(model.root, null);
@@ -1069,24 +1083,56 @@ var transformableModel = (function () {
 
 var layoutModel = (function () {
   var proto = {
-    getLayout: function (item) {
-      return item;
+    // Default is to store the bounds as item x, y, width, height. This is a
+    // practical scheme, since x and y change more often in most use cases.
+    getBounds: function (item) {
+      var x = item.x, y = item.y;
+      return {
+        xMin: x,
+        yMin: y,
+        xMax: x + item.width || 32,
+        yMax: y + item.height || 32,
+      };
     },
 
-    setLayout: function (item, x, y, width, height) {
-      item.x = x;
-      item.y = y;
-      item.width = width;
-      item.height = height;
+    // setBounds: function (item, xMin, yMin, xMax, yMax) {
+    //   var observableModel = this.model.observableModel,
+    //       width = Math.max(0, xMax - xMin), height = Math.max(0, yMax - yMin);
+    //   if (observableModel) {
+    //     observableModel.changeValue(item, 'x', xMin);
+    //     observableModel.changeValue(item, 'y', yMin);
+    //     observableModel.changeValue(item, 'width', width);
+    //     observableModel.changeValue(item, 'height', height);
+    //   } else {
+    //     item.x = xMin;
+    //     item.y = yMin;
+    //     item.width = width;
+    //     item.height = height;
+    //   }
+    // },
+
+    sumBounds: function (items, filterFn) {
+      var xMin = Number.MAX_VALUE,
+          yMin = Number.MAX_VALUE,
+          xMax = Number.MIN_VALUE,
+          yMax = Number.MIN_VALUE,
+          self = this;
+      items.forEach(function(item) {
+        if (!filterFn(item))
+          return;
+        var bounds = self.getBounds(item);
+        xMin = Math.min(xMin, bounds.xMin);
+        yMin = Math.min(yMin, bounds.yMin);
+        xMax = Math.max(xMax, bounds.xMax);
+        yMax = Math.max(yMax, bounds.yMax);
+      });
+      return { xMin: xMin, yMin: yMin, xMax: xMax, yMax: yMax };
     },
   }
 
   function extend(model) {
     if (model.layoutModel)
       return model.layoutModel;
-
-    editingModel.extend(model);
-    transactionModel.extend(model);
 
     var instance = Object.create(proto);
     instance.model = model;
@@ -1134,13 +1180,13 @@ var layoutModel = (function () {
     transactionModel: transactionModel,
     transactionHistory: transactionHistory,
     referencingModel: referencingModel,
-    // referenceValidator: referenceValidator,
+    referenceValidator: referenceValidator,
     selectionModel: selectionModel,
     instancingModel: instancingModel,
     editingModel: editingModel,
     hierarchicalModel: hierarchicalModel,
     transformableModel: transformableModel,
-    // dragAndDropModel: dragAndDropModel,
+    layoutModel: layoutModel,
 
     ValueChangeTracker: ValueChangeTracker,
   }

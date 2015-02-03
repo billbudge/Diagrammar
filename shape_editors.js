@@ -43,8 +43,7 @@ var shapeEditors = (function() {
   var editingModel = (function() {
     var functions = {
       reduceSelection: function() {
-        var model = this.model;
-        model.hierarchicalModel.reduceSelection(model.selectionModel);
+        this.model.hierarchicalModel.reduceSelection();
       },
 
       deleteItem: function(item) {
@@ -670,7 +669,7 @@ var shapeEditors = (function() {
           transformableModel = model.transformableModel,
           local = transformableModel.getLocal(item),
           pParent = geometry.matMulVecNew(p, local),
-          pProj = geometry.projectToConvexHull(hull, pParent),
+          pProj = geometry.projectPointToConvexHull(hull, pParent),
           angle = geometry.getAngle(pProj.x - centroid.x, pProj.y - centroid.y);
       return angle;
     }

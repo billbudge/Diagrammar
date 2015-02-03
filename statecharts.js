@@ -6,7 +6,15 @@ var statecharts = (function() {
 
   // Utilities.
   function isState(item) {
-    return item.type != 'transition' && item.type != 'statechart';
+    return item.type == 'state' || isPseudostate(item);
+  }
+
+  function isTrueState(item) {
+    return item.type == 'state';
+  }
+
+  function isPseudostate(item) {
+    return item.type == 'start';
   }
 
   function isStatechart(item) {
@@ -50,8 +58,7 @@ var statecharts = (function() {
   var editingModel = (function() {
     var functions = {
       reduceSelection: function () {
-        var model = this.model;
-        model.hierarchicalModel.reduceSelection(model.selectionModel);
+        this.model.hierarchicalModel.reduceSelection();
       },
 
       getConnectedTransitions: function (states, copying) {
@@ -78,16 +85,22 @@ var statecharts = (function() {
 
       deleteItem: function(item) {
         var model = this.model,
-            parent = model.hierarchicalModel.getParent(item);
+            hierarchicalModel = model.hierarchicalModel,
+            parent = hierarchicalModel.getParent(item);
         if (parent) {
-          var items = parent.items;
-          var length = items.length;
+          var items = parent.items,
+              length = items.length;
           for (var i = 0; i < length; i++) {
             var subItem = items[i];
             if (subItem === item) {
               model.observableModel.removeElement(parent, items, i);
               break;
             }
+          }
+          // If this leaves an empty statechart (except for the root), delete it.
+          if (isStatechart(parent) && items.length == 0 &&
+              hierarchicalModel.getParent(parent)) {
+            this.deleteItem(parent);
           }
         }
       },
@@ -200,7 +213,7 @@ var statecharts = (function() {
           items: [ item ],
         };
         this.model.dataModel.assignId(statechart);
-        return statechart
+        return statechart;
       },
 
       addItem: function(item, oldParent, parent) {
@@ -213,15 +226,20 @@ var statecharts = (function() {
         }
         var itemToAdd = item;
         if (isState(parent)) {
-          // If the state is primitive, add a new statechart to hold sub-items.
-          if (!parent.items)
+          if (!parent.items || !parent.items.length) {
             parent.items = [];
-          if (!parent.items.length)
             itemToAdd = this.createStatechart(item);
+          } else {
+            parent = parent.items[0];
+            if (!parent.items)
+              parent.items = [];
+          }
         } else if (isStatechart(parent) &&
                    !this.canAddItemToStatechart(item, parent)) {
           parent = model.hierarchicalModel.getParent(parent);
           itemToAdd = this.createStatechart(item);
+          // TODO determine horizontal / vertical layout direction from item
+          // position in statechart.
         }
         if (oldParent !== parent) {
           if (oldParent)            // if null, it's a new item.
@@ -229,6 +247,61 @@ var statecharts = (function() {
           parent.items.push(itemToAdd);
           model.observableModel.onElementInserted(parent, parent.items, parent.items.length - 1);
         }
+      },
+
+      prettyPrint: function(renderer) {
+        var statechart = this.statechart,
+            padding = renderer.padding,
+            layoutModel = this.model.layoutModel;
+        reverseVisit(statechart, isStateOrStatechart, function(item) {
+          var items = item.items;
+          if (isTrueState(item)) {
+            var minSize = renderer.getStateMinSize(item);
+            item.width = Math.max(item.width || 0, minSize.width);
+            item.height = Math.max(item.height || 0, minSize.height);
+          }
+
+          if (items && items.length) {
+            var bounds = layoutModel.sumBounds(items, isStateOrStatechart);
+            var xMin = bounds.xMin, yMin = bounds.yMin,
+                xMax = bounds.xMax, yMax = bounds.yMax;
+            if (isState(item)) {
+              if (item.width < xMax)
+                item.width = xMax;
+              if (item.height < yMax)
+                item.height = yMax;
+              // Now layout statecharts to fill state.
+              var statechartOffsetY = 0, length = items.length;
+              for (var i = 0; i < length; i++) {
+                var statechart = items[i];
+                statechart.y = statechartOffsetY;
+                statechart.width = item.width;
+                if (i == length - 1)
+                  statechart.height = item.height - statechartOffsetY;
+                else
+                  statechartOffsetY += statechart.height;
+                console.log(statechart.y, statechartOffsetY);
+              }
+            } else if (isStatechart(item)) {
+              xMin -= padding;
+              yMin -= padding;
+              xMax += padding;
+              yMax += padding;
+              item.width = xMax;
+              item.height = yMax;
+              if (xMin < 0) {
+                item.x += xMin;
+                for (var i = 0; i < items.length; i++)
+                  items[i].x -= xMin;
+              }
+              if (yMin < 0) {
+                item.y += yMin;
+                for (var i = 0; i < items.length; i++)
+                  items[i].y -= yMin;
+              }
+            }
+          }
+        });
       },
     }
 
@@ -243,6 +316,7 @@ var statecharts = (function() {
       dataModels.transactionHistory.extend(model);
       dataModels.instancingModel.extend(model);
       dataModels.editingModel.extend(model);
+      dataModels.layoutModel.extend(model);
 
       var instance = Object.create(model.editingModel);
       instance.prototype = Object.getPrototypeOf(instance);
@@ -284,8 +358,11 @@ var statecharts = (function() {
   }
 
   Renderer.prototype.updateTransition = function(transition, endPt) {
-    var v1 = transition._srcId, t1 = transition.t1,
-        v2 = transition._dstId, t2 = transition.t2;
+    var referencingModel = this.model.referencingModel,
+        v1 = referencingModel.resolveReference(transition, 'srcId'),
+        v2 = referencingModel.resolveReference(transition, 'dstId'),
+        t1 = transition.t1,
+        t2 = transition.t2;
     this.updateBezier(transition, v1, t1, v2, t2, endPt);
   }
 
@@ -457,80 +534,15 @@ var statecharts = (function() {
       self.beginDrag();
     });
 
-    this.validateLayout();
+  }
+
+  Editor.prototype.prettyPrint = function() {
+    this.model.editingModel.prettyPrint(this.renderer);
   }
 
   Editor.prototype.isPaletteItem = function(item) {
     var hierarchicalModel = this.palette.hierarchicalModel;
     return hierarchicalModel.getParent(item) === this.palette.root;
-  }
-
-  // Make sure states and statecharts are sized to hold their contents.
-  Editor.prototype.validateLayout = function() {
-    var renderer = this.renderer, statechart = this.statechart,
-        stateMinWidth = renderer.stateMinWidth,
-        stateMinHeight = renderer.stateMinHeight;
-    reverseVisit(statechart, isStateOrStatechart, function(item) {
-      var items = item.items;
-      if (item.type == 'state') {
-        var minSize = renderer.getStateMinSize(item);
-        item.width = Math.max(item.width || 0, minSize.width);
-        item.height = Math.max(item.height || 0, minSize.height);
-      }
-
-      if (items) {
-        var minX = 0, minY = 0, maxX = 0, maxY = 0,
-            statechartOffsetY = 0,
-            length = items.length;
-        for (var i = 0; i < length; i++) {
-          var subItem = items[i];
-          if (isTransition(subItem))
-            continue;
-          if (isStatechart(subItem)) {
-            subItem.y = statechartOffsetY;
-            subItem.width = item.width;
-            statechartOffsetY += subItem.height;
-          }
-          minX = Math.min(minX, subItem.x);
-          minY = Math.min(minY, subItem.y);
-          var subItemWidth = subItem.width || stateMinWidth;
-          subItemWidth = Math.max(subItemWidth, stateMinWidth);
-          var subItemHeight = subItem.height || stateMinHeight;
-          subItemHeight = Math.max(subItemHeight, stateMinHeight);
-
-          maxX = Math.max(maxX, subItem.x + subItemWidth);
-          maxY = Math.max(maxY, subItem.y + subItemHeight);
-        }
-        var minWidth = maxX - minX, minHeight = maxY - minY;
-        if (item.type == 'state') {
-          if (item.width < minWidth)
-            item.width = minWidth;
-          if (item.height < minHeight)
-            item.height = minHeight;
-
-          if (items && items.length == 1) {
-            var statechart = items[0];
-            statechart.width = item.width;
-            statechart.height = item.height;
-          }
-
-        } else {
-          item.width = minWidth;
-          item.height = minHeight;
-        }
-
-        if (minX < 0) {
-          item.x += minX;
-          for (var i = 0; i < items.length; i++)
-            items[i].x -= minX;
-        }
-        if (minY < 0) {
-          item.y += minY;
-          for (var i = 0; i < items.length; i++)
-            items[i].y -= minY;
-        }
-      }
-    });
   }
 
   Editor.prototype.draw = function() {
@@ -576,12 +588,26 @@ var statecharts = (function() {
   }
 
   // filter functions.
-  function firstHit(item, hitInfo) {
-    return hitInfo;
+  function firstHit(item, model, hitInfo) {
+    return !hitInfo;
   }
 
-  function firstStateHit(item, hitInfo) {
-    return firstHit(item, hitInfo) || !isState(item);
+  function firstStateHit(item, model, hitInfo) {
+    return firstHit(item, model, hitInfo) && isState(item);
+  }
+
+  function firstUnselectedState(item, model, hitInfo) {
+    var hierarchicalModel = model.hierarchicalModel,
+        selectionModel = model.selectionModel;
+    if (!firstStateHit(item, model, hitInfo))
+      return false;
+    var state = item;
+    while (state) {
+      if (selectionModel.contains(state))
+        return false;
+      state = hierarchicalModel.getParent(state);
+    }
+    return true;
   }
 
   Editor.prototype.hitTest = function(p, filterFn) {
@@ -593,7 +619,7 @@ var statecharts = (function() {
       filterFn = firstHit;
 
     reverseVisit(palette.root, isState, function(state) {
-      if (filterFn(state, hitInfo))
+      if (!filterFn(state, model, hitInfo))
         return;
       hitInfo = renderer.hitTestState(state, p);
     });
@@ -601,7 +627,7 @@ var statecharts = (function() {
       return hitInfo;
 
     reverseVisit(statechart, isTransition, function(transition) {
-      if (filterFn(transition, hitInfo))
+      if (!filterFn(transition, model, hitInfo))
         return;
       hitInfo = renderer.hitTestTransition(transition, p);
     });
@@ -609,7 +635,7 @@ var statecharts = (function() {
       return hitInfo;
 
     reverseVisit(statechart, isState, function(state) {
-      if (filterFn(state, hitInfo))
+      if (!filterFn(state, model, hitInfo))
         return;
       if (model.selectionModel.contains(state)) {
         switch (renderer.hitKnobby(state, p)) {
@@ -625,23 +651,6 @@ var statecharts = (function() {
       }
     });
     return hitInfo;
-  }
-
-  Editor.prototype.hitTestUnselectedStates = function(p) {
-    var model = this.model,
-        hierarchicalModel = model.hierarchicalModel,
-        selectionModel = model.selectionModel;
-    return this.hitTest(p, function(item, hitInfo) {
-      if (firstStateHit(item, hitInfo))
-        return true;
-      var state = item;
-      while (state) {
-        if (selectionModel.contains(state))
-          return true;
-        state = hierarchicalModel.getParent(state);
-      }
-      return false;
-    });
   }
 
   Editor.prototype.beginDrag = function() {
@@ -723,7 +732,7 @@ var statecharts = (function() {
         hitInfo, srcState, dstState, srcStateId, dstStateId, t1, t2;
     switch (drag.type) {
       case 'moveSelection':
-        var hitInfo = this.hotTrackInfo = this.hitTestUnselectedStates(p);
+        var hitInfo = this.hotTrackInfo = this.hitTest(p, firstUnselectedState);
         selectionModel.forEach(function(item) {
           var snapshot = valueTracker.getSnapshot(item);
           if (snapshot) {
@@ -788,7 +797,7 @@ var statecharts = (function() {
 
     if (drag.type == 'moveSelection') {
       // Find state beneath mouse.
-      var hitInfo = this.hitTestUnselectedStates(p);
+      var hitInfo = this.hitTest(p, firstUnselectedState);
       var parent = statechart;
       if (hitInfo)
         parent = hitInfo.item;
@@ -810,7 +819,7 @@ var statecharts = (function() {
           statechart, statechart.items, statechart.items.length - 1, newItem);
     }
 
-    this.validateLayout();
+    this.prettyPrint();
     this.valueTracker.end();
     this.valueTracker = null;
 
@@ -900,7 +909,7 @@ var statecharts = (function() {
       e.preventDefault();
       editingModel.doDelete();
       updateFn(this);
-    } else if (e.ctrlKey) {
+    } else if (e.ctrlKey || e.metaKey) {
       if (e.keyCode == 65) {  // 'a'
         statechart.items.forEach(function(v) {
           selectionModel.add(v);

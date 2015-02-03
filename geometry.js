@@ -225,26 +225,6 @@ var geometry = (function() {
     return hull;
   }
 
-  // Project a point onto the hull; assume the hull has been annotated to speed
-  // the search. The projection uses angle to quickly find a low quality projection.
-  function projectToConvexHull(hull, p) {
-    var length = hull.length, lastP = hull[length - 1],
-        minP0, minP1, minDist = Number.MAX_VALUE;
-    for (var i = 0; i < length; i++) {
-      var pi = hull[i],
-          dist = geometry.pointToSegmentDist(lastP, pi, p);
-      if (dist < minDist) {
-        minP0 = lastP;
-        minP1 = pi;
-        minDist = dist;
-      }
-      lastP = pi;
-    }
-    var t = geometry.projectPointToSegment(minP0, minP1, p);
-    return { x: minP0.x + t * (minP1.x - minP0.x),
-             y: minP0.y + t * (minP1.y - minP0.y) };
-  }
-
   function getExtents(points) {
     var p0 = points[0],
         xmin = p0.x, ymin = p0.y, xmax = p0.x, ymax = p0.y;
@@ -295,6 +275,25 @@ var geometry = (function() {
       pi.angle = getAngle(dx, dy);
     }
     hull.sort(compareAngles);
+  }
+
+  // Project a point onto the hull.
+  function projectPointToConvexHull(hull, p) {
+    var length = hull.length, lastP = hull[length - 1],
+        minP0, minP1, minDist = Number.MAX_VALUE;
+    for (var i = 0; i < length; i++) {
+      var pi = hull[i],
+          dist = geometry.pointToSegmentDist(lastP, pi, p);
+      if (dist < minDist) {
+        minP0 = lastP;
+        minP1 = pi;
+        minDist = dist;
+      }
+      lastP = pi;
+    }
+    var t = geometry.projectPointToSegment(minP0, minP1, p);
+    return { x: minP0.x + t * (minP1.x - minP0.x),
+             y: minP0.y + t * (minP1.y - minP0.y) };
   }
 
   function angleToConvexHull(hull, centroid, angle) {
@@ -348,7 +347,7 @@ var geometry = (function() {
     getAngle: getAngle,
     compareAngles: compareAngles,
     annotateConvexHull: annotateConvexHull,
-    projectToConvexHull: projectToConvexHull,
+    projectPointToConvexHull: projectPointToConvexHull,
     angleToConvexHull: angleToConvexHull,
   };
 })();

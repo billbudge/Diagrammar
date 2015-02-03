@@ -341,6 +341,23 @@ var diagrams = (function() {
     }
   }
 
+  function resizeCanvas(canvas, ctx, size) {
+    if (size.width > canvas.width || size.height > canvas.height) {
+      var devicePixelRatio = window.devicePixelRatio || 1,
+          backingStoreRatio = ctx.webkitBackingStorePixelRatio ||
+                              ctx.mozBackingStorePixelRatio ||
+                              ctx.msBackingStorePixelRatio ||
+                              ctx.oBackingStorePixelRatio ||
+                              ctx.backingStorePixelRatio || 1,
+          ratio = devicePixelRatio / backingStoreRatio;
+      canvas.width = ratio * size.width;
+      canvas.style.width = size.width + 'px';
+      canvas.height = ratio * size.height;
+      canvas.style.height = size.height + 'px';
+      ctx.scale(ratio, ratio);
+    }
+  }
+
 //------------------------------------------------------------------------------
 
   // Hierarchical graph renderer.
@@ -356,6 +373,7 @@ var diagrams = (function() {
     this.textIndent = 8;
     this.textLeading = 6;
     this.arrowSize = 8;
+    this.padding = 8;
 
     if (!theme)
       theme = diagrams.theme.create();
@@ -469,7 +487,7 @@ var diagrams = (function() {
     if (w && h)
       hitInfo = hitTestRect(x, y, w, h, r, p, tol);
     else
-      hitInfo = hitTestDisk(x, y, r, p, tol);
+      hitInfo = hitTestDisk(x + r, y + r, r, p, tol);
 
     return hitInfo;
   }
@@ -497,6 +515,7 @@ var diagrams = (function() {
     hitTestDisk: hitTestDisk,
     hitTestLine: hitTestLine,
     hitTestBezier: hitTestBezier,
+    resizeCanvas: resizeCanvas,
 
     GraphRenderer: GraphRenderer,
   }
