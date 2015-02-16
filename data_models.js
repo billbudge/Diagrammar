@@ -830,32 +830,28 @@ var hierarchicalModel = (function () {
       });
     },
 
-    // Finds the roots of the given set of items, i.e. filters out descendant
-    // items whose parents are in items.
-    reduceToRoots: function (items) {
-      var roots = [];
-      var set = new HashSet(this.model.dataModel.getId);
-      items.forEach(function(item) { set.add(item); });
-      var self = this;
-      items.forEach(function (item) {
-        var ancestor = self.getParent(item);
-        while (ancestor) {
-          if (set.contains(ancestor))
-            return;
-          ancestor = self.getParent(ancestor);
-        }
-        roots.push(item);
-      });
-      return roots;
+    isItemInSelection: function(item) {
+      var selectionModel = this.model.selectionModel,
+          ancestor = item;
+      while (ancestor) {
+        if (selectionModel.contains(ancestor))
+          return true;
+        ancestor = this.getParent(ancestor);
+      }
+      return false;
     },
 
     // Reduces the selection to the roots of the current selection. Thus, a
     // parent and child can't be simultaneously selected.
     reduceSelection: function () {
-      var selectionModel = this.model.selectionModel;
-      var roots = this.reduceToRoots(selectionModel);
-      if (roots.length != selectionModel.getLength())
-        selectionModel.set(roots);
+      var selectionModel = this.model.selectionModel,
+          roots = [],
+          self = this;
+      selectionModel.forEach(function (item) {
+        if (!self.isItemInSelection(item))
+          roots.push(item);
+      });
+      return roots;
     },
 
     init: function (item, parent) {
@@ -1081,73 +1077,6 @@ var transformableModel = (function () {
 
 //------------------------------------------------------------------------------
 
-var layoutModel = (function () {
-  var proto = {
-    // Default is to store the bounds as item x, y, width, height. This is a
-    // practical scheme, since x and y change more often in most use cases.
-    getBounds: function (item) {
-      var x = item.x, y = item.y;
-      return {
-        xMin: x,
-        yMin: y,
-        xMax: x + item.width || 32,
-        yMax: y + item.height || 32,
-      };
-    },
-
-    // setBounds: function (item, xMin, yMin, xMax, yMax) {
-    //   var observableModel = this.model.observableModel,
-    //       width = Math.max(0, xMax - xMin), height = Math.max(0, yMax - yMin);
-    //   if (observableModel) {
-    //     observableModel.changeValue(item, 'x', xMin);
-    //     observableModel.changeValue(item, 'y', yMin);
-    //     observableModel.changeValue(item, 'width', width);
-    //     observableModel.changeValue(item, 'height', height);
-    //   } else {
-    //     item.x = xMin;
-    //     item.y = yMin;
-    //     item.width = width;
-    //     item.height = height;
-    //   }
-    // },
-
-    sumBounds: function (items, filterFn) {
-      var xMin = Number.MAX_VALUE,
-          yMin = Number.MAX_VALUE,
-          xMax = Number.MIN_VALUE,
-          yMax = Number.MIN_VALUE,
-          self = this;
-      items.forEach(function(item) {
-        if (!filterFn(item))
-          return;
-        var bounds = self.getBounds(item);
-        xMin = Math.min(xMin, bounds.xMin);
-        yMin = Math.min(yMin, bounds.yMin);
-        xMax = Math.max(xMax, bounds.xMax);
-        yMax = Math.max(yMax, bounds.yMax);
-      });
-      return { xMin: xMin, yMin: yMin, xMax: xMax, yMax: yMax };
-    },
-  }
-
-  function extend(model) {
-    if (model.layoutModel)
-      return model.layoutModel;
-
-    var instance = Object.create(proto);
-    instance.model = model;
-
-    model.layoutModel = instance;
-    return instance;
-  }
-
-  return {
-    extend: extend,
-  };
-})();
-
-//------------------------------------------------------------------------------
-
 // var myModel = (function () {
 //   var proto = {
 //     getParent: function (item) {
@@ -1186,7 +1115,6 @@ var layoutModel = (function () {
     editingModel: editingModel,
     hierarchicalModel: hierarchicalModel,
     transformableModel: transformableModel,
-    layoutModel: layoutModel,
 
     ValueChangeTracker: ValueChangeTracker,
   }

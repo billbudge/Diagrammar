@@ -430,14 +430,16 @@ var diagrams = (function() {
     return circleParamToPoint(rect.x + r, rect.y + r, r, t);
   }
 
-  GraphRenderer.prototype.updateBezier = function(e, v1, t1, v2, t2, endPt) {
+  GraphRenderer.prototype.updateEdgeGeometry = function(e, v1, t1, v2, t2, endPt) {
     var p1, p2;
-    if (v1) {
-      p1 = this.vertexParamToPoint(v1, t1);
-    }
-    if (v2) {
-      p2 = this.vertexParamToPoint(v2, t2);
-    }
+    if (v1)
+      e._p1 = p1 = this.vertexParamToPoint(v1, t1);
+    else
+      e._p1 = endPt;
+    if (v2)
+      e._p2 = p2 = this.vertexParamToPoint(v2, t2);
+    else
+      e._p2 = endPt;
 
     e._bezier = getEdgeBezier(p1, p2, endPt);
   }
