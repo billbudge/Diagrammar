@@ -461,6 +461,7 @@ var statecharts = (function() {
     var ctx = this.ctx, textSize = this.textSize, textColor = this.textColor,
         srcId = transition.srcId, dstId = transition.dstId,
         x = transition.x, y = transition.y, labelWidth = transition._labelWidth,
+        p1 = transition._p1, p2 = transition._p2,
         bgColor = this.bgColor;
     function drawText(text, x, y) {
       ctx.fillStyle = bgColor;
@@ -469,15 +470,15 @@ var statecharts = (function() {
       ctx.fillText(text, x, y + textSize);
     }
     ctx.save();
-    if (srcId && dstId) {
+    if (p1 && p2) {
       this.drawEdge(transition);
       drawText(transition.event, x, y);
-    } else if (srcId) {
+    } else if (p1) {
       var p1 = transition._p1;
       ctx.translate(p1.x, p1.y);
       ctx.rotate(geometry.getAngle(p1.nx, -p1.ny));
       drawText(transition.event, 0, 0);
-    } else if (dstId) {
+    } else if (p2) {
 
     }
     ctx.restore();

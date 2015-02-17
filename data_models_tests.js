@@ -331,7 +331,7 @@ test("hierarchicalModel", function() {
 
   var selection = dataModels.selectionModel.extend(model);
   selection.set([ root, child1, child2, child3 ]);
-  test.reduceSelection();
+  selection.set(test.reduceSelection());
   var contents = selection.contents();
   deepEqual(contents.length, 1);
   deepEqual(contents[0], root);
