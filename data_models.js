@@ -830,9 +830,9 @@ var hierarchicalModel = (function () {
       });
     },
 
-    isAncestorInSelection: function(item) {
+    isItemInSelection: function(item) {
       var selectionModel = this.model.selectionModel,
-          ancestor = this.getParent(item);
+          ancestor = item;
       while (ancestor) {
         if (selectionModel.contains(ancestor))
           return true;
@@ -848,7 +848,7 @@ var hierarchicalModel = (function () {
           roots = [],
           self = this;
       selectionModel.forEach(function (item) {
-        if (!self.isAncestorInSelection(item))
+        if (!self.isItemInSelection(self.getParent(item)))
           roots.push(item);
       });
       return roots;

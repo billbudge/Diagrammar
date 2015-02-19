@@ -371,63 +371,97 @@ var statecharts = (function() {
 //------------------------------------------------------------------------------
 
   function Renderer(model, ctx, theme) {
-    diagrams.GraphRenderer.call(this, ctx, theme);
     this.model = model;
-    this.transformableModel = model.transformableModel;
+    this.transformableModel = this.model.transformableModel;
+    this.ctx = ctx;
+    this.theme = theme || diagrams.theme.create();
+
+    this.radius = 8;
+    this.textSize = 16;
+    this.textIndent = 8;
+    this.textLeading = 6;
+    this.arrowSize = 8;
+    this.padding = 8;
     this.stateMinWidth = 100;
     this.stateMinHeight = 60;
     this.knobbySize = 4;
+
+    this.hitTolerance = 8;
+
+    this.bgColor = theme.bgColor;
+    this.strokeColor = theme.strokeColor;
+    this.textColor = theme.textColor;
   }
 
-  Renderer.prototype = Object.create(diagrams.GraphRenderer.prototype);
-
-  Renderer.prototype.getVertexRect = function(v) {
-    var transform = this.transformableModel.getAbsolute(v),
-        x = transform[4], y = transform[5];
-    if (isStateOrStatechart(v))
-      return { x: x, y: y, width: v.width, height: v.height };
+  Renderer.prototype.getStateRect = function(state) {
+    var transform = this.transformableModel.getAbsolute(state),
+        x = transform[4], y = transform[5], w = state.width, h = state.height;
+    if (w && h)
+      return { x: x, y: y, width: w, height: h };
 
     return { x: x, y: y };
   }
 
-  Renderer.prototype.updateTransition = function(transition, endPt) {
-    var referencingModel = this.model.referencingModel,
-        v1 = referencingModel.resolveReference(transition, 'srcId'),
-        v2 = referencingModel.resolveReference(transition, 'dstId'),
-        t1 = transition.t1,
-        t2 = transition.t2;
-    if (v1 || v2)
-      this.updateEdgeGeometry(transition, v1, t1, v2, t2, endPt);
+  Renderer.prototype.measureText = function(text) {
+    return this.ctx.measureText(text).width;
+  }
 
-    // Measure label text and calculate text position.
-    var metrics = this.ctx.measureText(transition.event),
-        labelWidth = metrics.width,
-        textSize = this.textSize;
-    transition._labelWidth = labelWidth;
+  Renderer.prototype.statePointToParam = function(state, p) {
+    var r = this.radius, rect = this.getStateRect(state);
+    if (rect.width && rect.height)
+      return diagrams.rectPointToParam(rect.x, rect.y, rect.width, rect.height, p);
 
-    if (v1 && v2) {
-      var mid = EvaluateCurveSegment(transition._bezier, 0.5);
-      transition.x = mid.x - labelWidth / 2;
-      transition.y = mid.y - textSize / 2;
-    } else if (v1) {
-      var p = transition._bezier[0];
-      transition.x = p.x;
-      transition.y = p.y - textSize / 2;
-    } else if (v2) {
-      var p = transition._bezier[3];
-      transition.x = p.x - labelWidth;
-      transition.y = p.y - textSize / 2;
-    }
+    return diagrams.rectPointToParam(rect.x, rect.y, 2 * r, 2 * r, p);
+    //TODO circlePointToParam
+  }
+
+  Renderer.prototype.stateParamToPoint = function(state, t) {
+    var r = this.radius, rect = this.getStateRect(state);
+    if (rect.width && rect.height)
+      return diagrams.roundRectParamToPoint(
+          rect.x, rect.y, rect.width, rect.height, r, t);
+
+    return diagrams.circleParamToPoint(rect.x + r, rect.y + r, r, t);
+  }
+
+  Renderer.prototype.makeStatePath = function(rect) {
+    var ctx = this.ctx, r = this.radius,
+        x = rect.x, y = rect.y, w = rect.width, h = rect.height;
+    if (w && h)
+      diagrams.roundRectPath(x, y, w, h, r, ctx);
+    else
+      diagrams.diskPath(x + r, y + r, r, ctx);
+  }
+
+  Renderer.prototype.strokeState = function(state) {
+    var ctx = this.ctx, r = this.radius,
+        rect = this.getStateRect(state);
+    this.makeStatePath(rect);
+    ctx.stroke();
+  }
+
+  Renderer.prototype.beginDraw = function() {
+    var ctx = this.ctx;
+    ctx.save();
+    ctx.strokeStyle = this.strokeColor;
+    ctx.lineWidth = 1;
+    ctx.font = '16px sans-serif';
+  }
+
+  Renderer.prototype.endDraw = function() {
+    this.ctx.restore();
   }
 
   Renderer.prototype.drawState = function(state) {
-    var ctx = this.ctx, r = this.radius,
+    var ctx = this.ctx, r = this.radius, rect = this.getStateRect(state),
         type = state.type,
-        rect = this.getVertexRect(state),
-        x = rect.x, y = rect.y;
-    this.drawVertex(state);
+        x = rect.x, y = rect.y, w = rect.width, h = rect.height;
+    this.makeStatePath(rect);
+    ctx.fillStyle = this.bgColor;
+    ctx.fill();
+    ctx.stroke();
+
     if (type == 'state') {
-      var w = state.width, h = state.height;
       ctx.beginPath();
       var lineBase = y + this.textSize + this.textLeading;
       ctx.moveTo(x, lineBase);
@@ -457,6 +491,48 @@ var statecharts = (function() {
     }
   }
 
+  Renderer.prototype.updateTransition = function(transition, endPt) {
+    var referencingModel = this.model.referencingModel,
+        v1 = referencingModel.resolveReference(transition, 'srcId'),
+        v2 = referencingModel.resolveReference(transition, 'dstId'),
+        t1 = transition.t1,
+        t2 = transition.t2,
+        p1, p2;
+    if (v1)
+      transition._p1 = p1 = this.stateParamToPoint(v1, t1);
+    else
+      transition._p1 = endPt;
+    if (v2)
+      transition._p2 = p2 = this.stateParamToPoint(v2, t2);
+    else
+      transition._p2 = endPt;
+    if (v1 || v2)
+      transition._bezier = diagrams.getEdgeBezier(p1, p2, endPt);
+
+    // Measure label text and calculate text position.
+    var labelWidth = this.measureText(transition.event),
+        textSize = this.textSize;
+    transition._labelWidth = labelWidth;
+
+    if (v1 && v2) {
+      var mid = EvaluateCurveSegment(transition._bezier, 0.5);
+      transition.x = mid.x - labelWidth / 2;
+      transition.y = mid.y - textSize / 2;
+    } else if (v1) {
+      var p = transition._p1;
+      transition.x = p.x;
+      transition.y = p.y - textSize / 2;
+    } else if (v2) {
+      var p = transition._p2;
+      transition.x = p.x - labelWidth;
+      transition.y = p.y - textSize / 2;
+    }
+  }
+
+  Renderer.prototype.makeTransitionPath = function(transition) {
+    diagrams.edgePath(transition._bezier, this.ctx, this.arrowSize);
+  }
+
   Renderer.prototype.drawTransition = function(transition) {
     var ctx = this.ctx, textSize = this.textSize, textColor = this.textColor,
         srcId = transition.srcId, dstId = transition.dstId,
@@ -471,10 +547,10 @@ var statecharts = (function() {
     }
     ctx.save();
     if (p1 && p2) {
-      this.drawEdge(transition);
+      this.makeTransitionPath(transition);
+      ctx.stroke();
       drawText(transition.event, x, y);
     } else if (p1) {
-      var p1 = transition._p1;
       ctx.translate(p1.x, p1.y);
       ctx.rotate(geometry.getAngle(p1.nx, -p1.ny));
       drawText(transition.event, 0, 0);
@@ -482,6 +558,12 @@ var statecharts = (function() {
 
     }
     ctx.restore();
+  }
+
+  Renderer.prototype.strokeTransition = function(transition) {
+    var ctx = this.ctx;
+    this.makeTransitionPath(transition);
+    ctx.stroke();
   }
 
   Renderer.prototype.getStateMinSize = function(state) {
@@ -496,7 +578,7 @@ var statecharts = (function() {
   }
 
   Renderer.prototype.getKnobbies = function(state) {
-    var rect = this.getVertexRect(state),
+    var rect = this.getStateRect(state),
         x = rect.x, y = rect.y, width = rect.width, height = rect.height,
         r = this.radius, xOffset = 2 * r,
         knobbies = {};
@@ -529,16 +611,23 @@ var statecharts = (function() {
     }
   }
 
-  Renderer.prototype.hitTestStateOrStatechart = function(item, p) {
-    // States and statecharts have x, y, width and height.
-    var hitInfo = this.hitTestVertex(item, p);
+  Renderer.prototype.hitTestStateOrStatechart = function(state, p) {
+    var tol = this.hitTolerance, r = this.radius,
+        rect = this.getStateRect(state),
+        x = rect.x, y = rect.y, w = rect.width, h = rect.height,
+        hitInfo;
+    if (w && h)
+      hitInfo = diagrams.hitTestRect(x, y, w, h, r, p, tol);
+    else
+      hitInfo = diagrams.hitTestDisk(x + r, y + r, r, p, tol);
+
     if (hitInfo)
-      hitInfo.item = item;
+      hitInfo.item = state;
     return hitInfo;
   }
 
   Renderer.prototype.hitTestTransition = function(transition, p) {
-    var hitInfo = this.hitTestBezier(transition, p);
+    var hitInfo = diagrams.hitTestBezier(transition._bezier, p, this.hitTolerance);
     if (hitInfo)
       hitInfo.item = transition;
     return hitInfo;
@@ -565,8 +654,6 @@ var statecharts = (function() {
 
     this.ctx = canvas.getContext('2d');
 
-    if (!theme)
-      theme = diagrams.theme.create();
     var renderer = this.renderer = new Renderer(model, ctx, theme);
 
     var palette = this.palette = {
@@ -645,14 +732,14 @@ var statecharts = (function() {
     model.selectionModel.forEach(function(item) {
       if (isState(item)) {
         renderer.drawKnobbies(item);
-        renderer.strokeVertex(item);
+        renderer.strokeState(item);
       } else {
-        renderer.strokeEdge(item);
+        renderer.strokeTransition(item);
       }
     });
     if (this.hotTrackInfo) {
       ctx.strokeStyle = renderer.theme.hotTrackColor;
-      renderer.strokeVertex(this.hotTrackInfo.item);
+      renderer.strokeState(this.hotTrackInfo.item);
     }
     renderer.endDraw();
 
@@ -833,14 +920,14 @@ var statecharts = (function() {
         observableModel.changeValue(dragItem, 'srcId', srcStateId);
         srcState = referencingModel.getReference(dragItem, 'srcId');
         if (srcState) {
-          t1 = renderer.vertexPointToParam(srcState, p);
+          t1 = renderer.statePointToParam(srcState, p);
           observableModel.changeValue(dragItem, 't1', t1);
         }
         break;
       case 'connectingP2':
         if (drag.isNewItem) {
           srcState = referencingModel.getReference(dragItem, 'srcId');
-          t1 = renderer.vertexPointToParam(srcState, p);
+          t1 = renderer.statePointToParam(srcState, p);
           observableModel.changeValue(dragItem, 't1', t1);
         }
         hitInfo = this.hotTrackInfo = this.getFirstHit(hitList, isState);
@@ -848,7 +935,7 @@ var statecharts = (function() {
         observableModel.changeValue(dragItem, 'dstId', dstStateId);
         dstState = referencingModel.getReference(dragItem, 'dstId');
         if (dstState) {
-          t2 = renderer.vertexPointToParam(dstState, p);
+          t2 = renderer.statePointToParam(dstState, p);
           observableModel.changeValue(dragItem, 't2', t2);
         }
         break;

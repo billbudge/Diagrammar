@@ -6,11 +6,6 @@
 </head>
 <body>
 
-<select id="selector">
-  <option value="statecharts">Statecharts</option>
-  <option value="shapes">Shapes</option>
-</select>
-
 <canvas id="test_canvas"></canvas>
 
   <script src="collections.js"></script>
@@ -25,20 +20,8 @@
 <script type="text/javascript" language="JavaScript">
 'use strict';
 
-document.bgColor = 'white';
 var canvas = document.getElementById('test_canvas');
-
 var ctx = canvas.getContext('2d');
-canvas.width  = window.innerWidth;
-canvas.height = window.innerHeight;
-ctx.font = '16px Helvetica';
-ctx.translate(0.5, 0.5);
-
-var selector = document.getElementById('selector');
-selector.onchange = function() {
-  var option = this.options[this.selectedIndex];
-  startEditor(option.value);
-}
 
 document.bgColor = '#6666cc';
 
@@ -53,9 +36,10 @@ var onUpdate = function(editor) {
   editor.draw();
 }
 
-function startEditor(name) {
+var editorName = 'statecharts';
+function startEditor() {
   var model;
-  switch (name) {
+  switch (editorName) {
     case 'statecharts':
       editor = new statecharts.Editor(statechart_model, theme, canvas, onUpdate);
       break;
@@ -67,7 +51,16 @@ function startEditor(name) {
   onUpdate(editor);
 }
 
-startEditor('statecharts');
+startEditor();
+
+function resizeCanvas() {
+  diagrams.resizeCanvas(canvas, window.innerWidth, window.innerHeight);
+  onUpdate(editor);
+}
+
+resizeCanvas();
+
+window.onresize = resizeCanvas;
 
 canvas.onmousedown = function(e) {
   editor.onMouseDown(e);
@@ -80,6 +73,11 @@ canvas.onmousemove = function(e) {
 canvas.onmouseup = function(e) {
   editor.onMouseUp(e);
 };
+
+canvas.ondblclick = function(e) {
+  editorName = (editorName == 'statecharts' ? 'shapes' : 'statecharts');
+  startEditor();
+}
 
 document.onkeydown = function(e) {
   editor.onKeyDown(e);

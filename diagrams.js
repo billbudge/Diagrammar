@@ -79,7 +79,7 @@ var diagrams = (function() {
       },
       blueprint: {
         bgColor: '#6666cc',
-        strokeColor: '#f8f8f8',
+        strokeColor: '#f0f0f0',
         textColor: '#f0f0f0',
         highlightColor: '#40F040',
         hotTrackColor: '#F0F040',
@@ -341,30 +341,28 @@ var diagrams = (function() {
     }
   }
 
-  function resizeCanvas(canvas, ctx, size) {
-    if (size.width > canvas.width || size.height > canvas.height) {
-      var devicePixelRatio = window.devicePixelRatio || 1,
-          backingStoreRatio = ctx.webkitBackingStorePixelRatio ||
-                              ctx.mozBackingStorePixelRatio ||
-                              ctx.msBackingStorePixelRatio ||
-                              ctx.oBackingStorePixelRatio ||
-                              ctx.backingStorePixelRatio || 1,
-          ratio = devicePixelRatio / backingStoreRatio;
-      canvas.width = ratio * size.width;
-      canvas.style.width = size.width + 'px';
-      canvas.height = ratio * size.height;
-      canvas.style.height = size.height + 'px';
-      ctx.scale(ratio, ratio);
-    }
+  function resizeCanvas(canvas, width, height) {
+    var ctx = canvas.getContext('2d'),
+        devicePixelRatio = window.devicePixelRatio || 1,
+        backingStoreRatio = ctx.webkitBackingStorePixelRatio ||
+                            ctx.mozBackingStorePixelRatio ||
+                            ctx.msBackingStorePixelRatio ||
+                            ctx.oBackingStorePixelRatio ||
+                            ctx.backingStorePixelRatio || 1,
+
+        contextScale = devicePixelRatio / backingStoreRatio;
+
+    canvas.width  = width * contextScale;
+    canvas.height = height * contextScale;
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+    ctx.resetTransform();
+    ctx.scale(contextScale, contextScale);
   }
 
 //------------------------------------------------------------------------------
 
-  // Hierarchical graph renderer.
-  // 1) Calculates positions, sizes, and other geometry for vertices and edges,
-  //    which it stores on the graph objects.
-  // 2  Renders vertices as round-rects, and edges as bezier curve segments.
-  // 3) Performs hit detection on vertices and edges.
+  // TODO eliminate this
   function GraphRenderer(ctx, theme) {
     this.ctx = ctx;
 

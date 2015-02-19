@@ -202,7 +202,7 @@ var shapeEditors = (function() {
   Renderer.prototype.drawItem = function(item) {
     var ctx = this.ctx, knobbySize = this.knobbySize, t = item._atransform;
     ctx.save();
-    ctx.setTransform(t[0], t[2], t[1], t[3], t[4], t[5]); // local to world
+    ctx.transform(t[0], t[2], t[1], t[3], t[4], t[5]); // local to world
     switch (item.type) {
       case 'disk':
         ctx.beginPath();
@@ -272,7 +272,7 @@ var shapeEditors = (function() {
   Renderer.prototype.highlightItem = function(item) {
     var ctx = this.ctx, knobbySize = this.knobbySize, t = item._atransform;
     ctx.save();
-    ctx.setTransform(t[0], t[2], t[1], t[3], t[4], t[5]); // local to world
+    ctx.transform(t[0], t[2], t[1], t[3], t[4], t[5]); // local to world
     switch (item.type) {
       case 'disk':
         ctx.beginPath();
