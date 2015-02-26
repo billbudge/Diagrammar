@@ -350,6 +350,13 @@ SelectionSet.prototype = {
     return false;
   },
 
+  toggle: function(element) {
+    if (this.contains(element))
+      this.remove(element);
+    else
+      this.add(element);
+  },
+
   clear: function() {
     this.list_.clear();
     this.hash_map_.clear();

@@ -172,7 +172,7 @@ test("transactionModel events", function() {
   var model = {};
   var test = dataModels.transactionModel.extend(model);
   var started, ending, ended;
-  test.addHandler('transactionStarted', function(transaction) {
+  test.addHandler('transactionBegan', function(transaction) {
     ok(!started);
     ok(test.transaction);
     started = transaction;

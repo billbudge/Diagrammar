@@ -243,9 +243,10 @@ var observableModel = (function () {
 
 var transactionModel = (function () {
   var opProto = {
-    undo: function (observableModel) {
-      var change = this.change;
-      var item = change.item, attr = change.attr;
+    undo: function () {
+      var change = this.change,
+          item = change.item, attr = change.attr,
+          observableModel = this.observableModel;
       switch (change.type) {
         case 'change':
           var oldValue = change.item[change.attr];
@@ -266,6 +267,20 @@ var transactionModel = (function () {
           break;
       }
     },
+    redo: function() {
+      // 'change' is a toggle, and we swap 'insert' and 'remove' so redo is
+      // just undo.
+      this.undo();
+    }
+  }
+
+  var selectionOpProto = {
+    undo: function() {
+      this.selectionModel.set(this.startingSelection);
+    },
+    redo: function() {
+      this.selectionModel.set(this.endingSelection);
+    }
   }
 
   var proto = {
@@ -276,7 +291,8 @@ var transactionModel = (function () {
         ops: [],
       };
       this.transaction = transaction;
-      this.onEvent('transactionStarted', function (handler) {
+      this.onBeginTransaction(transaction);
+      this.onEvent('transactionBegan', function (handler) {
         handler(transaction);
       });
     },
@@ -285,6 +301,7 @@ var transactionModel = (function () {
     // do any adjustments to make data valid, or cancel the transaction.
     endTransaction: function () {
       var transaction = this.transaction;
+      this.onEndTransaction(transaction);
       this.onEvent('transactionEnding', function (handler) {
         handler(transaction);
       });
@@ -300,6 +317,7 @@ var transactionModel = (function () {
       this.undo(this.transaction);
       var transaction = this.transaction;
       this.transaction = null;
+      this.onCancelTransaction(transaction);
       this.onEvent('transactionCanceled', function (handler) {
         handler(transaction);
       });
@@ -311,7 +329,7 @@ var transactionModel = (function () {
       var ops = transaction.ops;
       var length = ops.length;
       for (var i = length - 1; i >= 0; i--)
-        ops[i].undo(this.model.observableModel);
+        ops[i].undo();
     },
 
     // Redoes the changes in the transaction.
@@ -320,7 +338,41 @@ var transactionModel = (function () {
       var ops = transaction.ops;
       var length = ops.length;
       for (var i = 0; i < length; i++)
-        ops[i].undo(this.model.observableModel);  // undo a previous undo.
+        ops[i].redo();
+    },
+
+    onBeginTransaction: function (transaction) {
+      var selectionModel = this.model.selectionModel;
+      if (!selectionModel)
+        return;
+      this.startingSelection = selectionModel.contents();
+    },
+
+    onEndTransaction: function (transaction) {
+      var selectionModel = this.model.selectionModel;
+      if (!selectionModel)
+        return;
+      var startingSelection = this.startingSelection,
+          endingSelection = selectionModel.contents();
+      if (startingSelection.length == endingSelection.length &&
+          startingSelection.every(function(element, i) {
+            return element === endingSelection[i];
+          })) {
+        endingSelection = startingSelection;
+      }
+      var op = Object.create(selectionOpProto);
+      op.startingSelection = startingSelection;
+      op.endingSelection = endingSelection;
+      op.selectionModel = selectionModel;
+      this.transaction.ops.push(op);
+      this.startingSelection = null;
+    },
+
+    onCancelTransaction: function (transaction) {
+      var selectionModel = this.model.selectionModel;
+      if (!selectionModel)
+        return;
+      this.startingSelection = null;
     },
 
     onChanged_: function (change) {
@@ -328,6 +380,7 @@ var transactionModel = (function () {
         return;
       var op = Object.create(opProto);
       op.change = change;
+      op.observableModel = this.model.observableModel;
       this.transaction.ops.push(op);
     },
   }
@@ -585,30 +638,38 @@ var selectionModel = (function () {
     },
 
     add: function (item) {
-      if (Array.isArray(item)) {
-        var sel = this.selection;
-        item.forEach(function (element) { sel.add(element); });
+      if (item.forEach) {
+        var selection = this.selection;
+        item.forEach(function (element) { selection.add(element); });
       } else {
         this.selection.add(item);
       }
     },
 
     remove: function (item) {
-      if (Array.isArray(item)) {
-        var sel = this.selection;
-        item.forEach(function (element) { sel.remove(element); });
+      if (item.forEach) {
+        var selection = this.selection;
+        item.forEach(function (element) { selection.remove(element); });
       } else {
         this.selection.remove(item);
+      }
+    },
+
+    toggle: function (item) {
+      if (item.forEach) {
+        var selection = this.selection;
+        item.forEach(function (element) { selection.toggle(element); });
+      } else {
+        this.selection.toggle(item);
       }
     },
 
     set: function (item) {
       this.selection.clear();
       if (Array.isArray(item)) {
-        var self = this;
         item.forEach(function (element) {
-          self.selection.add(element);
-        });
+          this.selection.add(element);
+        }, this);
       } else {
         this.selection.add(item);
       }
@@ -623,9 +684,9 @@ var selectionModel = (function () {
     },
 
     contents: function () {
-      var roots = [];
-      this.selection.forEach(function (item) { roots.push(item); });
-      return roots;
+      var result = [];
+      this.selection.forEach(function (item) { result.push(item); });
+      return result;
     }
     // TODO selection change notification.
   }
@@ -677,25 +738,25 @@ var instancingModel = (function () {
     },
 
     cloneGraph: function (items, map) {
-      var copies = [];
-      var self = this;
+      var dataModel = this.model.dataModel,
+          copies = [];
       items.forEach(function (item) {
-        copies.push(self.clone(item, map));
-      });
+        copies.push(this.clone(item, map));
+      }, this);
       copies.forEach(function (copy) {
-        self.model.dataModel.visitSubtree(copy, function (copy) {
+        dataModel.visitSubtree(copy, function (copy) {
           if (Array.isArray(copy))
             return;
           for (var attr in copy) {
-            if (self.model.dataModel.isReference(copy, attr)) {
+            if (dataModel.isReference(copy, attr)) {
               var originalId = copy[attr];
               var newCopy = map.find(originalId);
-              var newId = self.model.dataModel.getId(newCopy);
+              var newId = dataModel.getId(newCopy);
               copy[attr] = newId;
             }
           }
         });
-      });
+      }, this);
       return copies;
     },
   }

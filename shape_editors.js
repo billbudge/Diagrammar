@@ -593,10 +593,8 @@ var shapeEditors = (function() {
       // observers yet.
       item = model.instancingModel.clone(item);
       model.editingModel.addTemporaryItem(item);
-      model.selectionModel.set([ item ]);
       drag = {
-        type: 'moveSelection',
-        isNewItem: true,
+        type: 'paletteItem',
         name: 'Add new ' + item.type,
       }
     } else {
@@ -613,7 +611,7 @@ var shapeEditors = (function() {
           else if (mouseHitInfo.p2)
             drag = { type: 'p2', name: 'Edit line' };
           else
-            drag = { type: 'moveSelection', name: 'Move selection' };
+            drag = { type: 'moveSelection', name: 'Move selection' }; // TODO edit position drag type
           break;
         case 'bezier':
           if (mouseHitInfo.end0)
@@ -688,6 +686,13 @@ var shapeEditors = (function() {
         drags = this.calcDrags(drag.item, model, mouseController),
         hitInfo, newLength;
     switch (drag.type) {
+      case 'paletteItem':
+        var snapshot = valueTracker.getSnapshot(item),
+            drags = self.calcDrags(item, model, mouseController),
+            parentDrag = drags.parentDrag;
+        model.observableModel.changeValue(item, 'x', snapshot.x + parentDrag.x);
+        model.observableModel.changeValue(item, 'y', snapshot.y + parentDrag.y);
+        break;
       case 'moveSelection':
         var hitInfo = this.hotTrackInfo = this.hitTestUnselectedItems(p);
         model.selectionModel.forEach(function(item) {
@@ -772,14 +777,20 @@ var shapeEditors = (function() {
         p = this.mouseController.getMouse(),
         model = this.model,
         board = this.board,
-        selectionModel = model.selectionModel;
-    // Remove any items that have been temporarily added before starting the
-    // transaction.
-    var newItem = drag.isNewItem ? model.editingModel.removeTemporaryItem() : null;
+        selectionModel = model.selectionModel,
+        editingModel = model.editingModel,
+        transactionModel = model.transactionModel,
+        isNewItem = (drag.type == 'paletteItem');
+    if (isNewItem) {
+      var newItem = drag.item;
+      // Remove any item that have been temporarily added before starting the
+      // transaction.
+      editingModel.removeTemporaryItem()
+    }
 
-    model.transactionModel.beginTransaction(drag.name);
+    transactionModel.beginTransaction(drag.name);
 
-    if (drag.type == 'moveSelection') {
+    if (drag.type == 'moveSelection' || isNewItem) {
       // Find group beneath mouse.
       var hitInfo = this.hitTestUnselectedItems(p);
       var parent = board;
@@ -789,7 +800,7 @@ var shapeEditors = (function() {
           parent = model.hierarchicalModel.getParent(parent);
       }
       // Add new items.
-      if (newItem) {
+      if (isNewItem) {
         // Items that can't be added to the board without being wrapped in a group.
         if (parent === board && isHullItem(newItem)) {
           var group = {
@@ -804,13 +815,14 @@ var shapeEditors = (function() {
           newItem.y = 0;
           newItem = group;
         }
-        model.editingModel.addItem(newItem, null, parent);
+        editingModel.addItem(newItem, null, parent);
+        selectionModel.set([newItem]);
       } else {
         // Reparent items if necessary.
-        model.selectionModel.forEach(function(item) {
+        selectionModel.forEach(function(item) {
           var oldParent = model.hierarchicalModel.getParent(item);
           if (item.type != 'disk' && oldParent !== parent)
-            model.editingModel.addItem(item, oldParent, parent);
+            editingModel.addItem(item, oldParent, parent);
         });
       }
     }
@@ -818,7 +830,7 @@ var shapeEditors = (function() {
     this.valueTracker.end();
     this.valueTracker = null;
 
-    model.transactionModel.endTransaction();
+    transactionModel.endTransaction();
 
     this.drag = null;
     this.mouseHitInfo = null;

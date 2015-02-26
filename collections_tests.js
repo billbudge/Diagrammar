@@ -364,6 +364,16 @@ test("SelectionSet remove", function() {
   deepEqual(selectionSetStringify(selectionSet), 'b');
 });
 
+test("SelectionSet toggle", function() {
+  var selectionSet = new SelectionSet();
+  selectionSet.toggle('a');
+  deepEqual(selectionSet.length, 1);
+  deepEqual(selectionSet.lastSelected(), 'a');
+  selectionSet.toggle('a');
+  deepEqual(selectionSet.length, 0);
+  deepEqual(selectionSet.lastSelected(), null);
+});
+
 test("SelectionSet map", function() {
   var selectionSet = new SelectionSet();
   selectionSet.add('a');
