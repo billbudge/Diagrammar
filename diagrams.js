@@ -286,11 +286,7 @@ function getEdgePoint(x, y, w, h, t) {
 }
 
 // p1, p2 have x, y, nx, ny.
-function getEdgeBezier(p1, p2, altPt) {
-  if (!p1)
-    p1 = altPt;
-  else if (!p2)
-    p2 = altPt;
+function getEdgeBezier(p1, p2) {
   var dx = p1.x - p2.x, dy = p1.y - p2.y,
       tanLength = Math.sqrt(dx * dx + dy * dy) * 0.5,
       // tanLength = (Math.abs(p2.x - p1.x) + Math.abs(p2.y - p1.y)) * 0.166,
@@ -323,7 +319,7 @@ function hitPoint(x, y, p, tol) {
   return Math.abs(x - p.x) <= tol && Math.abs(y - p.y) <= tol;
 }
 
-function hitTestRect(x, y, w, h, r, p, tol) {
+function hitTestRect(x, y, w, h, p, tol) {
   var right = x + w, bottom = y + h,
       px = p.x, py = p.y;
   if (px > x - tol && px < right + tol &&

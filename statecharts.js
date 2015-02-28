@@ -30,7 +30,7 @@ var statecharts = (function() {
   }
 
   function visit(item, filterFn, itemFn) {
-    if (filterFn(item))
+    if (!filterFn || filterFn(item))
       itemFn(item);
     var items = item.items;
     if (items) {
@@ -49,7 +49,7 @@ var statecharts = (function() {
         reverseVisit(items[i], filterFn, itemFn);
       }
     }
-    if (filterFn(item))
+    if (!filterFn || filterFn(item))
       itemFn(item);
   }
 
@@ -167,20 +167,6 @@ var statecharts = (function() {
           }
         });
         this.prototype.doPaste.call(this);
-      },
-
-      addTemporaryItem: function(item) {
-        var model = this.model,
-            statechart = this.statechart,
-            items = statechart.items;
-        model.observableModel.insertElement(statechart, items, items.length, item);
-      },
-
-      removeTemporaryItem: function() {
-        var model = this.model,
-            statechart = this.statechart,
-            items = statechart.items;
-        return model.observableModel.removeElement(statechart, items, items.length - 1);
       },
 
       // Returns a value indicating if the item can be added to the state
@@ -384,7 +370,6 @@ var statecharts = (function() {
     this.padding = 8;
     this.stateMinWidth = 100;
     this.stateMinHeight = 60;
-    this.knobbySize = 4;
 
     this.hitTolerance = 8;
 
@@ -445,11 +430,18 @@ var statecharts = (function() {
     ctx.save();
     ctx.strokeStyle = this.strokeColor;
     ctx.lineWidth = 1;
-    ctx.font = '16px sans-serif';
+    ctx.font = '14px sans-serif';
   }
 
   Renderer.prototype.endDraw = function() {
     this.ctx.restore();
+  }
+
+  Renderer.prototype.drawItem = function(item) {
+    if (isState(item))
+      this.drawState(item);
+    else if (isTransition(item))
+      this.drawTransition(item);
   }
 
   Renderer.prototype.drawState = function(state) {
@@ -491,78 +483,60 @@ var statecharts = (function() {
     }
   }
 
-  Renderer.prototype.updateTransition = function(transition, endPt) {
+  Renderer.prototype.updateTransition = function(transition) {
     var referencingModel = this.model.referencingModel,
         v1 = referencingModel.resolveReference(transition, 'srcId'),
         v2 = referencingModel.resolveReference(transition, 'dstId'),
-        t1 = transition.t1,
-        t2 = transition.t2,
-        p1, p2;
-    if (v1)
-      transition._p1 = p1 = this.stateParamToPoint(v1, t1);
-    else
-      transition._p1 = null;
-    if (v2)
-      transition._p2 = p2 = this.stateParamToPoint(v2, t2);
-    else
-      transition._p2 = null;
-    if (v1 || v2)
-      transition._bezier = diagrams.getEdgeBezier(p1, p2, endPt);
+        p1 = transition._p1, p2 = transition._p2,
+        labelWidth = this.measureText(transition.event),
+        width = labelWidth + 2 * this.arrowSize;
 
-    // Measure label text and calculate text position.
-    var labelWidth = this.measureText(transition.event),
-        textSize = this.textSize;
     transition._labelWidth = labelWidth;
 
-    if (v1 && v2) {
-      var mid = EvaluateCurveSegment(transition._bezier, 0.5);
-      transition.x = mid.x - labelWidth / 2;
-      transition.y = mid.y - textSize / 2;
-    } else if (v1) {
-      var p = transition._p1;
-      transition.x = p.x;
-      transition.y = p.y - textSize / 2;
-    } else if (v2) {
-      var p = transition._p2;
-      transition.x = p.x - labelWidth;
-      transition.y = p.y - textSize / 2;
-    }
-  }
+    if (v1)
+      p1 = this.stateParamToPoint(v1, transition.t1);
+    else if (p1)
+      p1 = { x: p1.x, y: p1.y, nx: 0, ny: 0 };
+    if (v2)
+      p2 = this.stateParamToPoint(v2, transition.t2);
+    else if (p2)
+      p2 = { x: p2.x, y: p2.y, nx: 0, ny: 0 };
 
-  Renderer.prototype.makeTransitionPath = function(transition) {
-    diagrams.edgePath(transition._bezier, this.ctx, this.arrowSize);
+    if (!p1 && !p2) {
+      p1 = { x: transition.x, y: transition.y, nx: 1, ny: 0 };
+      p2 = { x: transition.x + width, y: transition.y, nx: -1, ny: 0 };
+    } else if (!p1) {
+      var nx = p2.nx, ny = p2.ny,
+      p1 = { x: p2.x + nx * width, y: p2.y + ny * width, nx: -nx, ny: -ny };
+    } else if (!p2) {
+      var nx = p1.nx, ny = p1.ny,
+      p2 = { x: p1.x + nx * width, y: p1.y + ny * width, nx: -nx, ny: -ny };
+    }
+
+    transition._bezier = diagrams.getEdgeBezier(p1, p2);
+    transition._mid = EvaluateCurveSegment(transition._bezier, 0.5);
   }
 
   Renderer.prototype.drawTransition = function(transition) {
-    var ctx = this.ctx, textSize = this.textSize, textColor = this.textColor,
-        srcId = transition.srcId, dstId = transition.dstId,
-        x = transition.x, y = transition.y, labelWidth = transition._labelWidth,
-        p1 = transition._p1, p2 = transition._p2,
-        bgColor = this.bgColor;
+    var ctx = this.ctx, textSize = this.textSize,
+        labelWidth = transition._labelWidth,
+        mid = transition._mid,
+        x = mid.x - labelWidth / 2, y = mid.y - textSize / 2;
     function drawText(text, x, y) {
-      ctx.fillStyle = bgColor;
-      ctx.fillRect(x, y, labelWidth, textSize);
-      ctx.fillStyle = textColor;
-      ctx.fillText(text, x, y + textSize);
     }
     ctx.save();
-    if (p1 && p2) {
-      this.makeTransitionPath(transition);
-      ctx.stroke();
-      drawText(transition.event, x, y);
-    } else if (p1) {
-      ctx.translate(p1.x, p1.y);
-      ctx.rotate(geometry.getAngle(p1.nx, -p1.ny));
-      drawText(transition.event, 0, 0);
-    } else if (p2) {
-
-    }
+    diagrams.edgePath(transition._bezier, ctx, this.arrowSize);
+    ctx.stroke();
+    ctx.fillStyle = this.bgColor;
+    ctx.fillRect(x, y, labelWidth, textSize);
+    ctx.fillStyle = this.textColor;
+    ctx.fillText(transition.event, x, y + textSize);
     ctx.restore();
   }
 
   Renderer.prototype.strokeTransition = function(transition) {
     var ctx = this.ctx;
-    this.makeTransitionPath(transition);
+    diagrams.edgePath(transition._bezier, ctx, this.arrowSize);
     ctx.stroke();
   }
 
@@ -577,38 +551,11 @@ var statecharts = (function() {
     return { width: width, height: height };
   }
 
-  Renderer.prototype.getKnobbies = function(state) {
-    var rect = this.getStateRect(state),
-        x = rect.x, y = rect.y, width = rect.width, height = rect.height,
-        r = this.radius, xOffset = 2 * r,
-        knobbies = {};
-    if (state.type == 'state') {
-      knobbies.transition = {
-        x: x + width + xOffset,
-        y: y + this.textSize + this.textLeading,
-        nx: -1,
-        ny: 0
-      }
-    } else {
-      knobbies.transition = {
-        x: x + r + r + xOffset,
-        y: y + r,
-        nx: -1,
-        ny: 0
-      }
-    }
-    return knobbies;
-  }
-
-  Renderer.prototype.drawKnobbies = function(state) {
-    var ctx = this.ctx, knobbySize = this.knobbySize,
-        knobbies = this.getKnobbies(state),
-        transition = knobbies.transition;
-    if (transition) {
-      ctx.beginPath();
-      diagrams.arrowPath(transition, ctx, this.arrowSize);
-      ctx.stroke();
-    }
+  Renderer.prototype.hitTestItem = function(item, p) {
+    if (isStateOrStatechart(item))
+      return this.hitTestStateOrStatechart(item, p);
+    if (isTransition(item))
+      return this.hitTestTransition(item, p);
   }
 
   Renderer.prototype.hitTestStateOrStatechart = function(state, p) {
@@ -617,7 +564,7 @@ var statecharts = (function() {
         x = rect.x, y = rect.y, w = rect.width, h = rect.height,
         hitInfo;
     if (w && h)
-      hitInfo = diagrams.hitTestRect(x, y, w, h, r, p, tol);
+      hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol);
     else
       hitInfo = diagrams.hitTestDisk(x + r, y + r, r, p, tol);
 
@@ -631,14 +578,6 @@ var statecharts = (function() {
     if (hitInfo)
       hitInfo.item = transition;
     return hitInfo;
-  }
-
-  Renderer.prototype.hitKnobby = function(state, p) {
-    var tol = this.hitTolerance + this.knobbySize,
-        knobbies = this.getKnobbies(state),
-        transition = knobbies.transition;
-    if (transition && diagrams.hitPoint(transition.x, transition.y, p, tol))
-      return 'transition';
   }
 
 //------------------------------------------------------------------------------
@@ -664,7 +603,7 @@ var statecharts = (function() {
         items: [
           {
             type: 'start',
-            x: 64,
+            x: 72,
             y: 64,
           },
           {
@@ -675,19 +614,20 @@ var statecharts = (function() {
             height: renderer.stateMinHeight,
             name: 'New State',
           },
-          // {
-          //   type: 'transition',
-          //   x: 32,
-          //   y: 200,
-          //   event: 'Event',
-          //   srcId: 0,
-          //   t1: 0,
-          //   dstId: 0,
-          //   t2: 0,
-          // },
+          {
+            type: 'transition',
+            x: 64,
+            y: 172,
+            event: 'Event',
+            srcId: 0,
+            t1: 0,
+            dstId: 0,
+            t2: 0,
+          },
         ]
       }
     }
+
     dataModels.observableModel.extend(palette);
     dataModels.hierarchicalModel.extend(palette);
     dataModels.transformableModel.extend(palette);
@@ -707,17 +647,29 @@ var statecharts = (function() {
     return hierarchicalModel.getParent(item) === this.palette.root;
   }
 
+  Editor.prototype.addTemporaryItem = function(item) {
+    if (isTransition(item))
+      this.renderer.updateTransition(item);
+    this.model.observableModel.changeValue(this.statechart, 'temporary', item);
+  }
+
+  Editor.prototype.removeTemporaryItem = function(item) {
+    var statechart = this.statechart;
+    return this.model.observableModel.changeValue(statechart, 'temporary', null);
+  }
+
   Editor.prototype.draw = function() {
     var renderer = this.renderer, statechart = this.statechart,
         model = this.model, palette = this.palette,
         ctx = this.ctx;
-    var mousePt = this.mouseController.getMouse();
-    mousePt.nx = mousePt.ny = 0;
+    renderer.beginDraw();
+    visit(palette.root, isTransition, function(transition) {
+      renderer.updateTransition(transition);
+    });
     visit(statechart, isTransition, function(transition) {
-      renderer.updateTransition(transition, mousePt);
+      renderer.updateTransition(transition);
     });
 
-    renderer.beginDraw();
     visit(statechart, isState, function(state) {
       renderer.drawState(state);
     });
@@ -728,12 +680,10 @@ var statecharts = (function() {
     ctx.lineWidth = 2;
     ctx.strokeStyle = renderer.theme.highlightColor;
     model.selectionModel.forEach(function(item) {
-      if (isState(item)) {
-        renderer.drawKnobbies(item);
+      if (isState(item))
         renderer.strokeState(item);
-      } else {
+      else
         renderer.strokeTransition(item);
-      }
     });
     if (this.hotTrackInfo) {
       ctx.strokeStyle = renderer.theme.hotTrackColor;
@@ -743,12 +693,17 @@ var statecharts = (function() {
 
     renderer.beginDraw();
     palette.root.items.forEach(function(item) {
-      if (isState(item))
-        renderer.drawState(item);
-      else if (isTransition(item))
-        renderer.drawTransition(item);
+      renderer.drawItem(item);
     });
     renderer.endDraw();
+
+    var temporary = statechart.temporary;
+    if (temporary) {
+      renderer.beginDraw();
+      renderer.updateTransition(temporary);
+      renderer.drawItem(temporary);
+      renderer.endDraw();
+    }
   }
 
   Editor.prototype.hitTest = function(p) {
@@ -760,26 +715,14 @@ var statecharts = (function() {
       if (info)
         hitList.push(info);
     }
-    reverseVisit(palette.root, isState, function(state) {
-      pushInfo(renderer.hitTestStateOrStatechart(state, p));
+    reverseVisit(palette.root, null, function(item) {
+      pushInfo(renderer.hitTestItem(item, p));
     });
     reverseVisit(statechart, isTransition, function(transition) {
       pushInfo(renderer.hitTestTransition(transition, p));
     });
     reverseVisit(statechart, isStateOrStatechart, function(item) {
       pushInfo(renderer.hitTestStateOrStatechart(item, p));
-      // if (model.selectionModel.contains(state)) {
-      //   switch (renderer.hitKnobby(state, p)) {
-      //     case 'transition':
-      //       hitInfo = { item: state, transition: true };
-      //       break;
-      //     default:
-      //       hitInfo = renderer.hitTestState(state, p);
-      //       break;
-      //   }
-      // } else {
-      //   hitInfo = renderer.hitTestState(state, p);
-      // }
     });
     return hitList;
   }
@@ -788,25 +731,24 @@ var statecharts = (function() {
     var model = this.model, length = hitList.length;
     for (var i = 0; i < length; i++) {
       var hitInfo = hitList[i];
-      if (filterFn(hitInfo.item, model))
+      if (filterFn(hitInfo, model))
         return hitInfo;
     }
     return null;
   }
 
-  function isDraggable(item, model) {
-    return !isStatechart(item);
+  function isStateBorder(hitInfo, model) {
+    return isState(hitInfo.item) && hitInfo.border;
   }
 
-  function isUnselectedDropTarget(item, model) {
+  function isDraggable(hitInfo, model) {
+    return !isStatechart(hitInfo.item);
+  }
+
+  function isDropTarget(hitInfo, model) {
+    var item = hitInfo.item;
     return isStateOrStatechart(item) &&
            !model.hierarchicalModel.isItemInSelection(item);
-  }
-
-  function isHotTrackDropTarget(item, model) {
-    // We don't want to hot track the root statechart.
-    return model.root != item &&
-           isUnselectedDropTarget(item, model);
   }
 
   Editor.prototype.beginDrag = function() {
@@ -820,27 +762,11 @@ var statecharts = (function() {
       // Clone palette item and add the clone to the top level statechart. Don't
       // notify observers yet.
       dragItem = model.instancingModel.clone(dragItem);
-      model.editingModel.addTemporaryItem(dragItem);
+      this.addTemporaryItem(dragItem);
       drag = {
         type: 'paletteItem',
         name: 'Add new ' + dragItem.type,
-      }
-    } else if (mouseHitInfo.transition) {
-      // Start a new transition from the hit state.
-      dragItem = {
-        type: 'transition',
-        srcId: model.dataModel.getId(dragItem),  // dragItem is src state.
-        t1: 0,
-        dstId: 0,
-        t2: 0,
-      };
-      model.dataModel.assignId(dragItem),
-      model.editingModel.addTemporaryItem(dragItem);
-      model.selectionModel.set([ dragItem ]);
-      drag = {
-        type: 'connectingP2',
         isNewItem: true,
-        namd: 'Add new transition',
       }
     } else {
       switch (dragItem.type) {
@@ -856,8 +782,10 @@ var statecharts = (function() {
         case 'transition':
           if (mouseHitInfo.p1)
             drag = { type: 'connectingP1', name: 'Edit transition' };
-          else
+          else if (mouseHitInfo.p2)
             drag = { type: 'connectingP2', name: 'Edit transition' };
+          else if (!dragItem.srcId && !dragItem.dstId)
+            drag = { type: 'moveSelection', name: 'Move selection' };
           break;
       }
     }
@@ -883,9 +811,12 @@ var statecharts = (function() {
         valueTracker = this.valueTracker,
         mouseHitInfo = this.mouseHitInfo,
         snapshot = valueTracker.getSnapshot(drag.item),
-        hitList, hitInfo, srcState, dstState, srcStateId, dstStateId, t1, t2;
+        hitList = this.hitTest(p), hitInfo,
+        srcState, dstState, srcStateId, dstStateId, t1, t2;
     switch (drag.type) {
       case 'paletteItem':
+        if (isState(dragItem))
+          hitInfo = this.getFirstHit(hitList, isDropTarget);
         var snapshot = valueTracker.getSnapshot(dragItem);
         if (snapshot) {
           observableModel.changeValue(dragItem, 'x', snapshot.x + offset.x);
@@ -893,6 +824,8 @@ var statecharts = (function() {
         }
         break;
       case 'moveSelection':
+        if (isState(dragItem))
+          hitInfo = this.getFirstHit(hitList, isDropTarget);
         selectionModel.forEach(function(item) {
           var snapshot = valueTracker.getSnapshot(item);
           if (snapshot) {
@@ -916,37 +849,36 @@ var statecharts = (function() {
           observableModel.changeValue(dragItem, 'height', snapshot.height + offset.y);
         break;
       case 'connectingP1':
-        hitList = this.hitTest(p);
-        hitInfo = this.hotTrackInfo = this.getFirstHit(hitList, isState);
+        hitInfo = this.getFirstHit(hitList, isStateBorder);
         srcStateId = hitInfo && hitInfo.border ? dataModel.getId(hitInfo.item) : 0;
         observableModel.changeValue(dragItem, 'srcId', srcStateId);
         srcState = referencingModel.getReference(dragItem, 'srcId');
         if (srcState) {
           t1 = renderer.statePointToParam(srcState, p);
           observableModel.changeValue(dragItem, 't1', t1);
+        } else {
+          dragItem._p1 = p;
         }
         break;
       case 'connectingP2':
-        if (drag.isNewItem) {
-          srcState = referencingModel.getReference(dragItem, 'srcId');
-          t1 = renderer.statePointToParam(srcState, p);
-          observableModel.changeValue(dragItem, 't1', t1);
-        }
-        hitList = this.hitTest(p);
-        hitInfo = this.hotTrackInfo = this.getFirstHit(hitList, isState);
+        hitInfo = this.getFirstHit(hitList, isStateBorder);
         dstStateId = hitInfo && hitInfo.border ? dataModel.getId(hitInfo.item) : 0;
         observableModel.changeValue(dragItem, 'dstId', dstStateId);
         dstState = referencingModel.getReference(dragItem, 'dstId');
         if (dstState) {
           t2 = renderer.statePointToParam(dstState, p);
           observableModel.changeValue(dragItem, 't2', t2);
+        } else {
+          dragItem._p2 = p;
         }
         break;
     }
+
+    this.hotTrackInfo = (hitInfo && hitInfo.item !== this.statechart) ? hitInfo : null;
   }
 
   Editor.prototype.endDrag = function() {
-    var drag = this.drag,
+    var drag = this.drag, dragItem = drag.item,
         p = this.mouseController.getMouse(),
         model = this.model,
         statechart = this.statechart,
@@ -954,27 +886,26 @@ var statecharts = (function() {
         hierarchicalModel = model.hierarchicalModel,
         selectionModel = model.selectionModel,
         transactionModel = model.transactionModel,
-        editingModel = model.editingModel;
-    // Remove any item that have been temporarily added before starting the
-    // transaction.
-    var isNewItem = (drag.type == 'paletteItem');
-    if (isNewItem) {
-      var newItem = drag.item;
-      editingModel.removeTemporaryItem()
-    }
-
-
+        editingModel = model.editingModel,
+        newItem = this.removeTemporaryItem();
+    // Any temporary item has been removed before starting the transaction.
     transactionModel.beginTransaction(drag.name);
 
-    if (drag.type == 'moveSelection' || isNewItem) {
+    if (isTransition(dragItem)) {
+      dragItem._p1 = dragItem._p2 = null;
+      if (newItem) {
+        observableModel.insertElement(
+            statechart, statechart.items, statechart.items.length - 1, newItem);
+      }
+    } else if (newItem || drag.type == 'moveSelection') {
       // Find state beneath mouse.
       var hitList = this.hitTest(p),
-          hitInfo = this.getFirstHit(hitList, isUnselectedDropTarget),
+          hitInfo = this.getFirstHit(hitList, isDropTarget),
           parent = statechart;
       if (hitInfo)
         parent = hitInfo.item;
       // Add new items.
-      if (isNewItem) {
+      if (newItem) {
         editingModel.addItem(newItem, null, parent);
         selectionModel.set([newItem]);
       } else {
@@ -987,22 +918,11 @@ var statecharts = (function() {
           }
         });
       }
-    } else if (isTransition(drag.item) && isNewItem) {
-      observableModel.insertElement(
-          statechart, statechart.items, statechart.items.length - 1, newItem);
     }
 
     this.validateLayout();
     this.valueTracker.end();
     this.valueTracker = null;
-
-    // if (isTransition(drag.item)) {
-    //   var transition = drag.item;
-    //   if (!transition.srcId || !transition.dstId) {
-    //     editingModel.deleteItem(transition);
-    //     selectionModel.remove(transition);
-    //   }
-    // }
 
     model.transactionModel.endTransaction();
 
