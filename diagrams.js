@@ -5,70 +5,6 @@ var diagrams = (function() {
 
 //------------------------------------------------------------------------------
 
-function MouseController() {
-  this.dragThreshold = 4;
-  this.hoverThreshold = 4;
-  this.hoverTimeout = 250;  // milliseconds
-  this.mouse = this.dragOffset = { x: 0, y: 0 };
-  dataModels.eventMixin.extend(this);
-}
-
-MouseController.prototype.onMouseDown = function(e) {
-  this.mouse = this.mouseDown = { x: e.offsetX, y: e.offsetY };
-}
-
-MouseController.prototype.onMouseMove = function(e) {
-  this.mouse = { x: e.offsetX, y: e.offsetY };
-  if (this.mouseDown) {
-    var dx = this.mouse.x - this.mouseDown.x,
-        dy = this.mouse.y - this.mouseDown.y;
-    if (!this.isDragging) {
-      this.isDragging = Math.abs(dx) >= this.dragThreshold ||
-                        Math.abs(dy) >= this.dragThreshold;
-      if (this.isDragging)
-        this.onBeginDrag();
-    }
-    if (this.isDragging)
-      this.dragOffset = { x: dx, y: dy };
-  }
-}
-
-MouseController.prototype.onMouseUp = function(e) {
-  this.mouse = { x: e.offsetX, y: e.offsetY };
-  this.mouseDown = null;
-  this.isDragging = false;
-}
-
-MouseController.prototype.onMouseOut = function(e) {
-  this.isDragging = false;
-}
-
-MouseController.prototype.onBeginDrag = function(e) {
-  this.onEvent('beginDrag', function(handler) {
-    handler();
-  });
-}
-
-MouseController.prototype.onBeginHover = function(e) {
-  this.onEvent('beginHover', function(handler) {
-    handler();
-  });
-}
-
-MouseController.prototype.getMouse = function(e) {
-  return { x: this.mouse.x, y: this.mouse.y };
-}
-
-MouseController.prototype.getMouseDown = function(e) {
-  return { x: this.mouseDown.x, y: this.mouseDown.y };
-}
-
-MouseController.prototype.getDragOffset = function(e) {
-  return { x: this.dragOffset.x, y: this.dragOffset.y };
-}
-
-//------------------------------------------------------------------------------
-
 function CanvasController(canvas, ctx) {
   this.canvas = canvas;
   this.ctx = ctx || canvas.getContext('2d');
@@ -440,7 +376,6 @@ function resizeCanvas(canvas, width, height) {
 //------------------------------------------------------------------------------
 
 return {
-  MouseController: MouseController,
   CanvasController: CanvasController,
 
   theme: theme,
