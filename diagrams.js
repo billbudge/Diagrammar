@@ -69,35 +69,82 @@ MouseController.prototype.getDragOffset = function(e) {
 
 //------------------------------------------------------------------------------
 
-var canvasLayers = (function() {
+function CanvasController(canvas, ctx) {
+  this.canvas = canvas;
+  this.ctx = ctx || canvas.getContext('2d');
+  this.dragThreshold = 4;
+  this.hoverThreshold = 4;
+  this.hoverTimeout = 250;  // milliseconds
+  this.mouse = this.dragOffset = { x: 0, y: 0 };
+}
 
-  var myModel = (function () {
-    var proto = {
-      getParent: function (item) {
-        return item._parent;
-      },
-    }
+CanvasController.prototype.configure = function(layers) {
+  var controller = this;
+  layers.forEach(function(layer, i) {
+    if (layer.initialize)
+      layer.initialize(controller, i);
+  });
+  // Layers are presented in draw order, but most loops are event-order, so
+  // reverse the array here.
+  this.layers = layers.reverse();
+}
 
-    function extend(model) {
-      if (model.myModel)
-        return model.myModel;
-
-      var instance = Object.create(proto);
-      instance.model = model;
-
-      model.myModel = instance;
-      return instance;
-    }
-
-    return {
-      extend: extend,
-    };
-  })();
-
-  return {
+CanvasController.prototype.onMouseDown = function(e) {
+  var self = this,
+      mouse = this.mouse = this.click = { x: e.offsetX, y: e.offsetY };
+  if (e.button === 0) {
+    this.layers.some(function(layer) {
+      if (!layer.onClick || !layer.onClick(mouse))
+        return false;
+      // Layers that return true from onClick must implement onBeginDrag, etc.
+      self.clickOwner = layer;
+      return true;
+    });
   }
+}
 
-})();
+CanvasController.prototype.onMouseMove = function(e) {
+  var mouse = this.mouse = { x: e.offsetX, y: e.offsetY };
+  if (this.clickOwner) {
+    var dx = mouse.x - this.click.x,
+        dy = mouse.y - this.click.y;
+    if (!this.isDragging) {
+      this.isDragging = Math.abs(dx) >= this.dragThreshold ||
+                        Math.abs(dy) >= this.dragThreshold;
+      if (this.isDragging) {
+        this.clickOwner.onBeginDrag();
+      }
+    }
+    if (this.isDragging) {
+      var click = this.click, dx = mouse.x - click.x, dy = mouse.y - click.y;
+      this.clickOwner.onDrag(mouse, this.click, dx, dy);
+    }
+  }
+}
+
+CanvasController.prototype.onMouseUp = function(e) {
+  var mouse = this.mouse = { x: e.offsetX, y: e.offsetY };
+  if (this.isDragging) {
+    this.isDragging = false;
+    this.clickOwner.onEndDrag(mouse);
+  }
+  this.click = null;
+  this.clickOwner = null;
+}
+
+CanvasController.prototype.onMouseOut = function(e) {
+  // TODO
+}
+
+CanvasController.prototype.onBeginHover = function(e) {
+}
+
+CanvasController.prototype.draw = function() {
+  this.layers.reverse().forEach(function(layer) {
+    if (layer.draw)
+      layer.draw(this);
+  });
+}
 
 //------------------------------------------------------------------------------
 
@@ -394,6 +441,7 @@ function resizeCanvas(canvas, width, height) {
 
 return {
   MouseController: MouseController,
+  CanvasController: CanvasController,
 
   theme: theme,
 

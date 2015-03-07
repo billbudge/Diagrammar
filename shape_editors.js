@@ -2,7 +2,7 @@
 
 'use strict';
 
-var shapeEditors = (function() {
+var shapes = (function() {
 
   // Utilities.
 
@@ -430,21 +430,14 @@ var shapeEditors = (function() {
   }
 
 //------------------------------------------------------------------------------
-//TODO theme should be last
-  function Editor(model, theme, canvas, updateFn) {
+
+  function Editor(model, updateFn) {
     var self = this;
     this.model = model;
     this.board = model.root;
-    editingModel.extend(model);
-
-    this.canvas = canvas;
     this.updateFn = updateFn;
 
-    this.ctx = canvas.getContext('2d');
-
-    if (!theme)
-      theme = diagrams.theme.create();
-    var renderer = this.renderer = new Renderer(model, ctx, theme);
+    editingModel.extend(model);
 
     var palette = this.palette = {
       root: {
@@ -487,12 +480,14 @@ var shapeEditors = (function() {
     dataModels.transformableModel.extend(palette);
     this.updateGeometry(palette.root);
 
-    this.mouseController = new diagrams.MouseController();
-    this.mouseController.addHandler('beginDrag', function() {
-      self.beginDrag();
-    });
-
     // this.validateLayout();
+  }
+
+  Editor.prototype.initialize = function(canvasController) {
+    this.canvasController = canvasController;
+    this.canvas = canvasController.canvas;
+    this.ctx = canvasController.ctx;
+    this.renderer = new Renderer(this.model, canvasController.ctx, canvasController.theme);
   }
 
   Editor.prototype.isPaletteItem = function(item) {
@@ -581,7 +576,25 @@ var shapeEditors = (function() {
     });
   }
 
-  Editor.prototype.beginDrag = function() {
+  Editor.prototype.onClick = function(p) {
+    var model = this.model,
+        mouseHitInfo = this.mouseHitInfo = this.hitTest(p);
+    if (mouseHitInfo) {
+      if (!model.selectionModel.contains(mouseHitInfo.item) && !this.shiftKeyDown)
+        model.selectionModel.clear();
+      if (!this.isPaletteItem(mouseHitInfo.item))
+        model.selectionModel.add(mouseHitInfo.item);
+      this.updateFn();
+    } else {
+      if (!this.shiftKeyDown) {
+        model.selectionModel.clear();
+        this.updateFn();
+      }
+    }
+    return mouseHitInfo != null;
+  }
+
+  Editor.prototype.onBeginDrag = function() {
     if (!this.mouseHitInfo)
       return;
     var mouseHitInfo = this.mouseHitInfo,
@@ -640,15 +653,15 @@ var shapeEditors = (function() {
     this.valueTracker = new dataModels.ValueChangeTracker(model);
   }
 
-  Editor.prototype.calcDrags = function(item, model, mouseController) {
+  Editor.prototype.calcDrags = function(item, model, p, p0) {
     var parent = model.hierarchicalModel.getParent(item),
         transformableModel = model.transformableModel,
         inverseTransform = transformableModel.getInverseAbsolute(item),
         inverseParentTransform = transformableModel.getInverseAbsolute(parent),
-        localClick = geometry.matMulVecNew(mouseController.getMouseDown(), inverseTransform),
-        localMouse = geometry.matMulVecNew(mouseController.getMouse(), inverseTransform),
-        parentClick = geometry.matMulVecNew(mouseController.getMouseDown(), inverseParentTransform),
-        parentMouse = geometry.matMulVecNew(mouseController.getMouse(), inverseParentTransform);
+        localClick = geometry.matMulVecNew(p0, inverseTransform),
+        localMouse = geometry.matMulVecNew(p, inverseTransform),
+        parentClick = geometry.matMulVecNew(p0, inverseParentTransform),
+        parentMouse = geometry.matMulVecNew(p, inverseParentTransform);
     return {
       localClick: localClick,
       localMouse: localMouse,
@@ -673,22 +686,21 @@ var shapeEditors = (function() {
     }
   }
 
-  Editor.prototype.doDrag = function(p, offset) {
+  Editor.prototype.onDrag = function(p, p0, dx, dy) {
     var self = this,
         drag = this.drag,
         item = drag.item,
         model = this.model,
         renderer = this.renderer,
         valueTracker = this.valueTracker,
-        mouseController = this.mouseController,
         mouseHitInfo = this.mouseHitInfo,
         snapshot = valueTracker.getSnapshot(drag.item),
-        drags = this.calcDrags(drag.item, model, mouseController),
+        drags = this.calcDrags(drag.item, model, p, p0),
         hitInfo, newLength;
     switch (drag.type) {
       case 'paletteItem':
         var snapshot = valueTracker.getSnapshot(item),
-            drags = self.calcDrags(item, model, mouseController),
+            drags = self.calcDrags(item, model, p, p0),
             parentDrag = drags.parentDrag;
         model.observableModel.changeValue(item, 'x', snapshot.x + parentDrag.x);
         model.observableModel.changeValue(item, 'y', snapshot.y + parentDrag.y);
@@ -697,7 +709,7 @@ var shapeEditors = (function() {
         var hitInfo = this.hotTrackInfo = this.hitTestUnselectedItems(p);
         model.selectionModel.forEach(function(item) {
           var snapshot = valueTracker.getSnapshot(item),
-              drags = self.calcDrags(item, model, mouseController),
+              drags = self.calcDrags(item, model, p, p0),
               parentDrag = drags.parentDrag;
           model.observableModel.changeValue(item, 'x', snapshot.x + parentDrag.x);
           model.observableModel.changeValue(item, 'y', snapshot.y + parentDrag.y);
@@ -770,11 +782,11 @@ var shapeEditors = (function() {
       //   }
       //   break;
     }
+    this.updateFn();
   }
 
-  Editor.prototype.endDrag = function() {
+  Editor.prototype.onEndDrag = function(p) {
     var drag = this.drag,
-        p = this.mouseController.getMouse(),
         model = this.model,
         board = this.board,
         selectionModel = model.selectionModel,
@@ -1071,52 +1083,6 @@ var shapeEditors = (function() {
     visit(root, updatePass3);
   }
 
-  Editor.prototype.onMouseDown = function(e) {
-    var model = this.model,
-        mouseController = this.mouseController,
-        mouseHitInfo = this.mouseHitInfo = this.hitTest(mouseController.getMouse());
-    mouseController.onMouseDown(e);
-    if (mouseHitInfo) {
-      if (!model.selectionModel.contains(mouseHitInfo.item) && !this.shiftKeyDown)
-        model.selectionModel.clear();
-      if (!this.isPaletteItem(mouseHitInfo.item))
-        model.selectionModel.add(mouseHitInfo.item);
-      this.updateFn(this);
-    } else {
-      if (!this.shiftKeyDown) {
-        model.selectionModel.clear();
-        this.updateFn(this);
-      }
-    }
-  }
-
-  Editor.prototype.onMouseMove = function(e) {
-    var mouseController = this.mouseController,
-        mouseHitInfo = this.mouseHitInfo,
-        didClickItem = mouseHitInfo && mouseHitInfo.item;
-    mouseController.onMouseMove(e);
-    var mouse = mouseController.getMouse(),
-        dragOffset = mouseController.getDragOffset();
-    if (didClickItem && mouseController.isDragging) {
-      this.doDrag(mouse, dragOffset);
-      this.updateFn(this);
-    }
-  }
-
-  Editor.prototype.onMouseUp = function(e) {
-    var mouseController = this.mouseController,
-        mouse = mouseController.getMouse(),
-        dragOffset = mouseController.getDragOffset(),
-        mouseHitInfo = this.mouseHitInfo;
-    if (mouseHitInfo && mouseHitInfo.item && mouseController.isDragging) {
-      this.doDrag(mouse, dragOffset);
-      this.endDrag();
-      this.updateFn(this);
-      this.mouseHitInfo = null;
-    }
-    mouseController.onMouseUp(e);
-  }
-
   Editor.prototype.onKeyDown = function(e) {
     var model = this.model,
         board = this.board,
@@ -1129,35 +1095,35 @@ var shapeEditors = (function() {
     if (e.keyCode == 8) {
       e.preventDefault();
       editingModel.doDelete();
-      updateFn(this);
+      updateFn();
     } else if (e.ctrlKey) {
       if (e.keyCode == 65) {  // 'a'
         board.items.forEach(function(v) {
           selectionModel.add(v);
         });
-        updateFn(this);
+        updateFn();
       } else if (e.keyCode == 90) {  // 'z'
         if (transactionHistory.getUndo()) {
           selectionModel.clear();
           transactionHistory.undo();
-          updateFn(this);
+          updateFn();
         }
       } else if (e.keyCode == 89) {  // 'y'
         if (transactionHistory.getRedo()) {
           selectionModel.clear();
           transactionHistory.redo();
-          updateFn(this);
+          updateFn();
         }
       } else if (e.keyCode == 88) { // 'x'
         editingModel.doCut();
-        updateFn(this);
+        updateFn();
       } else if (e.keyCode == 67) { // 'c'
         editingModel.doCopy();
-        updateFn(this);
+        updateFn();
       } else if (e.keyCode == 86) { // 'v'
         if (editingModel.getScrap()) {
           editingModel.doPaste();
-          updateFn(this);
+          updateFn();
         }
       } else if (e.keyCode == 71) { // 'g'
         // board_group();

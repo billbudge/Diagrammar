@@ -25,37 +25,42 @@ var ctx = canvas.getContext('2d');
 
 document.bgColor = '#6666cc';
 
-var editor,
-    theme = diagrams.theme.createBlueprint(),
-    statechart_model = { root: statechart_data },
-    shape_model = { root: shape_data };
+var canvasController = new diagrams.CanvasController(canvas, ctx),
+    statechartModel = { root: statechart_data },
+    shapeModel = { root: shape_data };
 
-// Update function, called after editor has changed the data.
-var onUpdate = function(editor) {
+canvasController.theme = diagrams.theme.createBlueprint();
+
+var onUpdate = function() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  editor.draw();
+  canvasController.draw();
 }
 
-var editorName = 'statecharts';
+var statechartEditor = new statecharts.Editor(statechartModel, onUpdate),
+    shapeEditor = new shapes.Editor(shapeModel, onUpdate);
+
+var editorName = 'statecharts',
+    editor;
+
 function startEditor() {
-  var model;
   switch (editorName) {
     case 'statecharts':
-      editor = new statecharts.Editor(statechart_model, theme, canvas, onUpdate);
+      editor = statechartEditor;
       break;
     case 'shapes':
-      editor = new shapeEditors.Editor(shape_model, theme, canvas, onUpdate);
+      editor = shapeEditor;
       break;
   }
 
-  onUpdate(editor);
+  canvasController.configure([editor]);
+  onUpdate();
 }
 
 startEditor();
 
 function resizeCanvas() {
   diagrams.resizeCanvas(canvas, window.innerWidth, window.innerHeight);
-  onUpdate(editor);
+  onUpdate();
 }
 
 resizeCanvas();
@@ -63,15 +68,15 @@ resizeCanvas();
 window.onresize = resizeCanvas;
 
 canvas.onmousedown = function(e) {
-  editor.onMouseDown(e);
+  canvasController.onMouseDown(e);
 };
 
 canvas.onmousemove = function(e) {
-  editor.onMouseMove(e);
+  canvasController.onMouseMove(e);
 };
 
 canvas.onmouseup = function(e) {
-  editor.onMouseUp(e);
+  canvasController.onMouseUp(e);
 };
 
 canvas.ondblclick = function(e) {

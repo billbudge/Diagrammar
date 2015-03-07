@@ -121,7 +121,7 @@ var eventMixin = (function () {
   function addHandler(event, handler) {
     var list = this[event];
     if (!list)
-      this[event] = list = new LinkedList();
+      list = this[event] = new LinkedList();
     list.pushBack(handler);
   }
 
@@ -1146,11 +1146,20 @@ var transformableModel = (function () {
 //   }
 
 //   function extend(model) {
+//     // First check if model needs extending.
 //     if (model.myModel)
 //       return model.myModel;
 
+//     // Extend the model if necessary.
+//     dataModels.otherModel.extend(model);
+
+//     // Create the instance from the prototype.
 //     var instance = Object.create(proto);
 //     instance.model = model;
+//     // Extend the instance if necessary.
+//     eventMixin.extend(instance);
+
+//     // Initialize instance attributes.
 
 //     model.myModel = instance;
 //     return instance;

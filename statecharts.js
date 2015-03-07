@@ -356,6 +356,9 @@ var statecharts = (function() {
 
 //------------------------------------------------------------------------------
 
+  var stateMinWidth = 100,
+      stateMinHeight = 60;
+
   function Renderer(model, ctx, theme) {
     this.model = model;
     this.transformableModel = this.model.transformableModel;
@@ -368,8 +371,8 @@ var statecharts = (function() {
     this.textLeading = 6;
     this.arrowSize = 8;
     this.padding = 8;
-    this.stateMinWidth = 100;
-    this.stateMinHeight = 60;
+    this.stateMinWidth = stateMinWidth;
+    this.stateMinHeight = stateMinHeight;
 
     this.hitTolerance = 8;
 
@@ -582,18 +585,13 @@ var statecharts = (function() {
 
 //------------------------------------------------------------------------------
 
-  function Editor(model, theme, canvas, updateFn) {
+  function Editor(model, updateFn) {
     var self = this;
     this.model = model;
     this.statechart = model.root;
-    editingModel.extend(model);
-
-    this.canvas = canvas;
     this.updateFn = updateFn;
 
-    this.ctx = canvas.getContext('2d');
-
-    var renderer = this.renderer = new Renderer(model, ctx, theme);
+    editingModel.extend(model);
 
     var palette = this.palette = {
       root: {
@@ -610,8 +608,8 @@ var statecharts = (function() {
             type: 'state',
             x: 32,
             y: 96,
-            width: renderer.stateMinWidth,
-            height: renderer.stateMinHeight,
+            width: 100,
+            height: 60,
             name: 'New State',
           },
           {
@@ -631,11 +629,14 @@ var statecharts = (function() {
     dataModels.observableModel.extend(palette);
     dataModels.hierarchicalModel.extend(palette);
     dataModels.transformableModel.extend(palette);
+  }
 
-    this.mouseController = new diagrams.MouseController();
-    this.mouseController.addHandler('beginDrag', function() {
-      self.beginDrag();
-    });
+  Editor.prototype.initialize = function(canvasController) {
+    this.canvasController = canvasController;
+    this.canvas = canvasController.canvas;
+    this.ctx = canvasController.ctx;
+
+    this.renderer = new Renderer(this.model, ctx, canvasController.theme);
   }
 
   Editor.prototype.validateLayout = function() {
@@ -751,9 +752,33 @@ var statecharts = (function() {
            !model.hierarchicalModel.isItemInSelection(item);
   }
 
-  Editor.prototype.beginDrag = function() {
+  Editor.prototype.onClick = function(p) {
+    var model = this.model,
+        selectionModel = model.selectionModel,
+        hitList = this.hitTest(p),
+        mouseHitInfo = this.mouseHitInfo = this.getFirstHit(hitList, isDraggable);
+    if (mouseHitInfo) {
+      var item = mouseHitInfo.item;
+      if (this.isPaletteItem(item)) {
+        selectionModel.clear();
+      } else if (!selectionModel.contains(item)) {
+        if (!this.shiftKeyDown)
+          selectionModel.clear();
+        selectionModel.add(item);
+      }
+      this.updateFn();
+    } else {
+      if (!this.shiftKeyDown) {
+        selectionModel.clear();
+        this.updateFn();
+      }
+    }
+    return mouseHitInfo != null;
+  }
+
+  Editor.prototype.onBeginDrag = function() {
     if (!this.mouseHitInfo)
-      return;
+      return false;
     var mouseHitInfo = this.mouseHitInfo,
         dragItem = mouseHitInfo.item,
         model = this.model,
@@ -795,12 +820,14 @@ var statecharts = (function() {
         this.model.editingModel.reduceSelection();
       drag.item = dragItem;
       this.drag = drag;
+      this.valueTracker = new dataModels.ValueChangeTracker(model);
+      return true;
     }
 
-    this.valueTracker = new dataModels.ValueChangeTracker(model);
+    return false;
   }
 
-  Editor.prototype.doDrag = function(p, offset) {
+  Editor.prototype.onDrag = function(p, p0, dx, dy) {
     var drag = this.drag, dragItem = drag.item,
         model = this.model,
         dataModel = model.dataModel,
@@ -819,8 +846,8 @@ var statecharts = (function() {
           hitInfo = this.getFirstHit(hitList, isDropTarget);
         var snapshot = valueTracker.getSnapshot(dragItem);
         if (snapshot) {
-          observableModel.changeValue(dragItem, 'x', snapshot.x + offset.x);
-          observableModel.changeValue(dragItem, 'y', snapshot.y + offset.y);
+          observableModel.changeValue(dragItem, 'x', snapshot.x + dx);
+          observableModel.changeValue(dragItem, 'y', snapshot.y + dy);
         }
         break;
       case 'moveSelection':
@@ -829,24 +856,24 @@ var statecharts = (function() {
         selectionModel.forEach(function(item) {
           var snapshot = valueTracker.getSnapshot(item);
           if (snapshot) {
-            observableModel.changeValue(item, 'x', snapshot.x + offset.x);
-            observableModel.changeValue(item, 'y', snapshot.y + offset.y);
+            observableModel.changeValue(item, 'x', snapshot.x + dx);
+            observableModel.changeValue(item, 'y', snapshot.y + dy);
           }
         });
         break;
       case 'resizeState':
         if (mouseHitInfo.left) {
-          observableModel.changeValue(dragItem, 'x', snapshot.x + offset.x);
-          observableModel.changeValue(dragItem, 'width', snapshot.width - offset.x);
+          observableModel.changeValue(dragItem, 'x', snapshot.x + dx);
+          observableModel.changeValue(dragItem, 'width', snapshot.width - dx);
         }
         if (mouseHitInfo.top) {
-          observableModel.changeValue(dragItem, 'y', snapshot.y + offset.y);
-          observableModel.changeValue(dragItem, 'height', snapshot.height - offset.y);
+          observableModel.changeValue(dragItem, 'y', snapshot.y + dy);
+          observableModel.changeValue(dragItem, 'height', snapshot.height - dy);
         }
         if (mouseHitInfo.right)
-          observableModel.changeValue(dragItem, 'width', snapshot.width + offset.x);
+          observableModel.changeValue(dragItem, 'width', snapshot.width + dx);
         if (mouseHitInfo.bottom)
-          observableModel.changeValue(dragItem, 'height', snapshot.height + offset.y);
+          observableModel.changeValue(dragItem, 'height', snapshot.height + dy);
         break;
       case 'connectingP1':
         hitInfo = this.getFirstHit(hitList, isStateBorder);
@@ -875,11 +902,11 @@ var statecharts = (function() {
     }
 
     this.hotTrackInfo = (hitInfo && hitInfo.item !== this.statechart) ? hitInfo : null;
+    this.updateFn();
   }
 
-  Editor.prototype.endDrag = function() {
+  Editor.prototype.onEndDrag = function(p) {
     var drag = this.drag, dragItem = drag.item,
-        p = this.mouseController.getMouse(),
         model = this.model,
         statechart = this.statechart,
         observableModel = model.observableModel,
@@ -929,56 +956,8 @@ var statecharts = (function() {
     this.drag = null;
     this.mouseHitInfo = null;
     this.hotTrackInfo = null;
-  }
-
-  Editor.prototype.onMouseDown = function(e) {
-    var model = this.model,
-        selectionModel = model.selectionModel,
-        mouseController = this.mouseController,
-        hitList = this.hitTest(mouseController.getMouse()),
-        mouseHitInfo = this.mouseHitInfo = this.getFirstHit(hitList, isDraggable);
-    mouseController.onMouseDown(e);
-    if (mouseHitInfo) {
-      var item = mouseHitInfo.item;
-      if (!this.isPaletteItem(item) && !selectionModel.contains(item)) {
-        if (!this.shiftKeyDown)
-          selectionModel.clear();
-        selectionModel.add(item);
-      }
-      this.updateFn(this);
-    } else {
-      if (!this.shiftKeyDown) {
-        selectionModel.clear();
-        this.updateFn(this);
-      }
-    }
-  }
-
-  Editor.prototype.onMouseMove = function(e) {
-    var mouseController = this.mouseController,
-        mouseHitInfo = this.mouseHitInfo,
-        didClickItem = mouseHitInfo && mouseHitInfo.item;
-    mouseController.onMouseMove(e);
-    var mouse = mouseController.getMouse(),
-        dragOffset = mouseController.getDragOffset();
-    if (didClickItem && mouseController.isDragging) {
-      this.doDrag(mouse, dragOffset);
-      this.updateFn(this);
-    }
-  }
-
-  Editor.prototype.onMouseUp = function(e) {
-    var mouseController = this.mouseController,
-        mouse = mouseController.getMouse(),
-        dragOffset = mouseController.getDragOffset(),
-        mouseHitInfo = this.mouseHitInfo;
-    if (mouseHitInfo && mouseHitInfo.item && mouseController.isDragging) {
-      this.doDrag(mouse, dragOffset);
-      this.endDrag();
-      this.updateFn(this);
-      this.mouseHitInfo = null;
-    }
-    mouseController.onMouseUp(e);
+    this.mouseHitInfo = null;
+    this.updateFn();
   }
 
   Editor.prototype.onKeyDown = function(e) {
@@ -993,35 +972,35 @@ var statecharts = (function() {
     if (e.keyCode == 8) {
       e.preventDefault();
       editingModel.doDelete();
-      updateFn(this);
+      updateFn();
     } else if (e.ctrlKey || e.metaKey) {
       if (e.keyCode == 65) {  // 'a'
         statechart.items.forEach(function(v) {
           selectionModel.add(v);
         });
-        updateFn(this);
+        updateFn();
       } else if (e.keyCode == 90) {  // 'z'
         if (transactionHistory.getUndo()) {
           selectionModel.clear();
           transactionHistory.undo();
-          updateFn(this);
+          updateFn();
         }
       } else if (e.keyCode == 89) {  // 'y'
         if (transactionHistory.getRedo()) {
           selectionModel.clear();
           transactionHistory.redo();
-          updateFn(this);
+          updateFn();
         }
       } else if (e.keyCode == 88) { // 'x'
         editingModel.doCut();
-        updateFn(this);
+        updateFn();
       } else if (e.keyCode == 67) { // 'c'
         editingModel.doCopy();
-        updateFn(this);
+        updateFn();
       } else if (e.keyCode == 86) { // 'v'
         if (editingModel.getScrap()) {
           editingModel.doPaste();
-          updateFn(this);
+          updateFn();
         }
       } else if (e.keyCode == 71) { // 'g'
         // board_group();
