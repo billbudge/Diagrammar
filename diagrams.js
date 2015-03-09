@@ -5,119 +5,6 @@ var diagrams = (function() {
 
 //------------------------------------------------------------------------------
 
-function CanvasController(canvas, ctx) {
-  this.canvas = canvas;
-  this.ctx = ctx || canvas.getContext('2d');
-  this.dragThreshold = 4;
-  this.hoverThreshold = 4;
-  this.hoverTimeout = 250;  // milliseconds
-  this.mouse = this.dragOffset = { x: 0, y: 0 };
-}
-
-CanvasController.prototype.configure = function(layers) {
-  var controller = this;
-  layers.forEach(function(layer, i) {
-    if (layer.initialize)
-      layer.initialize(controller, i);
-  });
-  // Layers are presented in draw order, but most loops are event-order, so
-  // reverse the array here.
-  this.layers = layers.reverse();
-}
-
-CanvasController.prototype.onMouseDown = function(e) {
-  var self = this,
-      mouse = this.mouse = this.click = { x: e.offsetX, y: e.offsetY };
-  if (e.button === 0) {
-    this.layers.some(function(layer) {
-      if (!layer.onClick || !layer.onClick(mouse))
-        return false;
-      // Layers that return true from onClick must implement onBeginDrag, etc.
-      self.clickOwner = layer;
-      return true;
-    });
-  }
-}
-
-CanvasController.prototype.onMouseMove = function(e) {
-  var mouse = this.mouse = { x: e.offsetX, y: e.offsetY };
-  if (this.clickOwner) {
-    var dx = mouse.x - this.click.x,
-        dy = mouse.y - this.click.y;
-    if (!this.isDragging) {
-      this.isDragging = Math.abs(dx) >= this.dragThreshold ||
-                        Math.abs(dy) >= this.dragThreshold;
-      if (this.isDragging) {
-        this.clickOwner.onBeginDrag();
-      }
-    }
-    if (this.isDragging) {
-      var click = this.click, dx = mouse.x - click.x, dy = mouse.y - click.y;
-      this.clickOwner.onDrag(mouse, this.click, dx, dy);
-    }
-  }
-}
-
-CanvasController.prototype.onMouseUp = function(e) {
-  var mouse = this.mouse = { x: e.offsetX, y: e.offsetY };
-  if (this.isDragging) {
-    this.isDragging = false;
-    this.clickOwner.onEndDrag(mouse);
-  }
-  this.click = null;
-  this.clickOwner = null;
-}
-
-CanvasController.prototype.onMouseOut = function(e) {
-  // TODO
-}
-
-CanvasController.prototype.onBeginHover = function(e) {
-}
-
-CanvasController.prototype.draw = function() {
-  this.layers.reverse().forEach(function(layer) {
-    if (layer.draw)
-      layer.draw(this);
-  });
-}
-
-//------------------------------------------------------------------------------
-
-var theme = (function() {
-  var themes = {
-    normal: {
-      bgColor: 'white',
-      strokeColor: '#808080',
-      textColor: '#404040',
-      highlightColor: '#40F040',
-      hotTrackColor: '#F0F040',
-      dimColor: '#c0c0c0',
-    },
-    blueprint: {
-      bgColor: '#6666cc',
-      strokeColor: '#f0f0f0',
-      textColor: '#f0f0f0',
-      highlightColor: '#40F040',
-      hotTrackColor: '#F0F040',
-      dimColor: '#808080',
-    },
-  };
-
-  function create() {
-    return Object.create(themes.normal);
-  }
-  function createBlueprint() {
-    return Object.create(themes.blueprint);
-  }
-  return {
-    create: create,
-    createBlueprint: createBlueprint,
-  }
-})();
-
-//------------------------------------------------------------------------------
-
 // Rendering utilities.
 
 function roundRectPath(x, y, w, h, r, ctx) {
@@ -354,7 +241,7 @@ function hitTestBezier(bezier, p, tol) {
   }
 }
 
-function resizeCanvas(canvas, width, height) {
+function resizeCanvas(canvas, ctx, width, height) {
   var ctx = canvas.getContext('2d'),
       devicePixelRatio = window.devicePixelRatio || 1,
       backingStoreRatio = ctx.webkitBackingStorePixelRatio ||
@@ -375,11 +262,188 @@ function resizeCanvas(canvas, width, height) {
 
 //------------------------------------------------------------------------------
 
+function CanvasController(canvas, ctx) {
+  this.canvas = canvas;
+  this.ctx = ctx || canvas.getContext('2d');
+  this.dragThreshold = 4;
+  this.hoverThreshold = 4;
+  this.hoverTimeout = 500;  // milliseconds
+  this.mouse = this.dragOffset = { x: 0, y: 0 };
+}
+
+CanvasController.prototype.configure = function(layers) {
+  var controller = this;
+  layers.forEach(function(layer, i) {
+    if (layer.initialize)
+      layer.initialize(controller, i);
+  });
+  // Layers are presented in draw order, but most loops are event-order, so
+  // reverse the array here.
+  this.layers = layers.reverse();
+  this.draw();
+}
+
+CanvasController.prototype.onMouseDown = function(e) {
+  var self = this,
+      mouse = this.mouse = this.click = { x: e.offsetX, y: e.offsetY };
+  if (e.button === 0) {
+    this.layers.some(function(layer) {
+      if (!layer.onClick || !layer.onClick(mouse))
+        return false;
+      // Layers that return true from onClick must implement onBeginDrag, etc.
+      self.clickOwner = layer;
+      return true;
+    });
+  }
+  this.cancelHover_();
+  this.draw();
+}
+
+CanvasController.prototype.onMouseMove = function(e) {
+  var mouse = this.mouse = { x: e.offsetX, y: e.offsetY };
+  if (this.clickOwner) {
+    var dx = mouse.x - this.click.x,
+        dy = mouse.y - this.click.y;
+    if (!this.isDragging) {
+      this.isDragging = Math.abs(dx) >= this.dragThreshold ||
+                        Math.abs(dy) >= this.dragThreshold;
+      if (this.isDragging) {
+        this.clickOwner.onBeginDrag();
+      }
+    }
+    if (this.isDragging) {
+      var click = this.click, dx = mouse.x - click.x, dy = mouse.y - click.y;
+      this.clickOwner.onDrag(mouse, this.click, dx, dy);
+      this.draw();
+    }
+  }
+  if (!this.click)
+    this.startHover_();
+}
+
+CanvasController.prototype.onMouseUp = function(e) {
+  var mouse = this.mouse = { x: e.offsetX, y: e.offsetY };
+  if (this.isDragging) {
+    this.isDragging = false;
+    this.clickOwner.onEndDrag(mouse);
+    this.draw();
+  }
+  this.click = null;
+  this.clickOwner = null;
+}
+
+CanvasController.prototype.onMouseOut = function(e) {
+  // TODO
+}
+
+CanvasController.prototype.onKeyDown = function(e) {
+  var self = this;
+  this.shiftKeyDown = e.shiftKey;
+  this.layers.some(function(layer) {
+    if (!layer.onKeyDown || !layer.onKeyDown(e))
+      return false;
+    // Layers that return true from onClick must implement onBeginDrag, etc.
+    self.keyOwner = layer;
+    self.draw();
+    e.preventDefault();
+    return true;
+  });
+}
+
+CanvasController.prototype.onKeyUp = function(e) {
+  this.shiftKeyDown = e.shiftKey;
+  var keyOwner = this.keyOwner;
+  if (keyOwner) {
+    if (keyOwner.onKeyUp)
+      keyOwner.onKeyUp(e);
+    this.keyOwner = null;
+  }
+}
+
+CanvasController.prototype.startHover_ = function() {
+  var self = this;
+  if (this.hovering_)
+    this.cancelHover_();
+  this.hovering_ = window.setTimeout(function() {
+    self.layers.some(function(layer) {
+      if (!layer.onBeginHover || !layer.onBeginHover(self.mouse))
+        return false;
+      // Layers that return true from onBeginHover must implement onEndHover.
+      self.hoverOwner = layer;
+      self.hovering_ = 0;
+      self.draw();
+      return true;
+    });
+  }, this.hoverTimeout);
+}
+
+CanvasController.prototype.cancelHover_ = function() {
+  if (this.hovering_) {
+    window.clearTimeout(this.hovering_);
+    this.hovering_ = 0;
+    if (this.hoverOwner) {
+      this.hoverOwner.onEndHover(this.mouse);
+      this.hoverOwner = null;
+      this.draw();
+    }
+  }
+}
+
+CanvasController.prototype.draw = function() {
+  var canvas = this.canvas, ctx = this.ctx;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  this.layers.reverse().forEach(function(layer) {
+    if (layer.draw)
+      layer.draw();
+  });
+}
+
+CanvasController.prototype.resize = function(width, height) {
+  diagrams.resizeCanvas(this.canvas, this.ctx, width, height);
+  this.draw();
+}
+
+//------------------------------------------------------------------------------
+
+var theme = (function() {
+  var themes = {
+    normal: {
+      bgColor: 'white',
+      strokeColor: '#808080',
+      textColor: '#404040',
+      highlightColor: '#40F040',
+      hotTrackColor: '#F0F040',
+      dimColor: '#c0c0c0',
+      hoverColor: '#FCF0AD',
+      hoverTextColor: '#404040',
+    },
+    blueprint: {
+      bgColor: '#6666cc',
+      strokeColor: '#f0f0f0',
+      textColor: '#f0f0f0',
+      highlightColor: '#40F040',
+      hotTrackColor: '#F0F040',
+      dimColor: '#808080',
+      hoverColor: '#FCF0AD',
+      hoverTextColor: '#404040',
+    },
+  };
+
+  function create() {
+    return Object.create(themes.normal);
+  }
+  function createBlueprint() {
+    return Object.create(themes.blueprint);
+  }
+  return {
+    create: create,
+    createBlueprint: createBlueprint,
+  }
+})();
+
+//------------------------------------------------------------------------------
+
 return {
-  CanvasController: CanvasController,
-
-  theme: theme,
-
   roundRectPath: roundRectPath,
   rectParamToPoint: rectParamToPoint,
   circleParamToPoint: circleParamToPoint,
@@ -395,6 +459,10 @@ return {
   hitTestLine: hitTestLine,
   hitTestBezier: hitTestBezier,
   resizeCanvas: resizeCanvas,
+
+  CanvasController: CanvasController,
+
+  theme: theme,
 }
 
 })();

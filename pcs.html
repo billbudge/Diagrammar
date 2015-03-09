@@ -31,13 +31,8 @@ var canvasController = new diagrams.CanvasController(canvas, ctx),
 
 canvasController.theme = diagrams.theme.createBlueprint();
 
-var onUpdate = function() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  canvasController.draw();
-}
-
-var statechartEditor = new statecharts.Editor(statechartModel, onUpdate),
-    shapeEditor = new shapes.Editor(shapeModel, onUpdate);
+var statechartEditor = new statecharts.Editor(statechartModel),
+    shapeEditor = new shapes.Editor(shapeModel);
 
 var editorName = 'statecharts',
     editor;
@@ -53,14 +48,12 @@ function startEditor() {
   }
 
   canvasController.configure([editor]);
-  onUpdate();
 }
 
 startEditor();
 
 function resizeCanvas() {
-  diagrams.resizeCanvas(canvas, window.innerWidth, window.innerHeight);
-  onUpdate();
+  canvasController.resize(window.innerWidth, window.innerHeight);
 }
 
 resizeCanvas();
@@ -85,11 +78,11 @@ canvas.ondblclick = function(e) {
 }
 
 document.onkeydown = function(e) {
-  editor.onKeyDown(e);
+  canvasController.onKeyDown(e);
 }
 
 document.onkeyup = function(e) {
-  editor.onKeyUp(e);
+  canvasController.onKeyUp(e);
 }
 
 </script>

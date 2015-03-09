@@ -431,11 +431,10 @@ var shapes = (function() {
 
 //------------------------------------------------------------------------------
 
-  function Editor(model, updateFn) {
+  function Editor(model) {
     var self = this;
     this.model = model;
     this.board = model.root;
-    this.updateFn = updateFn;
 
     editingModel.extend(model);
 
@@ -578,17 +577,16 @@ var shapes = (function() {
 
   Editor.prototype.onClick = function(p) {
     var model = this.model,
-        mouseHitInfo = this.mouseHitInfo = this.hitTest(p);
+        mouseHitInfo = this.mouseHitInfo = this.hitTest(p),
+        shiftKeyDown = this.canvasController.shiftKeyDown;
     if (mouseHitInfo) {
-      if (!model.selectionModel.contains(mouseHitInfo.item) && !this.shiftKeyDown)
+      if (!model.selectionModel.contains(mouseHitInfo.item) && !shiftKeyDown)
         model.selectionModel.clear();
       if (!this.isPaletteItem(mouseHitInfo.item))
         model.selectionModel.add(mouseHitInfo.item);
-      this.updateFn();
     } else {
-      if (!this.shiftKeyDown) {
+      if (!shiftKeyDown) {
         model.selectionModel.clear();
-        this.updateFn();
       }
     }
     return mouseHitInfo != null;
@@ -782,7 +780,6 @@ var shapes = (function() {
       //   }
       //   break;
     }
-    this.updateFn();
   }
 
   Editor.prototype.onEndDrag = function(p) {
@@ -1085,66 +1082,65 @@ var shapes = (function() {
 
   Editor.prototype.onKeyDown = function(e) {
     var model = this.model,
-        board = this.board,
+        statechart = this.statechart,
         selectionModel = model.selectionModel,
         editingModel = model.editingModel,
         transactionHistory = model.transactionHistory,
-        updateFn = this.updateFn;
+        keyCode = e.keyCode,
+        cmdKey = e.ctrlKey || e.metaKey,
+        shiftKey = e.shiftKey;
 
-    this.shiftKeyDown = e.shiftKey;
-    if (e.keyCode == 8) {
-      e.preventDefault();
+    if (keyCode == 8) {  // 'delete'
       editingModel.doDelete();
-      updateFn();
-    } else if (e.ctrlKey) {
-      if (e.keyCode == 65) {  // 'a'
-        board.items.forEach(function(v) {
-          selectionModel.add(v);
-        });
-        updateFn();
-      } else if (e.keyCode == 90) {  // 'z'
-        if (transactionHistory.getUndo()) {
-          selectionModel.clear();
-          transactionHistory.undo();
-          updateFn();
-        }
-      } else if (e.keyCode == 89) {  // 'y'
-        if (transactionHistory.getRedo()) {
-          selectionModel.clear();
-          transactionHistory.redo();
-          updateFn();
-        }
-      } else if (e.keyCode == 88) { // 'x'
-        editingModel.doCut();
-        updateFn();
-      } else if (e.keyCode == 67) { // 'c'
-        editingModel.doCopy();
-        updateFn();
-      } else if (e.keyCode == 86) { // 'v'
-        if (editingModel.getScrap()) {
-          editingModel.doPaste();
-          updateFn();
-        }
-      } else if (e.keyCode == 71) { // 'g'
-        // board_group();
-        // renderEditor();
-      } else if (e.keyCode == 83) { // 's'
-        var text = JSON.stringify(
-          this.board,
-          function(key, value) {
-            if (key.toString().charAt(0) == '_')
-              return;
-            return value;
-          },
-          2);
-        // Writes board as JSON to console.
-        console.log(text);
+      return true;
+    }
+    if (cmdKey) {
+      switch (keyCode) {
+        case 65:  // 'a'
+          board.items.forEach(function(v) {
+            selectionModel.add(v);
+          });
+          return true;
+        case 90:  // 'z'
+          if (transactionHistory.getUndo()) {
+            selectionModel.clear();
+            transactionHistory.undo();
+            return true;
+          }
+          return false;
+        case 89:  // 'y'
+          if (transactionHistory.getRedo()) {
+            selectionModel.clear();
+            transactionHistory.redo();
+            return true;
+          }
+          return false;
+        case 88:  // 'x'
+          editingModel.doCut();
+          return true;
+        case 67:  // 'c'
+          editingModel.doCopy();
+          return true;
+        case 86:  // 'v'
+          if (editingModel.getScrap()) {
+            editingModel.doPaste();
+            return true;
+          }
+          return false;
+        case 83:  // 's'
+          var text = JSON.stringify(
+            this.board,
+            function(key, value) {
+              if (key.toString().charAt(0) == '_')
+                return;
+              return value;
+            },
+            2);
+          // Writes board as JSON to console.
+          console.log(text);
+          return true;
       }
     }
-  }
-
-  Editor.prototype.onKeyUp = function(e) {
-    this.shiftKeyDown = e.shiftKey;
   }
 
   return {

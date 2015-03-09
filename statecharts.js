@@ -379,6 +379,8 @@ var statecharts = (function() {
     this.bgColor = theme.bgColor;
     this.strokeColor = theme.strokeColor;
     this.textColor = theme.textColor;
+    this.hoverColor = theme.hoverColor;
+    this.hoverTextColor = theme.hoverTextColor;
   }
 
   Renderer.prototype.getStateRect = function(state) {
@@ -583,6 +585,31 @@ var statecharts = (function() {
     return hitInfo;
   }
 
+  Renderer.prototype.drawHoverText = function(item, p) {
+    var props = [];
+    this.model.dataModel.visitProperties(item, function(item, attr) {
+      props.push({ name: attr, value: item[attr] });
+    });
+    var x = p.x, y = p.y,
+        maxWidth = 0, length = props.length, textSize = this.textSize;
+    for (var i = 0; i < length; i++) {
+      var prop = props[i],
+          width = 4 + this.measureText(prop.name) + 16 + this.measureText(prop.value) + 4;
+      maxWidth = Math.max(maxWidth, width);
+    }
+    ctx.fillStyle = this.hoverColor;
+    ctx.fillRect(x, y, maxWidth, length * textSize + 4);
+    ctx.fillStyle = this.hoverTextColor;
+    for (var i = 0; i < length; i++) {
+      ctx.textAlign = 'left';
+      ctx.fillText(props[i].name, x + 4, y + textSize);
+      ctx.textAlign = 'right';
+      ctx.fillText(props[i].value, x + maxWidth - 4, y + textSize);
+      y += textSize;
+    }
+    ctx.textAlign = 'left';
+  }
+
 //------------------------------------------------------------------------------
 
   function Editor(model, updateFn) {
@@ -659,6 +686,10 @@ var statecharts = (function() {
     return this.model.observableModel.changeValue(statechart, 'temporary', null);
   }
 
+  Editor.prototype.getTemporaryItem = function() {
+    return this.statechart.temporary;
+  }
+
   Editor.prototype.draw = function() {
     var renderer = this.renderer, statechart = this.statechart,
         model = this.model, palette = this.palette,
@@ -698,11 +729,18 @@ var statecharts = (function() {
     });
     renderer.endDraw();
 
-    var temporary = statechart.temporary;
+    var temporary = this.getTemporaryItem();
     if (temporary) {
       renderer.beginDraw();
       renderer.updateTransition(temporary);
       renderer.drawItem(temporary);
+      renderer.endDraw();
+    }
+
+    var hoverHitInfo = this.hoverHitInfo;
+    if (hoverHitInfo) {
+      renderer.beginDraw();
+      renderer.drawHoverText(hoverHitInfo.item, hoverHitInfo.p);
       renderer.endDraw();
     }
   }
@@ -755,6 +793,7 @@ var statecharts = (function() {
   Editor.prototype.onClick = function(p) {
     var model = this.model,
         selectionModel = model.selectionModel,
+        shiftKeyDown = this.canvasController.shiftKeyDown,
         hitList = this.hitTest(p),
         mouseHitInfo = this.mouseHitInfo = this.getFirstHit(hitList, isDraggable);
     if (mouseHitInfo) {
@@ -762,15 +801,13 @@ var statecharts = (function() {
       if (this.isPaletteItem(item)) {
         selectionModel.clear();
       } else if (!selectionModel.contains(item)) {
-        if (!this.shiftKeyDown)
+        if (!shiftKeyDown)
           selectionModel.clear();
         selectionModel.add(item);
       }
-      this.updateFn();
     } else {
-      if (!this.shiftKeyDown) {
+      if (!shiftKeyDown) {
         selectionModel.clear();
-        this.updateFn();
       }
     }
     return mouseHitInfo != null;
@@ -902,7 +939,6 @@ var statecharts = (function() {
     }
 
     this.hotTrackInfo = (hitInfo && hitInfo.item !== this.statechart) ? hitInfo : null;
-    this.updateFn();
   }
 
   Editor.prototype.onEndDrag = function(p) {
@@ -957,7 +993,22 @@ var statecharts = (function() {
     this.mouseHitInfo = null;
     this.hotTrackInfo = null;
     this.mouseHitInfo = null;
-    this.updateFn();
+  }
+
+  Editor.prototype.onBeginHover = function(p) {
+    var model = this.model,
+        hitList = this.hitTest(p),
+        hoverHitInfo = this.getFirstHit(hitList, isDraggable);
+    if (!hoverHitInfo)
+      return false;
+    hoverHitInfo.p = p;
+    this.hoverHitInfo = hoverHitInfo;
+    return true;
+  }
+
+  Editor.prototype.onEndHover = function(p) {
+    if (this.hoverHitInfo)
+      this.hoverHitInfo = null;
   }
 
   Editor.prototype.onKeyDown = function(e) {
@@ -966,62 +1017,61 @@ var statecharts = (function() {
         selectionModel = model.selectionModel,
         editingModel = model.editingModel,
         transactionHistory = model.transactionHistory,
-        updateFn = this.updateFn;
+        keyCode = e.keyCode,
+        cmdKey = e.ctrlKey || e.metaKey,
+        shiftKey = e.shiftKey;
 
-    this.shiftKeyDown = e.shiftKey;
-    if (e.keyCode == 8) {
-      e.preventDefault();
+    if (keyCode == 8) {  // 'delete'
       editingModel.doDelete();
-      updateFn();
-    } else if (e.ctrlKey || e.metaKey) {
-      if (e.keyCode == 65) {  // 'a'
-        statechart.items.forEach(function(v) {
-          selectionModel.add(v);
-        });
-        updateFn();
-      } else if (e.keyCode == 90) {  // 'z'
-        if (transactionHistory.getUndo()) {
-          selectionModel.clear();
-          transactionHistory.undo();
-          updateFn();
-        }
-      } else if (e.keyCode == 89) {  // 'y'
-        if (transactionHistory.getRedo()) {
-          selectionModel.clear();
-          transactionHistory.redo();
-          updateFn();
-        }
-      } else if (e.keyCode == 88) { // 'x'
-        editingModel.doCut();
-        updateFn();
-      } else if (e.keyCode == 67) { // 'c'
-        editingModel.doCopy();
-        updateFn();
-      } else if (e.keyCode == 86) { // 'v'
-        if (editingModel.getScrap()) {
-          editingModel.doPaste();
-          updateFn();
-        }
-      } else if (e.keyCode == 71) { // 'g'
-        // board_group();
-        // renderEditor();
-      } else if (e.keyCode == 83) { // 's'
-        var text = JSON.stringify(
-          statechart,
-          function(key, value) {
-            if (key.toString().charAt(0) == '_')
-              return;
-            return value;
-          },
-          2);
-        // Writes statechart as JSON to console.
-        console.log(text);
+      return true;
+    }
+    if (cmdKey) {
+      switch (keyCode) {
+        case 65:  // 'a'
+          statechart.items.forEach(function(v) {
+            selectionModel.add(v);
+          });
+          return true;
+        case 90:  // 'z'
+          if (transactionHistory.getUndo()) {
+            selectionModel.clear();
+            transactionHistory.undo();
+            return true;
+          }
+          return false;
+        case 89:  // 'y'
+          if (transactionHistory.getRedo()) {
+            selectionModel.clear();
+            transactionHistory.redo();
+            return true;
+          }
+          return false;
+        case 88:  // 'x'
+          editingModel.doCut();
+          return true;
+        case 67:  // 'c'
+          editingModel.doCopy();
+          return true;
+        case 86:  // 'v'
+          if (editingModel.getScrap()) {
+            editingModel.doPaste();
+            return true;
+          }
+          return false;
+        case 83:  // 's'
+          var text = JSON.stringify(
+            statechart,
+            function(key, value) {
+              if (key.toString().charAt(0) == '_')
+                return;
+              return value;
+            },
+            2);
+          // Writes statechart as JSON to console.
+          console.log(text);
+          return true;
       }
     }
-  }
-
-  Editor.prototype.onKeyUp = function(e) {
-    this.shiftKeyDown = e.shiftKey;
   }
 
   return {
