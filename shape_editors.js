@@ -698,12 +698,16 @@ var shapes = (function() {
         valueTracker = this.valueTracker,
         mouseHitInfo = this.mouseHitInfo,
         snapshot = valueTracker.getSnapshot(drag.item),
-        drags = this.calcDrags(drag.item, model, p, p0),
+        canvasController = this.canvasController,
+        cp0 = canvasController.viewToCanvas(p0),
+        cp = canvasController.viewToCanvas(p),
+        dx = cp.x - cp0.x, dy = cp.y - cp0.y,
+        drags = this.calcDrags(drag.item, model, cp, cp0),
         hitInfo, newLength;
     switch (drag.type) {
       case 'paletteItem':
         var snapshot = valueTracker.getSnapshot(item),
-            drags = self.calcDrags(item, model, p, p0),
+            drags = self.calcDrags(item, model, cp, cp0),
             parentDrag = drags.parentDrag;
         model.observableModel.changeValue(item, 'x', snapshot.x + parentDrag.x);
         model.observableModel.changeValue(item, 'y', snapshot.y + parentDrag.y);
@@ -712,7 +716,7 @@ var shapes = (function() {
         var hitInfo = this.hotTrackInfo = this.hitTestUnselectedItems(p);
         model.selectionModel.forEach(function(item) {
           var snapshot = valueTracker.getSnapshot(item),
-              drags = self.calcDrags(item, model, p, p0),
+              drags = self.calcDrags(item, model, cp, cp0),
               parentDrag = drags.parentDrag;
           model.observableModel.changeValue(item, 'x', snapshot.x + parentDrag.x);
           model.observableModel.changeValue(item, 'y', snapshot.y + parentDrag.y);

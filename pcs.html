@@ -73,10 +73,6 @@ canvas.addEventListener('mouseup', function(e) {
   canvasController.onMouseUp(e);
 });
 
-canvas.addEventListener('mousewheel', function(e) {
-  canvasController.onMouseWheel(e);
-});
-
 canvas.addEventListener('dblclick', function(e) {
   editorName = (editorName == 'statecharts' ? 'shapes' : 'statecharts');
   startEditor();

@@ -288,7 +288,8 @@ CanvasController.prototype.configure = function(layers) {
   this.draw();
 }
 
-CanvasController.prototype.setTransform = function(translation, scale, rotation) {
+// TODO support rotation?
+CanvasController.prototype.setTransform = function(translation, scale) {
   var tx = 0, ty = 0, sx = 1, sy = 1, sin = 0, cos = 1;
   if (translation) {
     tx = translation.x;
@@ -298,12 +299,9 @@ CanvasController.prototype.setTransform = function(translation, scale, rotation)
     sx = scale.x;
     sy = scale.y;
   }
-  if (rotation) {
-    sin = Math.sin(rotation);
-    cos = Math.cos(rotation);
-  }
-  this.transform = [1, 0, 0, 1, tx, ty];
-  this.inverseTransform = [1, 0, 0, 1, -tx, -ty];
+  this.transform = [sx, 0, 0, sy, tx, ty];
+  var ooSx = 1.0 / sx, ooSy = 1.0 / sy;
+  this.inverseTransform = [ooSx, 0, 0, ooSy, -tx * ooSx, -ty * ooSy];
 }
 
 CanvasController.prototype.applyTransform = function() {
@@ -317,16 +315,15 @@ CanvasController.prototype.viewToCanvas = function(p) {
 
 CanvasController.prototype.onMouseDown = function(e) {
   var self = this,
-      mouse = this.mouse = this.click = { x: e.offsetX, y: e.offsetY };
-  if (e.button === 0) {
-    this.layers.some(function(layer) {
-      if (!layer.onClick || !layer.onClick(mouse))
-        return false;
-      // Layers that return true from onClick must implement onBeginDrag, etc.
-      self.clickOwner = layer;
-      return true;
-    });
-  }
+      mouse = this.mouse = this.click = { x: e.offsetX, y: e.offsetY },
+      alt = (e.button !== 0);
+  this.layers.some(function(layer) {
+    if (!layer.onClick || !layer.onClick(mouse, alt))
+      return false;
+    // Layers that return true from onClick must implement onBeginDrag, etc.
+    self.clickOwner = layer;
+    return true;
+  });
   this.cancelHover_();
   this.draw();
 }
@@ -367,16 +364,14 @@ CanvasController.prototype.onMouseOut = function(e) {
   // TODO
 }
 
-CanvasController.prototype.onMouseWheel = function(e) {
-}
-
 CanvasController.prototype.onKeyDown = function(e) {
   var self = this;
   this.shiftKeyDown = e.shiftKey;
   this.layers.some(function(layer) {
     if (!layer.onKeyDown || !layer.onKeyDown(e))
       return false;
-    // Layers that return true from onClick must implement onBeginDrag, etc.
+    // Layers that return true from onClick must implement onBeginDrag, onDrag,
+    // and onEndDrag.
     self.keyOwner = layer;
     self.draw();
     e.preventDefault();
@@ -443,12 +438,38 @@ CanvasController.prototype.resize = function(width, height) {
 //------------------------------------------------------------------------------
 
 function CanvasPanZoomLayer() {
-  this.translation = { x: 0, y: 0 };
-  this.scale = 1.0;
+  this.pan = { x: 0, y: 0 };
+  this.zoom = 1.0;
+  this.minZoom = 0.50;
+  this.maxZoom = 10.0;
 }
 
 CanvasPanZoomLayer.prototype.initialize = function(canvasController) {
+  var self = this;
   this.canvasController = canvasController;
+  canvasController.canvas.addEventListener('mousewheel', function(e) {
+    var pan = self.pan, zoom = self.zoom,
+        center = { x: e.offsetX, y: e.offsetY },
+        dZoom = 1.0 + e.wheelDelta / 2048,
+        newZoom = zoom * dZoom;
+    newZoom = Math.max(self.minZoom, Math.min(self.maxZoom, newZoom));
+    console.log(newZoom);
+    dZoom = newZoom / zoom;
+
+    self.zoom = zoom * dZoom;
+    self.pan = {
+      x: (pan.x - center.x) * dZoom + center.x,
+      y: (pan.y - center.y) * dZoom + center.y,
+    }
+    self.setTransform_();
+    canvasController.draw();
+    e.preventDefault();
+  });
+}
+
+CanvasPanZoomLayer.prototype.setTransform_ = function(p) {
+  var pan = this.pan, zoom = this.zoom;
+  this.canvasController.setTransform(pan, { x: zoom, y: zoom });
 }
 
 CanvasPanZoomLayer.prototype.onClick = function(p) {
@@ -457,14 +478,14 @@ CanvasPanZoomLayer.prototype.onClick = function(p) {
 }
 
 CanvasPanZoomLayer.prototype.onBeginDrag = function() {
-  this.translation0 = this.translation;
+  this.pan0 = this.pan;
 }
 
 CanvasPanZoomLayer.prototype.onDrag = function(p0, p) {
   var dx = p.x - p0.x, dy = p.y - p0.y,
-      t0 = this.translation0;
-  this.translation = trans = { x: t0.x + dx, y: t0.y + dy };
-  canvasController.setTransform(trans);
+      t0 = this.pan0;
+  this.pan = { x: t0.x + dx, y: t0.y + dy };
+  this.setTransform_();
 }
 
 CanvasPanZoomLayer.prototype.onEndDrag = function(p) {
