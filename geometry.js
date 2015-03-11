@@ -134,14 +134,25 @@ var geometry = (function() {
   }
 
   function matMulVec(v, m) {
-    var vx = v.x, vy = v.y;
-    v.x = vx * m[0] + vy * m[2] + m[4],
-    v.y = vx * m[1] + vy * m[3] + m[5]
+    var x = v.x, y = v.y;
+    v.x = x * m[0] + y * m[2];
+    v.y = x * m[1] + y * m[3];
     return v;
   }
 
   function matMulVecNew(v, m) {
     return matMulVec({ x: v.x, y: v.y }, m);
+  }
+
+  function matMulPt(v, m) {
+    var x = v.x, y = v.y;
+    v.x = x * m[0] + y * m[2] + m[4];
+    v.y = x * m[1] + y * m[3] + m[5];
+    return v;
+  }
+
+  function matMulPtNew(v, m) {
+    return matMulPt({ x: v.x, y: v.y }, m);
   }
 
   // Cosine of angle between x-axis (1, 0) and (dx, dy).
@@ -338,6 +349,8 @@ var geometry = (function() {
     matMulNew: matMulNew,
     matMulVec: matMulVec,
     matMulVecNew: matMulVecNew,
+    matMulPt: matMulPt,
+    matMulPtNew: matMulPtNew,
     getCos: getCos,
     compareCosines: compareCosines,
     binarySearch: binarySearch,

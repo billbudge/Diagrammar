@@ -140,11 +140,11 @@ var shapes = (function() {
           return;
         var transformableModel = model.transformableModel;
         if (oldParent) {          // if null, it's a new item.
-          geometry.matMulVec(item, transformableModel.getAbsolute(oldParent));
+          geometry.matMulPt(item, transformableModel.getAbsolute(oldParent));
           this.deleteItem(item);  // notifies observer
         }
 
-        geometry.matMulVec(item, transformableModel.getInverseAbsolute(parent));
+        geometry.matMulPt(item, transformableModel.getInverseAbsolute(parent));
 
         // if (item.type == 'bezier') {
         //   autoRotateBezier(item);
@@ -201,7 +201,6 @@ var shapes = (function() {
 
   Renderer.prototype.drawItem = function(item) {
     var ctx = this.ctx, knobbySize = this.knobbySize, t = item._atransform;
-    ctx.save();
     ctx.transform(t[0], t[2], t[1], t[3], t[4], t[5]); // local to world
     switch (item.type) {
       case 'disk':
@@ -266,12 +265,10 @@ var shapes = (function() {
         }
         break;
     }
-    ctx.restore();
   }
 
   Renderer.prototype.highlightItem = function(item) {
     var ctx = this.ctx, knobbySize = this.knobbySize, t = item._atransform;
-    ctx.save();
     ctx.transform(t[0], t[2], t[1], t[3], t[4], t[5]); // local to world
     switch (item.type) {
       case 'disk':
@@ -339,7 +336,6 @@ var shapes = (function() {
         }
         break;
     }
-    ctx.restore();
   }
 
   // function getSelectionBounds(root) {
@@ -352,8 +348,8 @@ var shapes = (function() {
   //         var itemBounds = item._bounds;
   //         var leftTop = { x: itemBounds.left, y: itemBounds.top };
   //         var rightBtm = { x: itemBounds.right, y: itemBounds.bottom };
-  //         geometry.matMulVec(leftTop, item._atransform);
-  //         geometry.matMulVec(rightBtm, item._atransform);
+  //         geometry.matMulPt(leftTop, item._atransform);
+  //         geometry.matMulPt(rightBtm, item._atransform);
   //         Box2d.extend(bounds, leftTop.x, leftTop.y);
   //         Box2d.extend(bounds, rightBtm.x, rightBtm.y);
   //       });
@@ -368,7 +364,7 @@ var shapes = (function() {
     var knobbySize = this.knobbySize, hitTolerance = this.hitTolerance,
         transformableModel = this.model.transformableModel,
         inverseTransform = transformableModel.getInverseAbsolute(item),
-        localP = geometry.matMulVecNew(p, inverseTransform),
+        localP = geometry.matMulPtNew(p, inverseTransform),
         hitInfo, r, distSquared;
     switch (item.type) {
       case 'disk':
@@ -500,25 +496,33 @@ var shapes = (function() {
     this.updateGeometry();
 
     ctx.save();
+    canvasController.applyTransform();
     ctx.fillStyle = '#6666cc';
     ctx.strokeStyle = '#F0F0F0';
     ctx.lineJoin = 'round'
 
     visit(this.board, function(item) {
+      ctx.save();
       renderer.drawItem(item);
+      ctx.restore();
     });
 
     ctx.strokeStyle = '#40F040';
     this.model.selectionModel.forEach(function(item) {
+      ctx.save();
       renderer.highlightItem(item);
+      ctx.restore();
     });
+    ctx.restore();
 
+    ctx.save();
     ctx.fillStyle = '#6666cc';
     ctx.strokeStyle = '#F0F0F0';
     this.palette.root.items.forEach(function(item) {
+      ctx.save();
       renderer.drawItem(item);
+      ctx.restore();
     })
-
     ctx.restore();
   }
 
@@ -533,7 +537,8 @@ var shapes = (function() {
   Editor.prototype.hitTest = function(p, filterFn) {
     var renderer = this.renderer,
         board = this.board, model = this.model,
-        palette = this.palette;
+        palette = this.palette,
+        cp = this.canvasController.viewToCanvas(p);
     var hitInfo = null;
     if (!filterFn)
       filterFn = firstHit;
@@ -551,7 +556,7 @@ var shapes = (function() {
     reverseVisit(board, function(item) {
       if (filterFn(item, hitInfo))
         return;
-      hitInfo = renderer.hitTestItem(item, p);
+      hitInfo = renderer.hitTestItem(item, cp);
       if (hitInfo)
         hitInfo.item = item;
     });
@@ -656,10 +661,10 @@ var shapes = (function() {
         transformableModel = model.transformableModel,
         inverseTransform = transformableModel.getInverseAbsolute(item),
         inverseParentTransform = transformableModel.getInverseAbsolute(parent),
-        localClick = geometry.matMulVecNew(p0, inverseTransform),
-        localMouse = geometry.matMulVecNew(p, inverseTransform),
-        parentClick = geometry.matMulVecNew(p0, inverseParentTransform),
-        parentMouse = geometry.matMulVecNew(p, inverseParentTransform);
+        localClick = geometry.matMulPtNew(p0, inverseTransform),
+        localMouse = geometry.matMulPtNew(p, inverseTransform),
+        parentClick = geometry.matMulPtNew(p0, inverseParentTransform),
+        parentMouse = geometry.matMulPtNew(p, inverseParentTransform);
     return {
       localClick: localClick,
       localMouse: localMouse,
@@ -677,14 +682,14 @@ var shapes = (function() {
       var centroid = parent._centroid, hull = parent._paths[0],
           transformableModel = model.transformableModel,
           local = transformableModel.getLocal(item),
-          pParent = geometry.matMulVecNew(p, local),
+          pParent = geometry.matMulPtNew(p, local),
           pProj = geometry.projectPointToConvexHull(hull, pParent),
           angle = geometry.getAngle(pProj.x - centroid.x, pProj.y - centroid.y);
       return angle;
     }
   }
 
-  Editor.prototype.onDrag = function(p, p0, dx, dy) {
+  Editor.prototype.onDrag = function(p0, p) {
     var self = this,
         drag = this.drag,
         item = drag.item,
@@ -1002,7 +1007,7 @@ var shapes = (function() {
                 for (var k = 0; k < path.length; k++) {
                   var p = path[k];
                   p = { x: p.x, y: p.y, path: j, index: k, item: subItem };
-                  geometry.matMulVec(p, localTransform);
+                  geometry.matMulPt(p, localTransform);
                   points.push(p);
                 }
               }
@@ -1024,7 +1029,7 @@ var shapes = (function() {
                 var pj = points[j];
                 // control point base into parent space.
                 var p0 = { x: pj.x, y: 0 };
-                geometry.matMulVec(p0, localTransform);
+                geometry.matMulPt(p0, localTransform);
                 var seg0 = findClosestPathSegment(hull, p0);
                 var seg1 = seg0 + 1;
                 if (seg1 == hull.length)
@@ -1036,7 +1041,7 @@ var shapes = (function() {
                 norm.y *= height;
                 var base = projectToPath(hull, seg0, p0);
                 points[j] = { x: base.x + norm.x, y: base.y + norm.y };
-                geometry.matMulVec(points[j], subItem._itransform);
+                geometry.matMulPt(points[j], subItem._itransform);
               }
               subItem._curves = [];
               subItem._curveLengths = [];
@@ -1068,8 +1073,8 @@ var shapes = (function() {
               inverseLocal = transformableModel.getInverseLocal(item),
               p1 = geometry.angleToConvexHull(hull, centroid, item._angle1),
               p2 = geometry.angleToConvexHull(hull, centroid, item._angle2);
-          item._p1 = geometry.matMulVec(p1, inverseLocal),
-          item._p2 = geometry.matMulVec(p2, inverseLocal);
+          item._p1 = geometry.matMulPt(p1, inverseLocal),
+          item._p2 = geometry.matMulPt(p2, inverseLocal);
         }
       }
 

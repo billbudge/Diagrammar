@@ -268,19 +268,51 @@ function CanvasController(canvas, ctx) {
   this.dragThreshold = 4;
   this.hoverThreshold = 4;
   this.hoverTimeout = 500;  // milliseconds
-  this.mouse = this.dragOffset = { x: 0, y: 0 };
+  this.mouse = { x: 0, y: 0 };
+  this.dragOffset = { x: 0, y: 0 };
+  this.transform = [1, 0, 0, 1, 0, 0];
+  this.inverseTransform = [1, 0, 0, 1, 0, 0];
 }
 
 CanvasController.prototype.configure = function(layers) {
-  var controller = this;
-  layers.forEach(function(layer, i) {
+  var controller = this, length = layers.length;
+  this.layers = layers.slice(0);
+  for (var i = 0; i < length; i++) {
+    var layer = layers[i];
     if (layer.initialize)
       layer.initialize(controller, i);
-  });
+  }
   // Layers are presented in draw order, but most loops are event-order, so
   // reverse the array here.
-  this.layers = layers.reverse();
+  this.layers.reverse();
   this.draw();
+}
+
+CanvasController.prototype.setTransform = function(translation, scale, rotation) {
+  var tx = 0, ty = 0, sx = 1, sy = 1, sin = 0, cos = 1;
+  if (translation) {
+    tx = translation.x;
+    ty = translation.y;
+  }
+  if (scale) {
+    sx = scale.x;
+    sy = scale.y;
+  }
+  if (rotation) {
+    sin = Math.sin(rotation);
+    cos = Math.cos(rotation);
+  }
+  this.transform = [1, 0, 0, 1, tx, ty];
+  this.inverseTransform = [1, 0, 0, 1, -tx, -ty];
+}
+
+CanvasController.prototype.applyTransform = function() {
+  var t = this.transform;
+  this.ctx.transform(t[0], t[1], t[2], t[3], t[4], t[5]);
+}
+
+CanvasController.prototype.viewToCanvas = function(p) {
+  return geometry.matMulPtNew(p, this.inverseTransform);
 }
 
 CanvasController.prototype.onMouseDown = function(e) {
@@ -312,8 +344,7 @@ CanvasController.prototype.onMouseMove = function(e) {
       }
     }
     if (this.isDragging) {
-      var click = this.click, dx = mouse.x - click.x, dy = mouse.y - click.y;
-      this.clickOwner.onDrag(mouse, this.click, dx, dy);
+      this.clickOwner.onDrag(this.click, mouse);
       this.draw();
     }
   }
@@ -334,6 +365,9 @@ CanvasController.prototype.onMouseUp = function(e) {
 
 CanvasController.prototype.onMouseOut = function(e) {
   // TODO
+}
+
+CanvasController.prototype.onMouseWheel = function(e) {
 }
 
 CanvasController.prototype.onKeyDown = function(e) {
@@ -390,17 +424,51 @@ CanvasController.prototype.cancelHover_ = function() {
 }
 
 CanvasController.prototype.draw = function() {
-  var canvas = this.canvas, ctx = this.ctx;
+  var canvas = this.canvas, ctx = this.ctx,
+      layers = this.layers, length = layers.length,
+      t = this.transform_;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  this.layers.reverse().forEach(function(layer) {
+  for (var i = length - 1; i >= 0; i--) {
+    var layer = layers[i];
     if (layer.draw)
       layer.draw();
-  });
+  }
 }
 
 CanvasController.prototype.resize = function(width, height) {
   diagrams.resizeCanvas(this.canvas, this.ctx, width, height);
   this.draw();
+}
+
+//------------------------------------------------------------------------------
+
+function CanvasPanZoomLayer() {
+  this.translation = { x: 0, y: 0 };
+  this.scale = 1.0;
+}
+
+CanvasPanZoomLayer.prototype.initialize = function(canvasController) {
+  this.canvasController = canvasController;
+}
+
+CanvasPanZoomLayer.prototype.onClick = function(p) {
+  // Always capture the mouse click.
+  return true;
+}
+
+CanvasPanZoomLayer.prototype.onBeginDrag = function() {
+  this.translation0 = this.translation;
+}
+
+CanvasPanZoomLayer.prototype.onDrag = function(p0, p) {
+  var dx = p.x - p0.x, dy = p.y - p0.y,
+      t0 = this.translation0;
+  this.translation = trans = { x: t0.x + dx, y: t0.y + dy };
+  canvasController.setTransform(trans);
+}
+
+CanvasPanZoomLayer.prototype.onEndDrag = function(p) {
+  this.translation0 = null;
 }
 
 //------------------------------------------------------------------------------
@@ -461,6 +529,7 @@ return {
   resizeCanvas: resizeCanvas,
 
   CanvasController: CanvasController,
+  CanvasPanZoomLayer: CanvasPanZoomLayer,
 
   theme: theme,
 }

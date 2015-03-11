@@ -32,6 +32,7 @@ var canvasController = new diagrams.CanvasController(canvas, ctx),
 canvasController.theme = diagrams.theme.createBlueprint();
 
 var statechartEditor = new statecharts.Editor(statechartModel),
+    panZoomLayer = new diagrams.CanvasPanZoomLayer(),
     shapeEditor = new shapes.Editor(shapeModel);
 
 var editorName = 'statecharts',
@@ -47,7 +48,7 @@ function startEditor() {
       break;
   }
 
-  canvasController.configure([editor]);
+  canvasController.configure([panZoomLayer, editor]);
 }
 
 startEditor();
@@ -60,30 +61,34 @@ resizeCanvas();
 
 window.onresize = resizeCanvas;
 
-canvas.onmousedown = function(e) {
+canvas.addEventListener('mousedown', function(e) {
   canvasController.onMouseDown(e);
-};
+});
 
-canvas.onmousemove = function(e) {
+canvas.addEventListener('mousemove', function(e) {
   canvasController.onMouseMove(e);
-};
+});
 
-canvas.onmouseup = function(e) {
+canvas.addEventListener('mouseup', function(e) {
   canvasController.onMouseUp(e);
-};
+});
 
-canvas.ondblclick = function(e) {
+canvas.addEventListener('mousewheel', function(e) {
+  canvasController.onMouseWheel(e);
+});
+
+canvas.addEventListener('dblclick', function(e) {
   editorName = (editorName == 'statecharts' ? 'shapes' : 'statecharts');
   startEditor();
-}
+});
 
-document.onkeydown = function(e) {
+document.addEventListener('keydown', function(e) {
   canvasController.onKeyDown(e);
-}
+});
 
-document.onkeyup = function(e) {
+document.addEventListener('keyup', function(e) {
   canvasController.onKeyUp(e);
-}
+});
 
 </script>
 

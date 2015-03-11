@@ -693,8 +693,9 @@ var statecharts = (function() {
   Editor.prototype.draw = function() {
     var renderer = this.renderer, statechart = this.statechart,
         model = this.model, palette = this.palette,
-        ctx = this.ctx;
+        ctx = this.ctx, canvasController = this.canvasController;
     renderer.beginDraw();
+    canvasController.applyTransform();
     visit(palette.root, isTransition, function(transition) {
       renderer.updateTransition(transition);
     });
@@ -732,6 +733,7 @@ var statecharts = (function() {
     var temporary = this.getTemporaryItem();
     if (temporary) {
       renderer.beginDraw();
+      canvasController.applyTransform();
       renderer.updateTransition(temporary);
       renderer.drawItem(temporary);
       renderer.endDraw();
@@ -740,6 +742,7 @@ var statecharts = (function() {
     var hoverHitInfo = this.hoverHitInfo;
     if (hoverHitInfo) {
       renderer.beginDraw();
+      canvasController.applyTransform();
       renderer.drawHoverText(hoverHitInfo.item, hoverHitInfo.p);
       renderer.endDraw();
     }
@@ -747,6 +750,7 @@ var statecharts = (function() {
 
   Editor.prototype.hitTest = function(p) {
     var renderer = this.renderer,
+        cp = this.canvasController.viewToCanvas(p),
         statechart = this.statechart, model = this.model,
         palette = this.palette,
         hitList = [];
@@ -758,10 +762,10 @@ var statecharts = (function() {
       pushInfo(renderer.hitTestItem(item, p));
     });
     reverseVisit(statechart, isTransition, function(transition) {
-      pushInfo(renderer.hitTestTransition(transition, p));
+      pushInfo(renderer.hitTestTransition(transition, cp));
     });
     reverseVisit(statechart, isStateOrStatechart, function(item) {
-      pushInfo(renderer.hitTestStateOrStatechart(item, p));
+      pushInfo(renderer.hitTestStateOrStatechart(item, cp));
     });
     return hitList;
   }
@@ -830,6 +834,9 @@ var statecharts = (function() {
         name: 'Add new ' + dragItem.type,
         isNewItem: true,
       }
+      var cp = this.canvasController.viewToCanvas({ x: dragItem.x, y: dragItem.y });
+      dragItem.x = cp.x;
+      dragItem.y = cp.y;
     } else {
       switch (dragItem.type) {
         case 'state':
@@ -858,13 +865,10 @@ var statecharts = (function() {
       drag.item = dragItem;
       this.drag = drag;
       this.valueTracker = new dataModels.ValueChangeTracker(model);
-      return true;
     }
-
-    return false;
   }
 
-  Editor.prototype.onDrag = function(p, p0, dx, dy) {
+  Editor.prototype.onDrag = function(p0, p) {
     var drag = this.drag, dragItem = drag.item,
         model = this.model,
         dataModel = model.dataModel,
@@ -872,6 +876,10 @@ var statecharts = (function() {
         referencingModel = model.referencingModel,
         selectionModel = model.selectionModel,
         renderer = this.renderer,
+        canvasController = this.canvasController,
+        cp0 = canvasController.viewToCanvas(p0),
+        cp = canvasController.viewToCanvas(p),
+        dx = cp.x - cp0.x, dy = cp.y - cp0.y,
         valueTracker = this.valueTracker,
         mouseHitInfo = this.mouseHitInfo,
         snapshot = valueTracker.getSnapshot(drag.item),
@@ -918,10 +926,10 @@ var statecharts = (function() {
         observableModel.changeValue(dragItem, 'srcId', srcStateId);
         srcState = referencingModel.getReference(dragItem, 'srcId');
         if (srcState) {
-          t1 = renderer.statePointToParam(srcState, p);
+          t1 = renderer.statePointToParam(srcState, cp);
           observableModel.changeValue(dragItem, 't1', t1);
         } else {
-          dragItem._p1 = p;
+          dragItem._p1 = cp;
         }
         break;
       case 'connectingP2':
@@ -930,10 +938,10 @@ var statecharts = (function() {
         observableModel.changeValue(dragItem, 'dstId', dstStateId);
         dstState = referencingModel.getReference(dragItem, 'dstId');
         if (dstState) {
-          t2 = renderer.statePointToParam(dstState, p);
+          t2 = renderer.statePointToParam(dstState, cp);
           observableModel.changeValue(dragItem, 't2', t2);
         } else {
-          dragItem._p2 = p;
+          dragItem._p2 = cp;
         }
         break;
     }
