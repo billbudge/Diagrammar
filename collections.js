@@ -241,10 +241,16 @@ HashSet.prototype = {
   },
 
   forEach: function(fn) {
-    for (var id in this.inner_) {
+    for (var id in this.inner_)
       fn(this.inner_[id]);
-    }
   },
+
+  toArray: function() {
+    var result = [];
+    for (var id in this.inner_)
+      result.push(this.inner_[id]);
+    return result;
+  }
 }
 
 //------------------------------------------------------------------------------
