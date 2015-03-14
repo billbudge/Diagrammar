@@ -613,6 +613,9 @@ var shapes = (function() {
         type: 'paletteItem',
         name: 'Add new ' + item.type,
       }
+      var cp = this.canvasController.viewToCanvas({ x: item.x, y: item.y });
+      item.x = cp.x;
+      item.y = cp.y;
     } else {
       switch (item.type) {
         case 'disk':

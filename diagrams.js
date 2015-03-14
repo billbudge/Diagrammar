@@ -64,7 +64,7 @@ function rectParamToPoint(left, top, width, height, t) {
 }
 
 function circleParamToPoint(cx, cy, r, t) {
-  var radians = (t - 0.5) / 4 * 2 * Math.PI,
+  var radians = ((t - 0.5) / 4) * 2 * Math.PI,
       nx = Math.cos(radians), ny = Math.sin(radians);
   return { x: cx + nx * r,
            y: cy + ny * r,
@@ -108,6 +108,10 @@ function roundRectParamToPoint(left, top, width, height, r, t) {
   }
 
   return rectParamToPoint(left, top, width, height, t);
+}
+
+function circlePointToParam(c, p) {
+  return ((Math.PI - Math.atan2(p.y - c.y, c.x - p.x)) / (2 * Math.PI) * 4 + 0.5) % 4;
 }
 
 function rectPointToParam(left, top, width, height, p) {
@@ -175,7 +179,15 @@ function arrowPath(p, ctx, arrowSize) {
              p.y + arrowSize * (ny * cos45 - nx * sin45));
 }
 
-function edgePath(bezier, ctx, arrowSize) {
+function lineEdgePath(p1, p2, ctx, arrowSize) {
+  ctx.beginPath();
+  ctx.moveTo(p1.x, p1.y);
+  ctx.lineTo(p2.x, p2.y);
+  if (arrowSize)
+    arrowPath(p2, ctx, arrowSize);
+}
+
+function bezierEdgePath(bezier, ctx, arrowSize) {
   var p1 = bezier[0], c1 = bezier[1], c2 = bezier[2], p2 = bezier[3];
   ctx.beginPath();
   ctx.moveTo(p1.x, p1.y);
@@ -447,13 +459,13 @@ function CanvasPanZoomLayer() {
 CanvasPanZoomLayer.prototype.initialize = function(canvasController) {
   var self = this;
   this.canvasController = canvasController;
+
   canvasController.canvas.addEventListener('mousewheel', function(e) {
     var pan = self.pan, zoom = self.zoom,
         center = { x: e.offsetX, y: e.offsetY },
         dZoom = 1.0 + e.wheelDelta / 2048,
         newZoom = zoom * dZoom;
     newZoom = Math.max(self.minZoom, Math.min(self.maxZoom, newZoom));
-    console.log(newZoom);
     dZoom = newZoom / zoom;
 
     self.zoom = zoom * dZoom;
@@ -490,6 +502,24 @@ CanvasPanZoomLayer.prototype.onDrag = function(p0, p) {
 
 CanvasPanZoomLayer.prototype.onEndDrag = function(p) {
   this.translation0 = null;
+}
+
+//------------------------------------------------------------------------------
+
+function CanvasMultiselectLayer(model) {
+  this.model = model;
+}
+
+CanvasMultiselectLayer.prototype.initialize = function(canvasController) {
+  this.ctx = canvasController.ctx;
+}
+
+CanvasMultiselectLayer.prototype.draw = function() {
+  var ctx = this.ctx;
+  ctx.save();
+  ctx.strokeStyle = 'red';
+  ctx.strokeRect(0, 0, 32, 32);
+  ctx.restore();
 }
 
 //------------------------------------------------------------------------------
@@ -537,11 +567,13 @@ return {
   rectParamToPoint: rectParamToPoint,
   circleParamToPoint: circleParamToPoint,
   roundRectParamToPoint: roundRectParamToPoint,
+  circlePointToParam: circlePointToParam,
   rectPointToParam: rectPointToParam,
   diskPath: diskPath,
   getEdgeBezier: getEdgeBezier,
   arrowPath: arrowPath,
-  edgePath: edgePath,
+  lineEdgePath: lineEdgePath,
+  bezierEdgePath: bezierEdgePath,
   hitPoint: hitPoint,
   hitTestRect: hitTestRect,
   hitTestDisk: hitTestDisk,
@@ -551,6 +583,7 @@ return {
 
   CanvasController: CanvasController,
   CanvasPanZoomLayer: CanvasPanZoomLayer,
+  CanvasMultiselectLayer: CanvasMultiselectLayer,
 
   theme: theme,
 }

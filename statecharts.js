@@ -530,7 +530,7 @@ var statecharts = (function() {
     function drawText(text, x, y) {
     }
     ctx.save();
-    diagrams.edgePath(transition._bezier, ctx, this.arrowSize);
+    diagrams.bezierEdgePath(transition._bezier, ctx, this.arrowSize);
     ctx.stroke();
     ctx.fillStyle = this.bgColor;
     ctx.fillRect(x, y, labelWidth, textSize);
@@ -541,7 +541,7 @@ var statecharts = (function() {
 
   Renderer.prototype.strokeTransition = function(transition) {
     var ctx = this.ctx;
-    diagrams.edgePath(transition._bezier, ctx, this.arrowSize);
+    diagrams.bezierEdgePath(transition._bezier, ctx, this.arrowSize);
     ctx.stroke();
   }
 
@@ -569,7 +569,7 @@ var statecharts = (function() {
         x = rect.x, y = rect.y, w = rect.width, h = rect.height,
         hitInfo;
     if (w && h)
-      hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol);
+      hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
     else
       hitInfo = diagrams.hitTestDisk(x + r, y + r, r, p, tol);
 
@@ -612,11 +612,10 @@ var statecharts = (function() {
 
 //------------------------------------------------------------------------------
 
-  function Editor(model, updateFn) {
+  function Editor(model) {
     var self = this;
     this.model = model;
     this.statechart = model.root;
-    this.updateFn = updateFn;
 
     editingModel.extend(model);
 
