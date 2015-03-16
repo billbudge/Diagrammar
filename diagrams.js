@@ -528,8 +528,8 @@ var theme = (function() {
   var themes = {
     normal: {
       bgColor: 'white',
-      strokeColor: '#808080',
-      textColor: '#404040',
+      strokeColor: '#909090',
+      textColor: '#707070',
       highlightColor: '#40F040',
       hotTrackColor: '#F0F040',
       dimColor: '#c0c0c0',
@@ -551,9 +551,11 @@ var theme = (function() {
   function create() {
     return Object.create(themes.normal);
   }
+
   function createBlueprint() {
     return Object.create(themes.blueprint);
   }
+
   return {
     create: create,
     createBlueprint: createBlueprint,
