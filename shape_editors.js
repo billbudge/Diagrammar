@@ -184,30 +184,44 @@ var shapes = (function() {
 
 //------------------------------------------------------------------------------
 
+  var normalMode = 1,
+      highlightMode = 2,
+      hotTrackMode = 4;
+
   function Renderer(model, ctx, theme) {
     this.model = model;
     this.ctx = ctx;
 
     this.knobbySize = 4;
 
-    if (!theme)
-      theme = diagrams.theme.create();
-    this.theme = theme;
-    this.bgColor = theme.bgColor;
-    this.strokeColor = theme.strokeColor;
+    this.theme = theme || diagrams.theme.create();
 
     this.hitTolerance = 8;
   }
 
-  Renderer.prototype.drawItem = function(item) {
-    var ctx = this.ctx, knobbySize = this.knobbySize, t = item._atransform;
+  function drawItem(renderer, item, mode) {
+    var ctx = renderer.ctx, theme = renderer.theme,
+        knobbySize = renderer.knobbySize, t = item._atransform;
+    ctx.save();
     ctx.transform(t[0], t[2], t[1], t[3], t[4], t[5]); // local to world
+
+    if (mode & normalMode) {
+      ctx.fillStyle = theme.bgColor;
+      ctx.strokeStyle = theme.strokeColor;
+      ctx.lineWidth = 0.5;
+    } else if (mode & highlightMode) {
+      ctx.strokeStyle = theme.highlightColor;
+      ctx.lineWidth = 2.0;
+    } else if (mode & hotTrackMode) {
+      ctx.strokeStyle = theme.hotTrackColor;
+      ctx.lineWidth = 2.0;
+    }
+
     switch (item.type) {
       case 'disk':
         ctx.beginPath();
         var r = item.radius;
         ctx.arc(0, 0, r, 0, 2 * Math.PI, false);
-        ctx.lineWidth = 0.5;
         ctx.stroke();
         ctx.strokeRect(-knobbySize, -knobbySize, 2 * knobbySize, 2 * knobbySize);
         break;
@@ -217,14 +231,17 @@ var shapes = (function() {
         ctx.moveTo(0, 0);
         ctx.lineTo(item.dx, item.dy);
         ctx.stroke();
-        var p1 = item._p1, p2 = item._p2;
-        if (p1 && p2) {
-          ctx.strokeRect(p1.x - knobbySize, p1.y - knobbySize, 2 * knobbySize, 2 * knobbySize);
-          ctx.strokeRect(p2.x - knobbySize, p2.y - knobbySize, 2 * knobbySize, 2 * knobbySize);
+        if (mode & highlightMode) {
+          var p1 = item._p1, p2 = item._p2;
+          if (p1 && p2) {
+            ctx.strokeRect(p1.x - knobbySize, p1.y - knobbySize, 2 * knobbySize, 2 * knobbySize);
+            ctx.strokeRect(p2.x - knobbySize, p2.y - knobbySize, 2 * knobbySize, 2 * knobbySize);
+          }
+          ctx.strokeRect(-knobbySize, -knobbySize, 2 * knobbySize, 2 * knobbySize);
+          ctx.strokeRect(item.dx - knobbySize, item.dy - knobbySize, 2 * knobbySize, 2 * knobbySize);
         }
         break;
       case 'bezier':
-        ctx.lineWidth = 0.5;
         ctx.beginPath();
         // Start at first point of first curve segment.
         ctx.moveTo(item._curves[0][0].x, item._curves[0][0].y);
@@ -239,10 +256,19 @@ var shapes = (function() {
         ctx.setLineDash([5]);
         ctx.stroke();
         ctx.setLineDash([0]);
+        if (mode & highlightMode) {
+          for (var i = 0; i < item.points.length; i++) {
+            var pi = item.points[i];
+            ctx.strokeRect(pi.x - knobbySize, pi.y - knobbySize, 2 * knobbySize, 2 * knobbySize);
+          }
+          ctx.strokeRect(-item.halfLength - 2*knobbySize, -2*knobbySize, 4 * knobbySize, 4 * knobbySize);
+          ctx.strokeRect(-knobbySize, -knobbySize, 2 * knobbySize, 2 * knobbySize);
+          ctx.strokeRect(item.halfLength - knobbySize, -knobbySize, 2 * knobbySize, 2 * knobbySize);
+        }
         break;
       case 'group':
         if (!item.op || !item._paths)
-          return;
+          break;
         for (var i = 0; i < item._paths.length; i++) {
           var path = item._paths[i];
           ctx.beginPath();
@@ -255,87 +281,29 @@ var shapes = (function() {
           ctx.lineWidth = 2;
           if (item.diff) {
             ctx.setLineDash([5]);
-            ctx.lineWidth = 0.5;
             ctx.stroke();
             ctx.setLineDash([0]);
           } else {
-            ctx.fill();
+            if (mode & normalMode)
+              ctx.fill();
             ctx.stroke();
           }
         }
         break;
     }
+    ctx.restore();
   }
 
-  Renderer.prototype.highlightItem = function(item) {
-    var ctx = this.ctx, knobbySize = this.knobbySize, t = item._atransform;
-    ctx.transform(t[0], t[2], t[1], t[3], t[4], t[5]); // local to world
-    switch (item.type) {
-      case 'disk':
-        ctx.beginPath();
-        var r = item.radius;
-        ctx.arc(0, 0, r, 0, 2 * Math.PI, false);
-        ctx.lineWidth = 0.5;
-        ctx.stroke();
-        ctx.strokeRect(-knobbySize, -knobbySize, 2 * knobbySize, 2 * knobbySize);
-        break;
-      case 'linear':
-        ctx.lineWidth = 0.5;
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(item.dx, item.dy);
-        ctx.stroke();
-        ctx.strokeRect(-knobbySize, -knobbySize, 2 * knobbySize, 2 * knobbySize);
-        ctx.strokeRect(item.dx - knobbySize, item.dy - knobbySize, 2 * knobbySize, 2 * knobbySize);
-        break;
-      case 'bezier':
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        // Start at first point of first curve segment.
-        ctx.moveTo(item._curves[0][0].x, item._curves[0][0].y);
-        for (var i = 0; i < item._curves.length; i++) {
-          var seg = item._curves[i];
-          ctx.bezierCurveTo(seg[1].x, seg[1].y, seg[2].x, seg[2].y, seg[3].x, seg[3].y);
-        }
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(-item.halfLength, 0);
-        ctx.lineTo(item.halfLength, 0);
-        ctx.setLineDash([5]);
-        ctx.stroke();
-        ctx.setLineDash([0]);
-        for (var i = 0; i < item.points.length; i++) {
-          var pi = item.points[i];
-          ctx.strokeRect(pi.x - knobbySize, pi.y - knobbySize, 2 * knobbySize, 2 * knobbySize);
-        }
-        ctx.strokeRect(-item.halfLength - 2*knobbySize, -2*knobbySize, 4 * knobbySize, 4 * knobbySize);
-        ctx.strokeRect(-knobbySize, -knobbySize, 2 * knobbySize, 2 * knobbySize);
-        ctx.strokeRect(item.halfLength - knobbySize, -knobbySize, 2 * knobbySize, 2 * knobbySize);
-        break;
-      case 'group':
-        for (var i = 0; i < item._paths.length; i++) {
-          var path = item._paths[i];
-          if (!path.length)
-            continue;
-          ctx.beginPath();
-          var p = path[path.length - 1];
-          ctx.moveTo(p.x, p.y);
-          for (var j = 0; j < path.length; j++) {
-            p = path[j];
-            ctx.lineTo(p.x, p.y);
-          }
-          ctx.lineWidth = 2;
-          if (item.diff) {
-            ctx.setLineDash([5]);
-            ctx.lineWidth = 0.5;
-            ctx.stroke();
-            ctx.setLineDash([0]);
-          } else {
-            ctx.stroke();
-          }
-        }
-        break;
-    }
+  Renderer.prototype.drawItem = function(item) {
+    drawItem(this, item, normalMode);
+  }
+
+  Renderer.prototype.drawItemHighlight = function(item) {
+    drawItem(this, item, highlightMode);
+  }
+
+  Renderer.prototype.drawItemHotTrack = function(item) {
+    drawItem(this, item, hotTrackMode);
   }
 
   // function getSelectionBounds(root) {
@@ -497,31 +465,20 @@ var shapes = (function() {
 
     ctx.save();
     canvasController.applyTransform();
-    ctx.fillStyle = '#6666cc';
-    ctx.strokeStyle = '#F0F0F0';
     ctx.lineJoin = 'round'
 
     visit(this.board, function(item) {
-      ctx.save();
       renderer.drawItem(item);
-      ctx.restore();
     });
 
-    ctx.strokeStyle = '#40F040';
     this.model.selectionModel.forEach(function(item) {
-      ctx.save();
-      renderer.highlightItem(item);
-      ctx.restore();
+      renderer.drawItemHighlight(item);
     });
     ctx.restore();
 
     ctx.save();
-    ctx.fillStyle = '#6666cc';
-    ctx.strokeStyle = '#F0F0F0';
     this.palette.root.items.forEach(function(item) {
-      ctx.save();
       renderer.drawItem(item);
-      ctx.restore();
     })
     ctx.restore();
   }

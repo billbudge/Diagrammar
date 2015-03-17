@@ -356,6 +356,10 @@ var statecharts = (function() {
 
 //------------------------------------------------------------------------------
 
+  var normalMode = 1,
+      highlightMode = 2,
+      hotTrackMode = 4;
+
   var stateMinWidth = 100,
       stateMinHeight = 60;
 
@@ -375,12 +379,6 @@ var statecharts = (function() {
     this.stateMinHeight = stateMinHeight;
 
     this.hitTolerance = 8;
-
-    this.bgColor = theme.bgColor;
-    this.strokeColor = theme.strokeColor;
-    this.textColor = theme.textColor;
-    this.hoverColor = theme.hoverColor;
-    this.hoverTextColor = theme.hoverTextColor;
   }
 
   Renderer.prototype.getStateRect = function(state) {
@@ -423,18 +421,9 @@ var statecharts = (function() {
       diagrams.diskPath(x + r, y + r, r, ctx);
   }
 
-  Renderer.prototype.strokeState = function(state) {
-    var ctx = this.ctx, r = this.radius,
-        rect = this.getStateRect(state);
-    this.makeStatePath(rect);
-    ctx.stroke();
-  }
-
   Renderer.prototype.beginDraw = function() {
     var ctx = this.ctx;
     ctx.save();
-    ctx.strokeStyle = this.strokeColor;
-    ctx.lineWidth = 1;
     ctx.font = '14px sans-serif';
   }
 
@@ -449,43 +438,70 @@ var statecharts = (function() {
       this.drawTransition(item);
   }
 
-  Renderer.prototype.drawState = function(state) {
-    var ctx = this.ctx, r = this.radius, rect = this.getStateRect(state),
+  function drawState(renderer, state, mode) {
+    var ctx = renderer.ctx, theme = renderer.theme,
+        r = renderer.radius, rect = renderer.getStateRect(state),
         type = state.type,
         x = rect.x, y = rect.y, w = rect.width, h = rect.height;
-    this.makeStatePath(rect);
-    ctx.fillStyle = this.bgColor;
-    ctx.fill();
+    renderer.makeStatePath(rect);
+    if (mode & normalMode) {
+      ctx.fillStyle = theme.bgColor;
+      ctx.fill();
+      ctx.strokeStyle = theme.strokeColor;
+      ctx.lineWidth = 1;
+    } else if (mode & highlightMode) {
+      ctx.strokeStyle = theme.highlightColor;
+      ctx.lineWidth = 2;
+    } else if (mode & hotTrackMode) {
+      ctx.strokeStyle = theme.hotTrackColor;
+      ctx.lineWidth = 2;
+    }
     ctx.stroke();
 
-    if (type == 'state') {
-      ctx.beginPath();
-      var lineBase = y + this.textSize + this.textLeading;
-      ctx.moveTo(x, lineBase);
-      ctx.lineTo(x + w, lineBase);
-      ctx.stroke();
+    if (mode & normalMode) {
+      if (type == 'state') {
+        ctx.beginPath();
+        var textSize = renderer.textSize,
+            lineBase = y + textSize + renderer.textLeading;
+        ctx.moveTo(x, lineBase);
+        ctx.lineTo(x + w, lineBase);
+        ctx.lineWidth = 1;
+        ctx.stroke();
 
-      ctx.fillStyle = this.textColor;
-      ctx.fillText(state.name, x + r, y + this.textSize);
+        ctx.fillStyle = theme.textColor;
+        ctx.fillText(state.name, x + r, y + textSize);
 
-      var items = state.items;
-      if (items) {
-        var separatorY = y, length = items.length;
-        for (var i = 0; i < length - 1; i++) {
-          var statechart = items[i];
-          separatorY += statechart.height;
-          ctx.setLineDash([5]);
-          ctx.beginPath();
-          ctx.moveTo(x, separatorY);
-          ctx.lineTo(x + w, separatorY);
-          ctx.stroke();
-          ctx.setLineDash([0]);
+        var items = state.items;
+        if (items) {
+          var separatorY = y, length = items.length;
+          for (var i = 0; i < length - 1; i++) {
+            var statechart = items[i];
+            separatorY += statechart.height;
+            ctx.setLineDash([5]);
+            ctx.beginPath();
+            ctx.moveTo(x, separatorY);
+            ctx.lineTo(x + w, separatorY);
+            ctx.stroke();
+            ctx.setLineDash([0]);
+          }
         }
+      } else if (type == 'start') {
+        ctx.fillStyle = theme.strokeColor;
+        ctx.fill();
       }
-    } else if (type == 'start') {
-      ctx.fillStyle = this.strokeColor;
-      ctx.fill();
     }
+  }
+
+  Renderer.prototype.drawState = function(state) {
+    drawState(this, state, normalMode);
+  }
+
+  Renderer.prototype.drawStateHighlight = function(state) {
+    drawState(this, state, highlightMode);
+  }
+
+  Renderer.prototype.drawStateHotTrack = function(state) {
+    drawState(this, state, hotTrackMode);
   }
 
   Renderer.prototype.updateTransition = function(transition) {
@@ -522,27 +538,44 @@ var statecharts = (function() {
     transition._mid = EvaluateCurveSegment(transition._bezier, 0.5);
   }
 
-  Renderer.prototype.drawTransition = function(transition) {
-    var ctx = this.ctx, textSize = this.textSize,
+  function drawTransition(renderer, transition, mode) {
+    var ctx = renderer.ctx, theme = renderer.theme,
+        textSize = renderer.textSize,
         labelWidth = transition._labelWidth,
         mid = transition._mid,
         x = mid.x - labelWidth / 2, y = mid.y - textSize / 2;
-    function drawText(text, x, y) {
+    if (mode & normalMode) {
+      ctx.strokeStyle = theme.strokeColor;
+      ctx.lineWidth = 1;
     }
-    ctx.save();
-    diagrams.bezierEdgePath(transition._bezier, ctx, this.arrowSize);
+    if (mode & highlightMode) {
+      ctx.strokeStyle = theme.highlightColor;
+      ctx.lineWidth = 2;
+    }
+    if (mode & hotTrackMode) {
+      ctx.strokeStyle = theme.hotTrackColor;
+      ctx.lineWidth = 2;
+    }
+    diagrams.bezierEdgePath(transition._bezier, ctx, renderer.arrowSize);
     ctx.stroke();
-    ctx.fillStyle = this.bgColor;
-    ctx.fillRect(x, y, labelWidth, textSize);
-    ctx.fillStyle = this.textColor;
-    ctx.fillText(transition.event, x, y + textSize);
-    ctx.restore();
+    if (mode & normalMode) {
+      ctx.fillStyle = theme.bgColor;
+      ctx.fillRect(x, y, labelWidth, textSize);
+      ctx.fillStyle = theme.textColor;
+      ctx.fillText(transition.event, x, y + textSize);
+    }
   }
 
-  Renderer.prototype.strokeTransition = function(transition) {
-    var ctx = this.ctx;
-    diagrams.bezierEdgePath(transition._bezier, ctx, this.arrowSize);
-    ctx.stroke();
+  Renderer.prototype.drawTransition = function(transition) {
+    drawTransition(this, transition, normalMode);
+  }
+
+  Renderer.prototype.drawTransitionHighlight = function(transition) {
+    drawTransition(this, transition, normalMode | highlightMode);
+  }
+
+  Renderer.prototype.drawTransitionHotTrack = function(transition) {
+    drawTransition(this, transition, hotTrackMode);
   }
 
   Renderer.prototype.getStateMinSize = function(state) {
@@ -586,28 +619,31 @@ var statecharts = (function() {
   }
 
   Renderer.prototype.drawHoverText = function(item, p) {
-    var props = [];
+    var self = this, theme = this.theme,
+        props = [];
     this.model.dataModel.visitProperties(item, function(item, attr) {
-      props.push({ name: attr, value: item[attr] });
+      var value = item[attr];
+      if (Array.isArray(value))
+        return;
+      props.push({ name: attr, value: value });
     });
     var x = p.x, y = p.y,
-        maxWidth = 0, length = props.length, textSize = this.textSize;
-    for (var i = 0; i < length; i++) {
-      var prop = props[i],
-          width = 4 + this.measureText(prop.name) + 16 + this.measureText(prop.value) + 4;
+        height = 0, maxWidth = 0, textSize = this.textSize;
+    props.forEach(function(prop) {
+      var width = 4 + self.measureText(prop.name) + 16 + self.measureText(prop.value) + 4;
+      height += textSize;
       maxWidth = Math.max(maxWidth, width);
-    }
-    ctx.fillStyle = this.hoverColor;
-    ctx.fillRect(x, y, maxWidth, length * textSize + 4);
-    ctx.fillStyle = this.hoverTextColor;
-    for (var i = 0; i < length; i++) {
+    });
+    ctx.fillStyle = theme.hoverColor;
+    ctx.fillRect(x, y, maxWidth, height + 4);
+    ctx.fillStyle = theme.hoverTextColor;
+    props.forEach(function(prop) {
       ctx.textAlign = 'left';
-      ctx.fillText(props[i].name, x + 4, y + textSize);
+      ctx.fillText(prop.name, x + 4, y + textSize);
       ctx.textAlign = 'right';
-      ctx.fillText(props[i].value, x + maxWidth - 4, y + textSize);
+      ctx.fillText(prop.value, x + maxWidth - 4, y + textSize);
       y += textSize;
-    }
-    ctx.textAlign = 'left';
+    });
   }
 
 //------------------------------------------------------------------------------
@@ -709,18 +745,14 @@ var statecharts = (function() {
       renderer.drawTransition(transition);
     });
 
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = renderer.theme.highlightColor;
     model.selectionModel.forEach(function(item) {
       if (isState(item))
-        renderer.strokeState(item);
+        renderer.drawStateHighlight(item);
       else
-        renderer.strokeTransition(item);
+        renderer.drawTransitionHighlight(item);
     });
-    if (this.hotTrackInfo) {
-      ctx.strokeStyle = renderer.theme.hotTrackColor;
-      renderer.strokeState(this.hotTrackInfo.item);
-    }
+    if (this.hotTrackInfo)
+      renderer.drawStateHotTrack(this.hotTrackInfo.item);
     renderer.endDraw();
 
     renderer.beginDraw();
