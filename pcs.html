@@ -23,13 +23,12 @@
 var canvas = document.getElementById('test_canvas');
 var ctx = canvas.getContext('2d');
 
-document.bgColor = '#6666cc';
-
-var canvasController = new diagrams.CanvasController(canvas, ctx),
+var theme = diagrams.theme.createBlueprint(),
+    canvasController = new diagrams.CanvasController(canvas, ctx, theme),
     statechartModel = { root: statechart_data },
     shapeModel = { root: shape_data };
 
-canvasController.theme = diagrams.theme.createBlueprint();
+document.bgColor = theme.bgColor;
 
 var statechartEditor = new statecharts.Editor(statechartModel),
     panZoomLayer = new diagrams.CanvasPanZoomLayer(),

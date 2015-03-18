@@ -274,9 +274,11 @@ function resizeCanvas(canvas, ctx, width, height) {
 
 //------------------------------------------------------------------------------
 
-function CanvasController(canvas, ctx) {
+function CanvasController(canvas, ctx, theme) {
   this.canvas = canvas;
   this.ctx = ctx || canvas.getContext('2d');
+  this.theme = theme || diagrams.theme.create();
+
   this.dragThreshold = 4;
   this.hoverThreshold = 4;
   this.hoverTimeout = 500;  // milliseconds

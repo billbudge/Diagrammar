@@ -288,6 +288,21 @@ var geometry = (function() {
     hull.sort(compareAngles);
   }
 
+  function pointInConvexHull(hull, p) {
+    var length = hull.length;
+    if (length < 3)
+      return false;
+    var lastP = hull[length - 1],
+        direction = turnDirection(lastP, hull[0], p);
+    length--;
+    for (var i = 0; i < length; i++) {
+      lastP = hull[i];
+      if (direction * turnDirection(lastP, hull[i + 1], p) < 0)
+        return false;
+    }
+    return true;
+  }
+
   // Project a point onto the hull.
   function projectPointToConvexHull(hull, p) {
     var length = hull.length, lastP = hull[length - 1],
@@ -360,6 +375,7 @@ var geometry = (function() {
     getAngle: getAngle,
     compareAngles: compareAngles,
     annotateConvexHull: annotateConvexHull,
+    pointInConvexHull: pointInConvexHull,
     projectPointToConvexHull: projectPointToConvexHull,
     angleToConvexHull: angleToConvexHull,
   };

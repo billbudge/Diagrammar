@@ -5,6 +5,10 @@
 var statecharts = (function() {
 
   // Utilities.
+  function isPseudostate(item) {
+    return item.type == 'start';
+  }
+
   function isState(item) {
     return item.type == 'state' || isPseudostate(item);
   }
@@ -13,8 +17,8 @@ var statecharts = (function() {
     return item.type == 'state';
   }
 
-  function isPseudostate(item) {
-    return item.type == 'start';
+  function isCircuit(item) {
+    return item.type == 'circuit';
   }
 
   function isStatechart(item) {
@@ -648,12 +652,27 @@ var statecharts = (function() {
 
 //------------------------------------------------------------------------------
 
-  function Editor(model) {
+  function Editor(model, renderer) {
     var self = this;
     this.model = model;
     this.statechart = model.root;
+    this.renderer = renderer;
 
     editingModel.extend(model);
+
+    var circuitTypes = {
+      or: {
+        name: 'or',
+        inputs: [
+          { name: 'in1', type: 'bool' },
+          { name: 'in2', type: 'bool' },
+          { name: 'in3', type: 'bool' },
+        ],
+        outputs: [
+          { name: 'out', type: 'bool' },
+        ],
+      }
+    };
 
     var palette = this.palette = {
       root: {
@@ -684,6 +703,12 @@ var statecharts = (function() {
             dstId: 0,
             t2: 0,
           },
+          {
+            type: 'circuit',
+            x: 32,
+            y: 200,
+            master: circuitTypes.or,
+          }
         ]
       }
     }
@@ -698,7 +723,8 @@ var statecharts = (function() {
     this.canvas = canvasController.canvas;
     this.ctx = canvasController.ctx;
 
-    this.renderer = new Renderer(this.model, ctx, canvasController.theme);
+    if (!this.renderer)
+      this.renderer = new Renderer(this.model, ctx, canvasController.theme);
   }
 
   Editor.prototype.validateLayout = function() {

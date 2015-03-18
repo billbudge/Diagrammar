@@ -192,16 +192,22 @@ var shapes = (function() {
     this.model = model;
     this.ctx = ctx;
 
-    this.knobbySize = 4;
+    this.knobbyRadius = 4;
 
     this.theme = theme || diagrams.theme.create();
 
     this.hitTolerance = 8;
   }
 
+  function drawKnobby(renderer, x, y) {
+    var r = renderer.knobbyRadius, d = 2 * r;
+    renderer.ctx.strokeRect(x - r, y - r, d, d);
+  }
+
   function drawItem(renderer, item, mode) {
     var ctx = renderer.ctx, theme = renderer.theme,
-        knobbySize = renderer.knobbySize, t = item._atransform;
+        knobbyRadius = renderer.knobbyRadius, knobbyDiameter = 2 * knobbyRadius,
+        t = item._atransform;
     ctx.save();
     ctx.transform(t[0], t[2], t[1], t[3], t[4], t[5]); // local to world
 
@@ -221,9 +227,14 @@ var shapes = (function() {
       case 'disk':
         ctx.beginPath();
         var r = item.radius;
-        ctx.arc(0, 0, r, 0, 2 * Math.PI, false);
-        ctx.stroke();
-        ctx.strokeRect(-knobbySize, -knobbySize, 2 * knobbySize, 2 * knobbySize);
+        if (mode & normalMode) {
+          ctx.arc(0, 0, r, 0, 2 * Math.PI, false);
+          ctx.stroke();
+        }
+        drawKnobby(renderer, 0, 0);
+        ctx.strokeRect(-knobbyRadius, -knobbyRadius, 2 * knobbyRadius, 2 * knobbyRadius);
+        if (mode & highlightMode)
+          drawKnobby(renderer, r, 0);
         break;
       case 'linear':
         ctx.lineWidth = 0.5;
@@ -234,11 +245,11 @@ var shapes = (function() {
         if (mode & highlightMode) {
           var p1 = item._p1, p2 = item._p2;
           if (p1 && p2) {
-            ctx.strokeRect(p1.x - knobbySize, p1.y - knobbySize, 2 * knobbySize, 2 * knobbySize);
-            ctx.strokeRect(p2.x - knobbySize, p2.y - knobbySize, 2 * knobbySize, 2 * knobbySize);
+            drawKnobby(renderer, p1.x, p1.y);
+            drawKnobby(renderer, p2.x, p2.y);
           }
-          ctx.strokeRect(-knobbySize, -knobbySize, 2 * knobbySize, 2 * knobbySize);
-          ctx.strokeRect(item.dx - knobbySize, item.dy - knobbySize, 2 * knobbySize, 2 * knobbySize);
+          drawKnobby(renderer, 0, 0);
+          drawKnobby(renderer, item.dx, item.dy);
         }
         break;
       case 'bezier':
@@ -259,11 +270,11 @@ var shapes = (function() {
         if (mode & highlightMode) {
           for (var i = 0; i < item.points.length; i++) {
             var pi = item.points[i];
-            ctx.strokeRect(pi.x - knobbySize, pi.y - knobbySize, 2 * knobbySize, 2 * knobbySize);
+            drawKnobby(renderer, pi.x, pi.y);
           }
-          ctx.strokeRect(-item.halfLength - 2*knobbySize, -2*knobbySize, 4 * knobbySize, 4 * knobbySize);
-          ctx.strokeRect(-knobbySize, -knobbySize, 2 * knobbySize, 2 * knobbySize);
-          ctx.strokeRect(item.halfLength - knobbySize, -knobbySize, 2 * knobbySize, 2 * knobbySize);
+          drawKnobby(renderer, -item.halfLength, 0);
+          drawKnobby(renderer, 0, 0);
+          drawKnobby(renderer, item.halfLength, 0);
         }
         break;
       case 'group':
@@ -329,7 +340,7 @@ var shapes = (function() {
   }
 
   Renderer.prototype.hitTestItem = function(item, p) {
-    var knobbySize = this.knobbySize, hitTolerance = this.hitTolerance,
+    var knobbyRadius = this.knobbyRadius, hitTolerance = this.hitTolerance,
         transformableModel = this.model.transformableModel,
         inverseTransform = transformableModel.getInverseAbsolute(item),
         localP = geometry.matMulPtNew(p, inverseTransform),
@@ -339,10 +350,11 @@ var shapes = (function() {
         r = item.radius;
         hitInfo = diagrams.hitTestDisk(0, 0, r, localP, hitTolerance);
         if (hitInfo) {
-          if (diagrams.hitPoint(0, 0, localP, knobbySize)) {
+          if (diagrams.hitPoint(0, 0, localP, knobbyRadius)) {
             hitInfo.center = true;
             return hitInfo;
-          } else if (hitInfo.border) {
+          } else if (diagrams.hitPoint(r, 0, localP, knobbyRadius)) {
+            hitInfo.resizer = true;
             return hitInfo;
           }
           return null;
@@ -354,20 +366,20 @@ var shapes = (function() {
         return hitInfo;
         break;
       case 'bezier':
-        if (Math.abs(localP.x + item.halfLength) <= knobbySize + hitTolerance &&
-            Math.abs(localP.y) <= knobbySize + hitTolerance)
+        if (Math.abs(localP.x + item.halfLength) <= knobbyRadius + hitTolerance &&
+            Math.abs(localP.y) <= knobbyRadius + hitTolerance)
           return { end0: true };
-        else if (Math.abs(localP.x) <= knobbySize + hitTolerance &&
-                 Math.abs(localP.y) <= knobbySize + hitTolerance)
+        else if (Math.abs(localP.x) <= knobbyRadius + hitTolerance &&
+                 Math.abs(localP.y) <= knobbyRadius + hitTolerance)
           return { mid: true };
-        else if (Math.abs(localP.x - item.halfLength) <= knobbySize + hitTolerance &&
-                 Math.abs(localP.y) <= knobbySize + hitTolerance)
+        else if (Math.abs(localP.x - item.halfLength) <= knobbyRadius + hitTolerance &&
+                 Math.abs(localP.y) <= knobbyRadius + hitTolerance)
           return { end1: true };
 
         for (var i = 0; i < item.points.length; i++) {
           var pi = item.points[i];
-          if (Math.abs(localP.x - pi.x) <= knobbySize + hitTolerance &&
-              Math.abs(localP.y - pi.y) <= knobbySize + hitTolerance)
+          if (Math.abs(localP.x - pi.x) <= knobbyRadius + hitTolerance &&
+              Math.abs(localP.y - pi.y) <= knobbyRadius + hitTolerance)
             return { point: true, index: i };
         }
         for (var i = 0; i < item._curves.length; i++) {
@@ -381,13 +393,15 @@ var shapes = (function() {
           return;
         for (var i = 0; i < item._paths.length; i++) {
           var path = item._paths[i];
-          ctx.beginPath();
-          ctx.moveTo(path[0].x, path[0].y);
-          for (var j = 1; j < path.length; j++)
-            ctx.lineTo(path[j].x, path[j].y);
-          ctx.closePath();
-          if (ctx.isPointInPath(localP.x, localP.y))
+          if (geometry.pointInConvexHull(path, localP))
             return { position: true };
+          // ctx.beginPath();
+          // ctx.moveTo(path[0].x, path[0].y);
+          // for (var j = 1; j < path.length; j++)
+          //   ctx.lineTo(path[j].x, path[j].y);
+          // ctx.closePath();
+          // if (ctx.isPointInPath(localP.x, localP.y))
+          //   return { position: true };
         }
         break;
     }
@@ -395,10 +409,11 @@ var shapes = (function() {
 
 //------------------------------------------------------------------------------
 
-  function Editor(model) {
+  function Editor(model, renderer) {
     var self = this;
     this.model = model;
     this.board = model.root;
+    this.renderer = renderer;
 
     editingModel.extend(model);
 
@@ -442,15 +457,14 @@ var shapes = (function() {
     dataModels.hierarchicalModel.extend(palette);
     dataModels.transformableModel.extend(palette);
     this.updateGeometry(palette.root);
-
-    // this.validateLayout();
   }
 
   Editor.prototype.initialize = function(canvasController) {
     this.canvasController = canvasController;
     this.canvas = canvasController.canvas;
     this.ctx = canvasController.ctx;
-    this.renderer = new Renderer(this.model, canvasController.ctx, canvasController.theme);
+    if (!this.renderer)
+      this.renderer = new Renderer(this.model, this.ctx, canvasController.theme);
   }
 
   Editor.prototype.isPaletteItem = function(item) {
@@ -539,8 +553,10 @@ var shapes = (function() {
 
   Editor.prototype.onClick = function(p) {
     var model = this.model,
+        canvasController = this.canvasController,
         mouseHitInfo = this.mouseHitInfo = this.hitTest(p),
         shiftKeyDown = this.canvasController.shiftKeyDown;
+        console.log(mouseHitInfo);
     if (mouseHitInfo) {
       if (!model.selectionModel.contains(mouseHitInfo.item) && !shiftKeyDown)
         model.selectionModel.clear();
@@ -576,7 +592,7 @@ var shapes = (function() {
     } else {
       switch (item.type) {
         case 'disk':
-          if (mouseHitInfo.border)
+          if (mouseHitInfo.resizer)
             drag = { type: 'resizeDisk', name: 'Resize disk' };
           else if (mouseHitInfo.center)
             drag = { type: 'moveSelection', name: 'Move selection' };
@@ -1130,40 +1146,376 @@ var shape_data = {
     {
       "type": "group",
       "op": "hull",
-      "x": 281,
-      "y": 373,
+      "x": 440.41165005344783,
+      "y": 272.24185446499,
       "items": [
         {
           "type": "disk",
-          "x": 0,
-          "y": 0,
-          "radius": 73.89606281239585,
-          "id": 154
+          "x": -95.13906402102225,
+          "y": -117.9973685422255,
+          "radius": 139.92260819176386,
+          "id": 181
+        },
+        {
+          "type": "disk",
+          "x": -133.47291806630716,
+          "y": 640.7190082602278,
+          "radius": 16,
+          "id": 183
+        },
+        {
+          "type": "disk",
+          "x": 367.6976551872644,
+          "y": 644.1873674119423,
+          "radius": 16,
+          "id": 184
+        },
+        {
+          "type": "disk",
+          "x": 414.81855352447116,
+          "y": -165.79329996043995,
+          "radius": 66.90411048657579,
+          "id": 185
+        },
+        {
+          "type": "group",
+          "op": "hull",
+          "x": 37.95365879771731,
+          "y": 322.99615794203424,
+          "items": [
+            {
+              "type": "disk",
+              "x": 6,
+              "y": -7,
+              "radius": 16,
+              "id": 210
+            },
+            {
+              "type": "disk",
+              "x": -48,
+              "y": -36,
+              "radius": 34.04715277226595,
+              "id": 211
+            },
+            {
+              "type": "disk",
+              "x": -65,
+              "y": -151,
+              "radius": 16,
+              "id": 212
+            }
+          ],
+          "id": 213
+        },
+        {
+          "type": "group",
+          "op": "hull",
+          "x": -65.03845921360232,
+          "y": -58.64494158800758,
+          "items": [
+            {
+              "type": "disk",
+              "x": 216.7962951626671,
+              "y": 5.37036130133734,
+              "radius": 39.505914005112075,
+              "id": 224
+            }
+          ],
+          "id": 225
+        },
+        {
+          "type": "group",
+          "op": "hull",
+          "x": 447.9615407863978,
+          "y": 83.35505841199242,
+          "items": [
+            {
+              "type": "disk",
+              "x": -185.1219171549967,
+              "y": -100.69520711250829,
+              "radius": 40.23684148848271,
+              "id": 222
+            }
+          ],
+          "id": 223
+        },
+        {
+          "type": "group",
+          "op": "hull",
+          "x": 447.9615407863978,
+          "y": 83.35505841199242,
+          "items": [
+            {
+              "type": "disk",
+              "x": -292.6487668619987,
+              "y": -20.73342644300908,
+              "radius": 40.23684148848271,
+              "id": 220
+            }
+          ],
+          "id": 221
+        },
+        {
+          "type": "group",
+          "op": "hull",
+          "x": 545.9615407863978,
+          "y": 151.35505841199242,
+          "items": [
+            {
+              "type": "disk",
+              "x": -276.5578098740084,
+              "y": -53.25205523000221,
+              "radius": 40.23684148848271,
+              "id": 218
+            }
+          ],
+          "id": 219
+        },
+        {
+          "type": "group",
+          "op": "hull",
+          "x": -84.66303838092938,
+          "y": 542.4223620264428,
+          "items": [
+            {
+              "type": "disk",
+              "x": 73,
+              "y": -118,
+              "radius": 18.161224791664853,
+              "id": 214
+            },
+            {
+              "type": "disk",
+              "x": 138.6095294796001,
+              "y": -137.39939716017415,
+              "radius": 25.475244635370935,
+              "id": 215
+            },
+            {
+              "type": "disk",
+              "x": 184,
+              "y": -92,
+              "radius": 16,
+              "id": 216
+            }
+          ],
+          "id": 217
+        },
+        {
+          "type": "group",
+          "op": "hull",
+          "x": 283.88068826809933,
+          "y": 380.55431903307965,
+          "items": [
+            {
+              "type": "disk",
+              "x": -112,
+              "y": 0,
+              "radius": 16,
+              "id": 206
+            },
+            {
+              "type": "disk",
+              "x": -48,
+              "y": -36,
+              "radius": 34.04715277226595,
+              "id": 207
+            },
+            {
+              "type": "disk",
+              "x": -29.750868624734267,
+              "y": -140.5005790831562,
+              "radius": 16,
+              "id": 208
+            }
+          ],
+          "id": 209
+        },
+        {
+          "type": "group",
+          "op": "hull",
+          "x": -115.77560606625855,
+          "y": -139.44031417303614,
+          "items": [
+            {
+              "type": "disk",
+              "x": 2.4499156637059514,
+              "y": 0.9799662654823464,
+              "radius": 9.929778600166998,
+              "id": 226
+            },
+            {
+              "type": "disk",
+              "x": 2.407409674665587,
+              "y": 81.85192893863245,
+              "radius": 10.333627809386586,
+              "id": 228
+            }
+          ],
+          "id": 227
+        },
+        {
+          "type": "group",
+          "op": "hull",
+          "x": -56.48764700457684,
+          "y": -160.0196057481653,
+          "items": [
+            {
+              "type": "disk",
+              "x": 2.4499156637059514,
+              "y": 0.9799662654823464,
+              "radius": 9.929778600166998,
+              "id": 232
+            },
+            {
+              "type": "disk",
+              "x": 2.407409674665587,
+              "y": 81.85192893863245,
+              "radius": 10.333627809386586,
+              "id": 233
+            }
+          ],
+          "id": 234
+        },
+        {
+          "type": "group",
+          "op": "hull",
+          "x": 1.3303626588814268,
+          "y": -176.67903226136517,
+          "items": [
+            {
+              "type": "disk",
+              "x": 2.4499156637059514,
+              "y": 0.9799662654823464,
+              "radius": 9.929778600166998,
+              "id": 235
+            },
+            {
+              "type": "disk",
+              "x": 2.407409674665587,
+              "y": 81.85192893863245,
+              "radius": 10.333627809386586,
+              "id": 236
+            }
+          ],
+          "id": 237
         },
         {
           "type": "linear",
-          "x": -9,
-          "y": -59,
-          "dx": 17,
-          "dy": 113,
-          "id": 156
+          "x": -22.588035237450015,
+          "y": -240.3823475599393,
+          "dx": 391.2692844261092,
+          "dy": 19.36648399312179,
+          "id": 238
         },
         {
           "type": "disk",
-          "x": 148,
-          "y": -62,
-          "radius": 30.01027146566027,
-          "id": 157
+          "x": -177.62046231828322,
+          "y": -43.74962683659891,
+          "radius": 85.98177053809061,
+          "id": 239
+        },
+        {
+          "type": "group",
+          "op": "hull",
+          "x": -892.8800168746304,
+          "y": 810.299112751308,
+          "items": [
+            {
+              "type": "disk",
+              "x": 955.8344124036056,
+              "y": -207.521920002481,
+              "radius": 7.317260635772668,
+              "id": 247
+            },
+            {
+              "type": "disk",
+              "x": 900.3863586530567,
+              "y": -231.64009517673122,
+              "radius": 16.638179481930923,
+              "id": 250
+            }
+          ],
+          "id": 248
+        },
+        {
+          "type": "group",
+          "op": "hull",
+          "x": -676.2068957780594,
+          "y": 808.7738596021206,
+          "items": [
+            {
+              "type": "disk",
+              "x": 845.3844452872089,
+              "y": -203.3652008099284,
+              "radius": 7.317260635772668,
+              "id": 254
+            },
+            {
+              "type": "disk",
+              "x": 900.3863586530567,
+              "y": -231.64009517673122,
+              "radius": 16.638179481930923,
+              "id": 255
+            }
+          ],
+          "id": 256
         },
         {
           "type": "disk",
-          "x": 193,
-          "y": 15,
+          "x": -70.03021975522722,
+          "y": 680.3217284237408,
           "radius": 16,
-          "id": 158
+          "id": 257
         }
       ],
-      "id": 155
+      "id": 182
     }
   ]
 }
+// {
+//   "type": "group",
+//   "x": 0,
+//   "y": 0,
+//   "id": 153,
+//   "items": [
+//     {
+//       "type": "group",
+//       "op": "hull",
+//       "x": 281,
+//       "y": 373,
+//       "items": [
+//         {
+//           "type": "disk",
+//           "x": 0,
+//           "y": 0,
+//           "radius": 73.89606281239585,
+//           "id": 154
+//         },
+//         {
+//           "type": "linear",
+//           "x": -9,
+//           "y": -59,
+//           "dx": 17,
+//           "dy": 113,
+//           "id": 156
+//         },
+//         {
+//           "type": "disk",
+//           "x": 148,
+//           "y": -62,
+//           "radius": 30.01027146566027,
+//           "id": 157
+//         },
+//         {
+//           "type": "disk",
+//           "x": 193,
+//           "y": 15,
+//           "radius": 16,
+//           "id": 158
+//         }
+//       ],
+//       "id": 155
+//     }
+//   ]
+// }
