@@ -366,6 +366,7 @@ CanvasController.prototype.onMouseMove = function(e) {
       this.isDragging = Math.abs(dx) >= this.dragThreshold ||
                         Math.abs(dy) >= this.dragThreshold;
       if (this.isDragging) {
+        this.cancelHover_();
         this.clickOwner.onBeginDrag();
       }
     }
@@ -406,6 +407,7 @@ CanvasController.prototype.onKeyDown = function(e) {
     e.preventDefault();
     return true;
   });
+  this.cancelHover_();
 }
 
 CanvasController.prototype.onKeyUp = function(e) {
@@ -439,11 +441,11 @@ CanvasController.prototype.cancelHover_ = function() {
   if (this.hovering_) {
     window.clearTimeout(this.hovering_);
     this.hovering_ = 0;
-    if (this.hoverOwner) {
-      this.hoverOwner.onEndHover(this.mouse);
-      this.hoverOwner = null;
-      this.draw();
-    }
+  }
+  if (this.hoverOwner) {
+    this.hoverOwner.onEndHover(this.mouse);
+    this.hoverOwner = null;
+    this.draw();
   }
 }
 
