@@ -162,10 +162,11 @@ function getEdgePoint(x, y, w, h, t) {
 // p1, p2 have x, y, nx, ny.
 function getEdgeBezier(p1, p2) {
   var dx = p1.x - p2.x, dy = p1.y - p2.y,
+      nx1 = p1.nx || 0, ny1 = p1.ny || 0, nx2 = p2.nx || 0, ny2 = p2.ny || 0,
       tanLength = Math.sqrt(dx * dx + dy * dy) * 0.5,
       // tanLength = (Math.abs(p2.x - p1.x) + Math.abs(p2.y - p1.y)) * 0.166,
-      c1 = { x: p1.x + tanLength * p1.nx, y: p1.y + tanLength * p1.ny },
-      c2 = { x: p2.x + tanLength * p2.nx, y: p2.y + tanLength * p2.ny };
+      c1 = { x: p1.x + tanLength * nx1, y: p1.y + tanLength * ny1 },
+      c2 = { x: p2.x + tanLength * nx2, y: p2.y + tanLength * ny2 };
   return [p1, c1, c2, p2];
 }
 

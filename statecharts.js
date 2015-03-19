@@ -378,6 +378,7 @@ var statecharts = (function() {
     this.textIndent = 8;
     this.textLeading = 6;
     this.arrowSize = 8;
+    this.knobbyRadius = 4;
     this.padding = 8;
     this.stateMinWidth = stateMinWidth;
     this.stateMinHeight = stateMinHeight;
@@ -442,6 +443,17 @@ var statecharts = (function() {
       this.drawTransition(item);
   }
 
+  function drawKnobby(renderer, x, y) {
+    var r = renderer.knobbyRadius, d = 2 * r;
+    renderer.ctx.strokeRect(x - r, y - r, d, d);
+  }
+
+  function drawArrow(renderer, x, y) {
+    ctx.beginPath();
+    diagrams.arrowPath({ x: x, y: y, nx: -1, ny: 0 }, ctx, renderer.arrowSize);
+    ctx.stroke();
+  }
+
   function drawState(renderer, state, mode) {
     var ctx = renderer.ctx, theme = renderer.theme,
         r = renderer.radius, rect = renderer.getStateRect(state),
@@ -462,11 +474,12 @@ var statecharts = (function() {
     }
     ctx.stroke();
 
-    if (mode & normalMode) {
-      if (type == 'state') {
+    if (type == 'state') {
+      var textSize = renderer.textSize,
+          lineBase = y + textSize + renderer.textLeading,
+          knobbyRadius = renderer.knobbyRadius;
+      if (mode & normalMode) {
         ctx.beginPath();
-        var textSize = renderer.textSize,
-            lineBase = y + textSize + renderer.textLeading;
         ctx.moveTo(x, lineBase);
         ctx.lineTo(x + w, lineBase);
         ctx.lineWidth = 1;
@@ -489,10 +502,19 @@ var statecharts = (function() {
             ctx.setLineDash([0]);
           }
         }
-      } else if (type == 'start') {
+        // Render knobbies, faintly.
+        ctx.lineWidth = 0.25;
+      }
+      drawKnobby(renderer, x + w - knobbyRadius, y + r + knobbyRadius);
+      drawArrow(renderer, x + w + renderer.arrowSize, lineBase);
+    } else if (type == 'start') {
+      if (mode & normalMode) {
         ctx.fillStyle = theme.strokeColor;
         ctx.fill();
+        // Render knobbies, faintly.
+        ctx.lineWidth = 0.25;
       }
+      drawArrow(renderer, x + 2 * r + renderer.arrowSize, y + r);
     }
   }
 
@@ -512,31 +534,12 @@ var statecharts = (function() {
     var referencingModel = this.model.referencingModel,
         v1 = referencingModel.resolveReference(transition, 'srcId'),
         v2 = referencingModel.resolveReference(transition, 'dstId'),
-        p1 = transition._p1, p2 = transition._p2,
-        labelWidth = this.measureText(transition.event),
-        width = labelWidth + 2 * this.arrowSize;
-
-    transition._labelWidth = labelWidth;
+        p1 = transition._p1, p2 = transition._p2;
 
     if (v1)
       p1 = this.stateParamToPoint(v1, transition.t1);
-    else if (p1)
-      p1 = { x: p1.x, y: p1.y, nx: 0, ny: 0 };
     if (v2)
       p2 = this.stateParamToPoint(v2, transition.t2);
-    else if (p2)
-      p2 = { x: p2.x, y: p2.y, nx: 0, ny: 0 };
-
-    if (!p1 && !p2) {
-      p1 = { x: transition.x, y: transition.y, nx: 1, ny: 0 };
-      p2 = { x: transition.x + width, y: transition.y, nx: -1, ny: 0 };
-    } else if (!p1) {
-      var nx = p2.nx, ny = p2.ny,
-      p1 = { x: p2.x + nx * width, y: p2.y + ny * width, nx: -nx, ny: -ny };
-    } else if (!p2) {
-      var nx = p1.nx, ny = p1.ny,
-      p2 = { x: p1.x + nx * width, y: p1.y + ny * width, nx: -nx, ny: -ny };
-    }
 
     transition._bezier = diagrams.getEdgeBezier(p1, p2);
     transition._mid = EvaluateCurveSegment(transition._bezier, 0.5);
@@ -545,9 +548,7 @@ var statecharts = (function() {
   function drawTransition(renderer, transition, mode) {
     var ctx = renderer.ctx, theme = renderer.theme,
         textSize = renderer.textSize,
-        labelWidth = transition._labelWidth,
-        mid = transition._mid,
-        x = mid.x - labelWidth / 2, y = mid.y - textSize / 2;
+        mid = transition._mid;
     if (mode & normalMode) {
       ctx.strokeStyle = theme.strokeColor;
       ctx.lineWidth = 1;
@@ -562,12 +563,6 @@ var statecharts = (function() {
     }
     diagrams.bezierEdgePath(transition._bezier, ctx, renderer.arrowSize);
     ctx.stroke();
-    if (mode & normalMode) {
-      ctx.fillStyle = theme.bgColor;
-      ctx.fillRect(x, y, labelWidth, textSize);
-      ctx.fillStyle = theme.textColor;
-      ctx.fillText(transition.event, x, y + textSize);
-    }
   }
 
   Renderer.prototype.drawTransition = function(transition) {
@@ -605,13 +600,23 @@ var statecharts = (function() {
         rect = this.getStateRect(state),
         x = rect.x, y = rect.y, w = rect.width, h = rect.height,
         hitInfo;
-    if (w && h)
-      hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
-    else
-      hitInfo = diagrams.hitTestDisk(x + r, y + r, r, p, tol);
+    if (w && h) {
+      var lineBase = y + this.textSize + this.textLeading,
+          knobbyRadius = this.knobbyRadius;
+      if (diagrams.hitPoint(x + w + this.arrowSize, lineBase, p, tol))
+        hitInfo = { arrow: true };
+      else
+        hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
+    } else {
+      if (diagrams.hitPoint(x + 2 * r + this.arrowSize, y + r, p, tol))
+        hitInfo = { arrow: true };
+      else
+        hitInfo = diagrams.hitTestDisk(x + r, y + r, r, p, tol);
+    }
 
-    if (hitInfo)
+    if (hitInfo) {
       hitInfo.item = state;
+    }
     return hitInfo;
   }
 
@@ -692,16 +697,6 @@ var statecharts = (function() {
             width: 100,
             height: 60,
             name: 'New State',
-          },
-          {
-            type: 'transition',
-            x: 64,
-            y: 172,
-            event: 'Event',
-            srcId: 0,
-            t1: 0,
-            dstId: 0,
-            t2: 0,
           },
           {
             type: 'circuit',
@@ -791,7 +786,8 @@ var statecharts = (function() {
     if (temporary) {
       renderer.beginDraw();
       canvasController.applyTransform();
-      renderer.updateTransition(temporary);
+      if (isTransition(temporary))
+        renderer.updateTransition(temporary);
       renderer.drawItem(temporary);
       renderer.endDraw();
     }
@@ -878,7 +874,7 @@ var statecharts = (function() {
     if (!this.mouseHitInfo)
       return false;
     var mouseHitInfo = this.mouseHitInfo,
-        dragItem = mouseHitInfo.item,
+        dragItem = mouseHitInfo.item, type = dragItem.type,
         model = this.model,
         drag;
     if (this.isPaletteItem(dragItem)) {
@@ -895,15 +891,31 @@ var statecharts = (function() {
       dragItem.x = cp.x;
       dragItem.y = cp.y;
     } else {
-      switch (dragItem.type) {
+      switch (type) {
         case 'state':
-          if (mouseHitInfo.border)
-            drag = { type: 'resizeState', name: 'Resize state' };
-          else
-            drag = { type: 'moveSelection', name: 'Move selection' };
-          break;
         case 'start':
-          drag = { type: 'moveSelection', name: 'Move selection' };
+          if (mouseHitInfo.arrow) {
+            var stateId = model.dataModel.getId(dragItem);
+            // Start the new transition as connecting the src state to itself.
+            dragItem = {
+              type: 'transition',
+              srcId: stateId,
+              t1: 0,
+              dstId: stateId,
+              t2: 0,
+            };
+            model.dataModel.assignId(dragItem),
+            this.addTemporaryItem(dragItem);
+            drag = {
+              type: 'connectingP2',
+              name: 'Add new transition',
+              isNewItem: true,
+            };
+          } else if (type == 'state' && mouseHitInfo.border) {
+            drag = { type: 'resizeState', name: 'Resize state' };
+          } else {
+            drag = { type: 'moveSelection', name: 'Move selection' };
+          }
           break;
         case 'transition':
           if (mouseHitInfo.p1)
@@ -990,6 +1002,10 @@ var statecharts = (function() {
         }
         break;
       case 'connectingP2':
+        if (drag.isNewItem) {
+          srcState = referencingModel.getReference(dragItem, 'srcId');
+          observableModel.changeValue(dragItem, 't1', renderer.statePointToParam(srcState, cp));
+        }
         hitInfo = this.getFirstHit(hitList, isStateBorder);
         dstStateId = hitInfo && hitInfo.border ? dataModel.getId(hitInfo.item) : 0;
         observableModel.changeValue(dragItem, 'dstId', dstStateId);
@@ -1051,6 +1067,14 @@ var statecharts = (function() {
     this.validateLayout();
     this.valueTracker.end();
     this.valueTracker = null;
+
+    // If dragItem is a disconnected transition, delete it.
+    if (isTransition(dragItem)) {
+      if (!dragItem.srcId || !dragItem.dstId) {
+        editingModel.deleteItem(dragItem);
+        selectionModel.remove(dragItem);
+      }
+    }
 
     model.transactionModel.endTransaction();
 
@@ -1215,7 +1239,6 @@ var statechart_data = {
     {
       "type": "transition",
       "id": 1008,
-      "event": "Event 1",
       "srcId": 1003,
       "t1": 1.4019607843137254,
       "dstId": 1007,
