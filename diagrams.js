@@ -273,6 +273,20 @@ function resizeCanvas(canvas, ctx, width, height) {
   ctx.scale(contextScale, contextScale);
 }
 
+// Calculates the maximum width of an array of name-value pairs. Names are left
+// justified, values are right justified, and gap is the minimum space between
+// name and value.
+function measureNameValuePairs(pairs, gap, ctx) {
+  var maxWidth = 0;
+  pairs.forEach(function(pair) {
+    var nameWidth = ctx.measureText(pair.name).width,
+        valueWidth = ctx.measureText(pair.value).width,
+        width = nameWidth + gap + valueWidth;
+    maxWidth = Math.max(maxWidth, width);
+  });
+  return maxWidth;
+}
+
 //------------------------------------------------------------------------------
 
 function CanvasController(canvas, ctx, theme) {
@@ -531,6 +545,7 @@ var theme = (function() {
   var themes = {
     normal: {
       bgColor: 'white',
+      altBgColor: '#C0C0C0',
       strokeColor: '#909090',
       textColor: '#707070',
       highlightColor: '#40F040',
@@ -541,6 +556,7 @@ var theme = (function() {
     },
     blueprint: {
       bgColor: '#6666cc',
+      altBgColor: '#5656aa',
       strokeColor: '#f0f0f0',
       textColor: '#f0f0f0',
       highlightColor: '#40F040',
@@ -585,6 +601,7 @@ return {
   hitTestLine: hitTestLine,
   hitTestBezier: hitTestBezier,
   resizeCanvas: resizeCanvas,
+  measureNameValuePairs: measureNameValuePairs,
 
   CanvasController: CanvasController,
   CanvasPanZoomLayer: CanvasPanZoomLayer,

@@ -473,7 +473,8 @@ var shapes = (function() {
   }
 
   Editor.prototype.draw = function() {
-    var self = this, renderer = this.renderer, ctx = this.ctx;
+    var renderer = this.renderer, ctx = this.ctx,
+        palette = this.palette;
 
     this.updateGeometry();
 
@@ -491,7 +492,9 @@ var shapes = (function() {
     ctx.restore();
 
     ctx.save();
-    this.palette.root.items.forEach(function(item) {
+    ctx.fillStyle = renderer.theme.altBgColor;
+    ctx.fillRect(palette.root.x, palette.root.y, 160, 300);
+    palette.root.items.forEach(function(item) {
       renderer.drawItem(item);
     })
     ctx.restore();
@@ -556,7 +559,6 @@ var shapes = (function() {
         canvasController = this.canvasController,
         mouseHitInfo = this.mouseHitInfo = this.hitTest(p),
         shiftKeyDown = this.canvasController.shiftKeyDown;
-        console.log(mouseHitInfo);
     if (mouseHitInfo) {
       if (!model.selectionModel.contains(mouseHitInfo.item) && !shiftKeyDown)
         model.selectionModel.clear();

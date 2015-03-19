@@ -436,6 +436,12 @@ var statecharts = (function() {
     this.ctx.restore();
   }
 
+  Renderer.prototype.layoutItem = function(item) {
+    if (isCircuit(item)) {
+
+    }
+  }
+
   Renderer.prototype.drawItem = function(item) {
     if (isState(item))
       this.drawState(item);
@@ -507,6 +513,7 @@ var statecharts = (function() {
       }
       drawKnobby(renderer, x + w - knobbyRadius, y + r + knobbyRadius);
       drawArrow(renderer, x + w + renderer.arrowSize, lineBase);
+    } else if (type == 'circuit') {
     } else if (type == 'start') {
       if (mode & normalMode) {
         ctx.fillStyle = theme.strokeColor;
@@ -637,20 +644,17 @@ var statecharts = (function() {
       props.push({ name: attr, value: value });
     });
     var x = p.x, y = p.y,
-        height = 0, maxWidth = 0, textSize = this.textSize;
-    props.forEach(function(prop) {
-      var width = 4 + self.measureText(prop.name) + 16 + self.measureText(prop.value) + 4;
-      height += textSize;
-      maxWidth = Math.max(maxWidth, width);
-    });
+        textSize = this.textSize, gap = 16, border = 4,
+        height = textSize * props.length + 2 * border,
+        maxWidth = diagrams.measureNameValuePairs(props, gap, ctx) + 2 * border;
     ctx.fillStyle = theme.hoverColor;
-    ctx.fillRect(x, y, maxWidth, height + 4);
+    ctx.fillRect(x, y, maxWidth, height);
     ctx.fillStyle = theme.hoverTextColor;
     props.forEach(function(prop) {
       ctx.textAlign = 'left';
-      ctx.fillText(prop.name, x + 4, y + textSize);
+      ctx.fillText(prop.name, x + border, y + textSize);
       ctx.textAlign = 'right';
-      ctx.fillText(prop.value, x + maxWidth - 4, y + textSize);
+      ctx.fillText(prop.value, x + maxWidth - border, y + textSize);
       y += textSize;
     });
   }
@@ -666,17 +670,23 @@ var statecharts = (function() {
     editingModel.extend(model);
 
     var circuitTypes = {
+      event: {
+        name: 'Event',
+        inputs: [
+          { /* name: '' */ type: 'bool' },
+        ],
+      },
       or: {
         name: 'or',
         inputs: [
-          { name: 'in1', type: 'bool' },
-          { name: 'in2', type: 'bool' },
-          { name: 'in3', type: 'bool' },
+          { /* name: '', */ type: 'bool' },
+          { /* name: '', */ type: 'bool' },
+          { /* name: '', */ type: 'bool' },
         ],
         outputs: [
-          { name: 'out', type: 'bool' },
+          { /* name: '', */ type: 'bool' },
         ],
-      }
+      },
     };
 
     var palette = this.palette = {
@@ -703,7 +713,13 @@ var statecharts = (function() {
             x: 32,
             y: 200,
             master: circuitTypes.or,
-          }
+          },
+          {
+            type: 'circuit',
+            x: 32,
+            y: 232,
+            master: circuitTypes.event,
+          },
         ]
       }
     }
@@ -777,6 +793,8 @@ var statecharts = (function() {
     renderer.endDraw();
 
     renderer.beginDraw();
+    ctx.fillStyle = renderer.theme.altBgColor;
+    ctx.fillRect(palette.root.x, palette.root.y, 160, 300);
     palette.root.items.forEach(function(item) {
       renderer.drawItem(item);
     });
@@ -795,7 +813,6 @@ var statecharts = (function() {
     var hoverHitInfo = this.hoverHitInfo;
     if (hoverHitInfo) {
       renderer.beginDraw();
-      canvasController.applyTransform();
       renderer.drawHoverText(hoverHitInfo.item, hoverHitInfo.p);
       renderer.endDraw();
     }
@@ -834,7 +851,7 @@ var statecharts = (function() {
   }
 
   function isStateBorder(hitInfo, model) {
-    return isState(hitInfo.item) && hitInfo.border;
+    return isState(hitInfo.item) && hitInfo.border || hitInfo.arrow;
   }
 
   function isDraggable(hitInfo, model) {
@@ -991,7 +1008,7 @@ var statecharts = (function() {
         break;
       case 'connectingP1':
         hitInfo = this.getFirstHit(hitList, isStateBorder);
-        srcStateId = hitInfo && hitInfo.border ? dataModel.getId(hitInfo.item) : 0;
+        srcStateId = hitInfo ? dataModel.getId(hitInfo.item) : 0;
         observableModel.changeValue(dragItem, 'srcId', srcStateId);
         srcState = referencingModel.getReference(dragItem, 'srcId');
         if (srcState) {
@@ -1007,7 +1024,7 @@ var statecharts = (function() {
           observableModel.changeValue(dragItem, 't1', renderer.statePointToParam(srcState, cp));
         }
         hitInfo = this.getFirstHit(hitList, isStateBorder);
-        dstStateId = hitInfo && hitInfo.border ? dataModel.getId(hitInfo.item) : 0;
+        dstStateId = hitInfo ? dataModel.getId(hitInfo.item) : 0;
         observableModel.changeValue(dragItem, 'dstId', dstStateId);
         dstState = referencingModel.getReference(dragItem, 'dstId');
         if (dstState) {
