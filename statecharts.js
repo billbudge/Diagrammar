@@ -373,7 +373,6 @@ var statecharts = (function() {
     this.theme = theme || diagrams.theme.create();
 
     this.radius = 8;
-    this.textSize = 16;
     this.textIndent = 8;
     this.textLeading = 6;
     this.arrowSize = 8;
@@ -419,28 +418,19 @@ var statecharts = (function() {
     return diagrams.circleParamToPoint(rect.x + r, rect.y + r, r, t);
   }
 
-  Renderer.prototype.makeStatePath = function(rect) {
-    var ctx = this.ctx, r = this.radius,
-        x = rect.x, y = rect.y, w = rect.width, h = rect.height;
-    if (w && h)
-      diagrams.roundRectPath(x, y, w, h, r, ctx);
-    else
-      diagrams.diskPath(x + r, y + r, r, ctx);
-  }
-
   Renderer.prototype.beginDraw = function() {
     var ctx = this.ctx;
     ctx.save();
-    ctx.font = '14px sans-serif';
+    ctx.font = this.theme.font;
   }
 
   Renderer.prototype.endDraw = function() {
     this.ctx.restore();
   }
 
-  Renderer.prototype.updateCircuitMaster = function(master) {
-    var ctx = this.ctx,
-        textSize = this.textSize, knobbyRadius = this.knobbyRadius,
+  Renderer.prototype.layoutCircuitMaster = function(master) {
+    var ctx = this.ctx, theme = this.theme,
+        textSize = theme.fontSize, knobbyRadius = this.knobbyRadius,
         name = master.name, inputs = master.inputs, outputs = master.outputs,
         inputsLength = inputs.length, outputsLength = outputs.length,
         rows = Math.max(inputsLength, outputsLength),
@@ -458,7 +448,7 @@ var statecharts = (function() {
           maxWidth = Math.max(maxWidth, width);
     }
     master.width = gutter + maxWidth + gutter;
-    master.height = height;
+    master.height = 4 + height;
   }
 
   Renderer.prototype.drawItem = function(item) {
@@ -480,14 +470,12 @@ var statecharts = (function() {
   }
 
   function drawState(renderer, state, mode) {
-    var ctx = renderer.ctx, theme = renderer.theme,
-        r = renderer.radius, rect = renderer.getStateRect(state),
+    var ctx = renderer.ctx, theme = renderer.theme, r = renderer.radius,
+        rect = renderer.getStateRect(state),
         type = state.type,
         x = rect.x, y = rect.y, w = rect.width, h = rect.height;
-    renderer.makeStatePath(rect);
     if (mode & normalMode) {
       ctx.fillStyle = theme.bgColor;
-      ctx.fill();
       ctx.strokeStyle = theme.strokeColor;
       ctx.lineWidth = 1;
     } else if (mode & highlightMode) {
@@ -497,13 +485,15 @@ var statecharts = (function() {
       ctx.strokeStyle = theme.hotTrackColor;
       ctx.lineWidth = 2;
     }
-    ctx.stroke();
 
     if (type == 'state') {
-      var textSize = renderer.textSize,
+      diagrams.roundRectPath(x, y, w, h, r, ctx);
+      var textSize = theme.fontSize,
           lineBase = y + textSize + renderer.textLeading,
           knobbyRadius = renderer.knobbyRadius;
       if (mode & normalMode) {
+        ctx.fill();
+        ctx.stroke();
         ctx.beginPath();
         ctx.moveTo(x, lineBase);
         ctx.lineTo(x + w, lineBase);
@@ -529,18 +519,55 @@ var statecharts = (function() {
         }
         // Render knobbies, faintly.
         ctx.lineWidth = 0.25;
+      } else {
+        // All modes except normalMode.
+        ctx.stroke();
       }
       drawKnobby(renderer, x + w - knobbyRadius, y + r + knobbyRadius);
       drawArrow(renderer, x + w + renderer.arrowSize, lineBase);
     } else if (type == 'circuit') {
+      if (mode & normalMode) {
+        var textSize = theme.fontSize, knobbyRadius = renderer.knobbyRadius,
+            master = state.master, name = master.name,
+            inputs = master.inputs, outputs = master.outputs,
+            gutter = 2 * knobbyRadius + 4;
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeRect(x, y, w, h);
+        ctx.fillStyle = theme.textColor;
+        // if (name) {
+        // }
+        inputs.forEach(function(input, i) {
+          var name = input.name, top = y + i * textSize;
+          drawKnobby(renderer, x + knobbyRadius, top + textSize / 2);
+          if (name)
+            ctx.fillText(name, x + gutter, top + textSize);
+        });
+        ctx.textAlign = 'right';
+        outputs.forEach(function(output, i) {
+          var name = output.name, top = y + i * textSize;;
+          drawKnobby(renderer, x + w - knobbyRadius, top + textSize / 2);
+          if (name)
+            ctx.fillText(name, x + w - gutter, top + textSize);
+        });
+        ctx.textAlign = 'left';
+      } else {
+        // All modes except normalMode.
+        ctx.strokeRect(x, y, w, h);
+      }
     } else if (type == 'start') {
+      diagrams.diskPath(x + r, y + r, r, ctx);
       if (mode & normalMode) {
         ctx.fillStyle = theme.strokeColor;
         ctx.fill();
         // Render knobbies, faintly.
         ctx.lineWidth = 0.25;
+      } else {
+        ctx.stroke();
       }
       drawArrow(renderer, x + 2 * r + renderer.arrowSize, y + r);
+    } else if (type == 'statechart') {
+      diagrams.roundRectPath(x, y, w, h, r, ctx);
+      ctx.stroke();
     }
   }
 
@@ -573,7 +600,7 @@ var statecharts = (function() {
 
   function drawTransition(renderer, transition, mode) {
     var ctx = renderer.ctx, theme = renderer.theme,
-        textSize = renderer.textSize,
+        textSize = theme.fontSize,
         mid = transition._mid;
     if (mode & normalMode) {
       ctx.strokeStyle = theme.strokeColor;
@@ -604,13 +631,13 @@ var statecharts = (function() {
   }
 
   Renderer.prototype.getStateMinSize = function(state) {
-    var ctx = this.ctx, r = this.radius,
+    var ctx = this.ctx, theme = this.theme, r = this.radius,
         width = this.stateMinWidth, height = this.stateMinHeight,
         metrics;
     if (state.type != 'state')
       return;
     width = Math.max(width, ctx.measureText(state.name).width + 2 * r);
-    height = Math.max(height, this.textSize + this.textLeading);
+    height = Math.max(height, theme.fontSize + this.textLeading);
     return { width: width, height: height };
   }
 
@@ -622,12 +649,13 @@ var statecharts = (function() {
   }
 
   Renderer.prototype.hitTestStateOrStatechart = function(state, p) {
-    var tol = this.hitTolerance, r = this.radius,
+    var theme = this.theme, tol = this.hitTolerance,
+        r = this.radius,
         rect = this.getStateRect(state),
         x = rect.x, y = rect.y, w = rect.width, h = rect.height,
         hitInfo;
     if (w && h) {
-      var lineBase = y + this.textSize + this.textLeading,
+      var lineBase = y + theme.fontSize + this.textLeading,
           knobbyRadius = this.knobbyRadius;
       if (diagrams.hitPoint(x + w + this.arrowSize, lineBase, p, tol))
         hitInfo = { arrow: true };
@@ -663,7 +691,7 @@ var statecharts = (function() {
       props.push({ name: attr, value: value });
     });
     var x = p.x, y = p.y,
-        textSize = this.textSize, gap = 16, border = 4,
+        textSize = theme.fontSize, gap = 16, border = 4,
         height = textSize * props.length + 2 * border,
         maxWidth = diagrams.measureNameValuePairs(props, gap, ctx) + 2 * border;
     ctx.fillStyle = theme.hoverColor;
@@ -689,22 +717,23 @@ var statecharts = (function() {
     editingModel.extend(model);
 
     var circuitTypes = {
-      event: {
-        name: 'Event',
+      // Each event has an un-named guard input and the event name. Make the
+      // event name the input name, since that's how we want to lay it out.
+      event1: {
         inputs: [
-          { /* name: '' */ type: 'bool' },
+          { name: 'Event 1', type: 'bool' },
         ],
         outputs: [],
       },
       or: {
         name: 'or',
         inputs: [
-          { /* name: '', */ type: 'bool' },
-          { /* name: '', */ type: 'bool' },
-          { /* name: '', */ type: 'bool' },
+          { name: '', type: 'bool' },
+          { name: '', type: 'bool' },
+          { name: '', type: 'bool' },
         ],
         outputs: [
-          { /* name: '', */ type: 'bool' },
+          { name: '', type: 'bool' },
         ],
       },
     };
@@ -717,12 +746,12 @@ var statecharts = (function() {
         items: [
           {
             type: 'start',
-            x: 72,
+            x: 48,
             y: 8,
           },
           {
             type: 'state',
-            x: 32,
+            x: 8,
             y: 30,
             width: 100,
             height: 60,
@@ -732,11 +761,11 @@ var statecharts = (function() {
             type: 'circuit',
             x: 32,
             y: 104,
-            master: circuitTypes.event,
+            master: circuitTypes.event1,
           },
           {
             type: 'circuit',
-            x: 16,
+            x: 32,
             y: 160,
             master: circuitTypes.or,
           },
@@ -759,7 +788,7 @@ var statecharts = (function() {
     var renderer = this.renderer;
     this.palette.root.items.forEach(function(item) {
       if (item.type == 'circuit') {
-        renderer.updateCircuitMaster(item.master);
+        renderer.layoutCircuitMaster(item.master);
       }
     })
   }
@@ -820,7 +849,7 @@ var statecharts = (function() {
 
     renderer.beginDraw();
     ctx.fillStyle = renderer.theme.altBgColor;
-    ctx.fillRect(palette.root.x, palette.root.y, 160, 300);
+    ctx.fillRect(palette.root.x, palette.root.y, 128, 300);
     palette.root.items.forEach(function(item) {
       renderer.drawItem(item);
     });

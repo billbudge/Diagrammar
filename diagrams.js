@@ -557,6 +557,9 @@ var theme = (function() {
       dimColor: '#c0c0c0',
       hoverColor: '#FCF0AD',
       hoverTextColor: '#404040',
+
+      font: '14px sans-serif',
+      fontSize: 14,
     },
     blueprint: {
       bgColor: '#6666cc',
@@ -568,6 +571,9 @@ var theme = (function() {
       dimColor: '#808080',
       hoverColor: '#FCF0AD',
       hoverTextColor: '#404040',
+
+      font: '14px sans-serif',
+      fontSize: 14,
     },
   };
 
