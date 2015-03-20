@@ -10,15 +10,11 @@ var statecharts = (function() {
   }
 
   function isState(item) {
-    return item.type == 'state' || isPseudostate(item);
+    return item.type == 'state' || item.type == 'circuit' || isPseudostate(item);
   }
 
   function isTrueState(item) {
-    return item.type == 'state';
-  }
-
-  function isCircuit(item) {
-    return item.type == 'circuit';
+    return item.type == 'state' || item.type == 'circuit';
   }
 
   function isStatechart(item) {
@@ -286,6 +282,9 @@ var statecharts = (function() {
       validateState: function(state, renderer) {
         if (!isTrueState(state))
           return;
+        // TODO circuits should participate in layout.
+        if (state.type == 'circuit')
+          return;
         var minSize = renderer.getStateMinSize(state);
         state.width = Math.max(state.width || 0, minSize.width);
         state.height = Math.max(state.height || 0, minSize.height);
@@ -388,15 +387,19 @@ var statecharts = (function() {
 
   Renderer.prototype.getStateRect = function(state) {
     var transform = this.transformableModel.getAbsolute(state),
-        x = transform[4], y = transform[5], w = state.width, h = state.height;
+        x = transform[4], y = transform[5], master = state.master,
+        w, h;
+    if (master) {
+      w = master.width;
+      h = master.height;
+    } else {
+      w = state.width;
+      h = state.height;
+    }
     if (w && h)
       return { x: x, y: y, width: w, height: h };
 
     return { x: x, y: y };
-  }
-
-  Renderer.prototype.measureText = function(text) {
-    return this.ctx.measureText(text).width;
   }
 
   Renderer.prototype.statePointToParam = function(state, p) {
@@ -404,8 +407,7 @@ var statecharts = (function() {
     if (rect.width && rect.height)
       return diagrams.rectPointToParam(rect.x, rect.y, rect.width, rect.height, p);
 
-    return diagrams.rectPointToParam(rect.x, rect.y, 2 * r, 2 * r, p);
-    //TODO circlePointToParam
+    return diagrams.circlePointToParam(rect.x + r, rect.y + r, p);
   }
 
   Renderer.prototype.stateParamToPoint = function(state, t) {
@@ -436,10 +438,27 @@ var statecharts = (function() {
     this.ctx.restore();
   }
 
-  Renderer.prototype.layoutItem = function(item) {
-    if (isCircuit(item)) {
-
+  Renderer.prototype.updateCircuitMaster = function(master) {
+    var ctx = this.ctx,
+        textSize = this.textSize, knobbyRadius = this.knobbyRadius,
+        name = master.name, inputs = master.inputs, outputs = master.outputs,
+        inputsLength = inputs.length, outputsLength = outputs.length,
+        rows = Math.max(inputsLength, outputsLength),
+        height = rows * textSize,
+        gutter = 2 * knobbyRadius + 4,
+        maxWidth = 0;
+    if (name) {
+      maxWidth = ctx.measureText(name).width;
+      height += textSize;
     }
+    for (var i = 0; i < rows; i++) {
+      var inWidth = (i < inputsLength) ? ctx.measureText(inputs[i].name).width : 0,
+          outWidth = (i < outputsLength) ? ctx.measureText(outputs[i].name).width : 0,
+          width = inWidth + 16 + outWidth,
+          maxWidth = Math.max(maxWidth, width);
+    }
+    master.width = gutter + maxWidth + gutter;
+    master.height = height;
   }
 
   Renderer.prototype.drawItem = function(item) {
@@ -590,7 +609,7 @@ var statecharts = (function() {
         metrics;
     if (state.type != 'state')
       return;
-    width = Math.max(width, this.measureText(state.name) + 2 * r);
+    width = Math.max(width, ctx.measureText(state.name).width + 2 * r);
     height = Math.max(height, this.textSize + this.textLeading);
     return { width: width, height: height };
   }
@@ -675,6 +694,7 @@ var statecharts = (function() {
         inputs: [
           { /* name: '' */ type: 'bool' },
         ],
+        outputs: [],
       },
       or: {
         name: 'or',
@@ -698,12 +718,12 @@ var statecharts = (function() {
           {
             type: 'start',
             x: 72,
-            y: 64,
+            y: 8,
           },
           {
             type: 'state',
             x: 32,
-            y: 96,
+            y: 30,
             width: 100,
             height: 60,
             name: 'New State',
@@ -711,14 +731,14 @@ var statecharts = (function() {
           {
             type: 'circuit',
             x: 32,
-            y: 200,
-            master: circuitTypes.or,
+            y: 104,
+            master: circuitTypes.event,
           },
           {
             type: 'circuit',
-            x: 32,
-            y: 232,
-            master: circuitTypes.event,
+            x: 16,
+            y: 160,
+            master: circuitTypes.or,
           },
         ]
       }
@@ -736,6 +756,12 @@ var statecharts = (function() {
 
     if (!this.renderer)
       this.renderer = new Renderer(this.model, ctx, canvasController.theme);
+    var renderer = this.renderer;
+    this.palette.root.items.forEach(function(item) {
+      if (item.type == 'circuit') {
+        renderer.updateCircuitMaster(item.master);
+      }
+    })
   }
 
   Editor.prototype.validateLayout = function() {
@@ -888,12 +914,12 @@ var statecharts = (function() {
   }
 
   Editor.prototype.onBeginDrag = function() {
-    if (!this.mouseHitInfo)
+    var mouseHitInfo = this.mouseHitInfo;
+    if (!mouseHitInfo)
       return false;
-    var mouseHitInfo = this.mouseHitInfo,
-        dragItem = mouseHitInfo.item, type = dragItem.type,
+    var dragItem = mouseHitInfo.item, type = dragItem.type,
         model = this.model,
-        drag;
+        drag = null;
     if (this.isPaletteItem(dragItem)) {
       // Clone palette item and add the clone to the top level statechart. Don't
       // notify observers yet.
@@ -911,6 +937,7 @@ var statecharts = (function() {
       switch (type) {
         case 'state':
         case 'start':
+        case 'circuit':
           if (mouseHitInfo.arrow) {
             var stateId = model.dataModel.getId(dragItem);
             // Start the new transition as connecting the src state to itself.
@@ -939,23 +966,23 @@ var statecharts = (function() {
             drag = { type: 'connectingP1', name: 'Edit transition' };
           else if (mouseHitInfo.p2)
             drag = { type: 'connectingP2', name: 'Edit transition' };
-          else if (!dragItem.srcId && !dragItem.dstId)
-            drag = { type: 'moveSelection', name: 'Move selection' };
           break;
       }
     }
-
+    this.drag = drag;
     if (drag) {
       if (drag.type == 'moveSelection')
         this.model.editingModel.reduceSelection();
       drag.item = dragItem;
-      this.drag = drag;
       this.valueTracker = new dataModels.ValueChangeTracker(model);
     }
   }
 
   Editor.prototype.onDrag = function(p0, p) {
-    var drag = this.drag, dragItem = drag.item,
+    var drag = this.drag;
+    if (!drag)
+      return;
+    var dragItem = drag.item,
         model = this.model,
         dataModel = model.dataModel,
         observableModel = model.observableModel,
@@ -1040,7 +1067,10 @@ var statecharts = (function() {
   }
 
   Editor.prototype.onEndDrag = function(p) {
-    var drag = this.drag, dragItem = drag.item,
+    var drag = this.drag;
+    if (!drag)
+      return;
+    var dragItem = drag.item,
         model = this.model,
         statechart = this.statechart,
         observableModel = model.observableModel,

@@ -110,8 +110,8 @@ function roundRectParamToPoint(left, top, width, height, r, t) {
   return rectParamToPoint(left, top, width, height, t);
 }
 
-function circlePointToParam(c, p) {
-  return ((Math.PI - Math.atan2(p.y - c.y, c.x - p.x)) / (2 * Math.PI) * 4 + 0.5) % 4;
+function circlePointToParam(cx, cy, p) {
+  return ((Math.PI - Math.atan2(p.y - cy, cx - p.x)) / (2 * Math.PI) * 4 + 0.5) % 4;
 }
 
 function rectPointToParam(left, top, width, height, p) {
@@ -331,6 +331,8 @@ CanvasController.prototype.setTransform = function(translation, scale) {
   this.transform = [sx, 0, 0, sy, tx, ty];
   var ooSx = 1.0 / sx, ooSy = 1.0 / sy;
   this.inverseTransform = [ooSx, 0, 0, ooSy, -tx * ooSx, -ty * ooSy];
+
+  this.cancelHover_();
 }
 
 CanvasController.prototype.applyTransform = function() {
