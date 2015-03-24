@@ -10,11 +10,15 @@ var statecharts = (function() {
   }
 
   function isState(item) {
+    return item.type == 'state' || isPseudostate(item);
+  }
+
+  function isStatechartContent(item) {
     return item.type == 'state' || item.type == 'circuit' || isPseudostate(item);
   }
 
   function isTrueState(item) {
-    return item.type == 'state' || item.type == 'circuit';
+    return item.type == 'state';
   }
 
   function isStatechart(item) {
@@ -27,6 +31,10 @@ var statecharts = (function() {
 
   function isTransition(item) {
     return item.type == 'transition';
+  }
+
+  function isEvent(item) {
+    return item.type == 'event';
   }
 
   function visit(item, filterFn, itemFn) {
@@ -212,8 +220,9 @@ var statecharts = (function() {
         }
         var itemToAdd = item;
         if (isState(parent)) {
-          if (!parent.items || !parent.items.length) {
-            parent.items = [];
+          if (!Array.isArray(parent.items))
+            model.observableModel.changeValue(parent, 'items', []);
+          if (parent.items.length == 0) {
             itemToAdd = this.createStatechart(item);
           } else {
             parent = parent.items[0];
@@ -237,6 +246,12 @@ var statecharts = (function() {
           parent.items.push(itemToAdd);
           model.observableModel.onElementInserted(parent, parent.items, parent.items.length - 1);
         }
+        return itemToAdd;
+      },
+
+      setAttr: function(item, attr, value) {
+        if (value != item[attr])
+          this.model.observableModel.changeValue(item, attr, value);
       },
 
       // Adjust statechart bounds to contain its child items.
@@ -244,18 +259,21 @@ var statecharts = (function() {
         var items = statechart.items;
         if (items && items.length) {
           // Get extents of child states.
-          var d = 2 * renderer.radius, padding = renderer.padding;
-          var xMin = Number.MAX_VALUE,
+          var pseudoStateWidth = 2 * renderer.radius,
+              xMin = Number.MAX_VALUE,
               yMin = Number.MAX_VALUE,
               xMax = Number.MIN_VALUE,
               yMax = Number.MIN_VALUE;
-          items.forEach(function(state) {
-            var x = state.x, y = state.y;
+          items.forEach(function(item) {
+            if (!isState(item))
+              return;
+            var x = item.x, y = item.y;
             xMin = Math.min(xMin, x);
             yMin = Math.min(yMin, y);
-            xMax = Math.max(xMax, x + (state.width || d));
-            yMax = Math.max(yMax, y + (state.height || d));
+            xMax = Math.max(xMax, x + (item.width || pseudoStateWidth));
+            yMax = Math.max(yMax, y + (item.height || pseudoStateWidth));
           });
+          var padding = renderer.padding;
           // Add padding.
           xMin -= padding;
           yMin -= padding;
@@ -265,17 +283,17 @@ var statecharts = (function() {
           if (xMin < 0) {
             xMax -= xMin;
             for (var i = 0; i < items.length; i++)
-              items[i].x -= xMin;
+              this.setAttr(items[i], 'x', items[i].x - xMin);
           }
           if (yMin < 0) {
             yMax -= yMin;
             for (var i = 0; i < items.length; i++)
-              items[i].y -= yMin;
+              this.setAttr(items[i], 'y', items[i].y - yMin);
           }
-          statechart.x = 0;
-          statechart.y = 0;
-          statechart.width = xMax;
-          statechart.height = yMax;
+          this.setAttr(statechart, 'x', 0);
+          this.setAttr(statechart, 'y', 0);
+          this.setAttr(statechart, 'width', xMax);
+          this.setAttr(statechart, 'height', yMax);
         }
       },
 
@@ -286,8 +304,8 @@ var statecharts = (function() {
         if (state.type == 'circuit')
           return;
         var minSize = renderer.getStateMinSize(state);
-        state.width = Math.max(state.width || 0, minSize.width);
-        state.height = Math.max(state.height || 0, minSize.height);
+        this.setAttr(state, 'width', Math.max(state.width || 0, minSize.width));
+        this.setAttr(state, 'height', Math.max(state.height || 0, minSize.height));
 
         var items = state.items;
         if (items && items.length) {
@@ -298,20 +316,21 @@ var statecharts = (function() {
             width = Math.max(width, item.width);
           });
           if (state.width < width)
-            state.width = width;
+            this.setAttr(state, 'width', width);
 
           var length = items.length, statechartOffsetY = 0;
           for (var i = 0; i < length; i++) {
             var statechart = items[i];
-            statechart.y = statechartOffsetY;
-            statechart.width = state.width;
+            this.setAttr(statechart, 'y', statechartOffsetY);
+            this.setAttr(statechart, 'width', state.width);
             statechartOffsetY += statechart.height;
           }
 
           if (state.height < statechartOffsetY)
-            state.height = statechartOffsetY;
+            this.setAttr(state, 'height', statechartOffsetY);
           // Expand the last statechart to fill its parent state.
-          items[length - 1].height += state.height - statechartOffsetY;
+          var lastItem = items[length - 1];
+          this.setAttr(lastItem, 'height', lastItem.height + state.height - statechartOffsetY);
         }
       },
 
@@ -366,7 +385,7 @@ var statecharts = (function() {
   var stateMinWidth = 100,
       stateMinHeight = 60;
 
-  function Renderer(model, ctx, theme) {
+  function StatechartRenderer(model, ctx, theme) {
     this.model = model;
     this.transformableModel = this.model.transformableModel;
     this.ctx = ctx;
@@ -383,10 +402,10 @@ var statecharts = (function() {
 
     this.hitTolerance = 8;
   }
-
-  Renderer.prototype.getStateRect = function(state) {
+//TODO remove this
+  StatechartRenderer.prototype.getStateRect = function(state) {
     var transform = this.transformableModel.getAbsolute(state),
-        x = transform[4], y = transform[5], master = state.master,
+        x = transform[4], y = transform[5], master = state._master,
         w, h;
     if (master) {
       w = master.width;
@@ -401,7 +420,7 @@ var statecharts = (function() {
     return { x: x, y: y };
   }
 
-  Renderer.prototype.statePointToParam = function(state, p) {
+  StatechartRenderer.prototype.statePointToParam = function(state, p) {
     var r = this.radius, rect = this.getStateRect(state);
     if (rect.width && rect.height)
       return diagrams.rectPointToParam(rect.x, rect.y, rect.width, rect.height, p);
@@ -409,7 +428,7 @@ var statecharts = (function() {
     return diagrams.circlePointToParam(rect.x + r, rect.y + r, p);
   }
 
-  Renderer.prototype.stateParamToPoint = function(state, t) {
+  StatechartRenderer.prototype.stateParamToPoint = function(state, t) {
     var r = this.radius, rect = this.getStateRect(state);
     if (rect.width && rect.height)
       return diagrams.roundRectParamToPoint(
@@ -418,17 +437,17 @@ var statecharts = (function() {
     return diagrams.circleParamToPoint(rect.x + r, rect.y + r, r, t);
   }
 
-  Renderer.prototype.beginDraw = function() {
+  StatechartRenderer.prototype.beginDraw = function() {
     var ctx = this.ctx;
     ctx.save();
     ctx.font = this.theme.font;
   }
 
-  Renderer.prototype.endDraw = function() {
+  StatechartRenderer.prototype.endDraw = function() {
     this.ctx.restore();
   }
 
-  Renderer.prototype.layoutCircuitMaster = function(master) {
+  StatechartRenderer.prototype.layoutCircuitMaster = function(master) {
     var ctx = this.ctx, theme = this.theme,
         textSize = theme.fontSize, knobbyRadius = this.knobbyRadius,
         name = master.name, inputs = master.inputs, outputs = master.outputs,
@@ -451,11 +470,19 @@ var statecharts = (function() {
     master.height = 4 + height;
   }
 
-  Renderer.prototype.drawItem = function(item) {
-    if (isState(item))
-      this.drawState(item);
-    else if (isTransition(item))
-      this.drawTransition(item);
+  StatechartRenderer.prototype.updateTransition = function(transition) {
+    var referencingModel = this.model.referencingModel,
+        v1 = referencingModel.resolveReference(transition, 'srcId'),
+        v2 = referencingModel.resolveReference(transition, 'dstId'),
+        p1 = transition._p1, p2 = transition._p2;
+
+    if (v1)
+      p1 = this.stateParamToPoint(v1, transition.t1);
+    if (v2)
+      p2 = this.stateParamToPoint(v2, transition.t2);
+
+    transition._bezier = diagrams.getEdgeBezier(p1, p2);
+    transition._mid = EvaluateCurveSegment(transition._bezier, 0.5);
   }
 
   function drawKnobby(renderer, x, y) {
@@ -464,40 +491,29 @@ var statecharts = (function() {
   }
 
   function drawArrow(renderer, x, y) {
+    var ctx = renderer.ctx;
     ctx.beginPath();
     diagrams.arrowPath({ x: x, y: y, nx: -1, ny: 0 }, ctx, renderer.arrowSize);
     ctx.stroke();
   }
 
-  function drawState(renderer, state, mode) {
-    var ctx = renderer.ctx, theme = renderer.theme, r = renderer.radius,
-        rect = renderer.getStateRect(state),
-        type = state.type,
-        x = rect.x, y = rect.y, w = rect.width, h = rect.height;
-    if (mode & normalMode) {
-      ctx.fillStyle = theme.bgColor;
-      ctx.strokeStyle = theme.strokeColor;
-      ctx.lineWidth = 1;
-    } else if (mode & highlightMode) {
-      ctx.strokeStyle = theme.highlightColor;
-      ctx.lineWidth = 2;
-    } else if (mode & hotTrackMode) {
-      ctx.strokeStyle = theme.hotTrackColor;
-      ctx.lineWidth = 2;
-    }
-
-    if (type == 'state') {
-      diagrams.roundRectPath(x, y, w, h, r, ctx);
-      var textSize = theme.fontSize,
-          lineBase = y + textSize + renderer.textLeading,
-          knobbyRadius = renderer.knobbyRadius;
-      if (mode & normalMode) {
+  StatechartRenderer.prototype.drawState = function(state, mode) {
+    var ctx = this.ctx, theme = this.theme, r = this.radius,
+        transform = this.transformableModel.getAbsolute(state),
+        x = transform[4], y = transform[5], w = state.width, h = state.height,
+        knobbyRadius = this.knobbyRadius, textSize = theme.fontSize,
+        lineBase = y + textSize + this.textLeading;
+    diagrams.roundRectPath(x, y, w, h, r, ctx);
+    switch (mode) {
+      case normalMode:
+        ctx.fillStyle = theme.bgColor;
         ctx.fill();
+        ctx.strokeStyle = theme.strokeColor;
+        ctx.lineWidth = 1;
         ctx.stroke();
         ctx.beginPath();
         ctx.moveTo(x, lineBase);
         ctx.lineTo(x + w, lineBase);
-        ctx.lineWidth = 1;
         ctx.stroke();
 
         ctx.fillStyle = theme.textColor;
@@ -519,118 +535,168 @@ var statecharts = (function() {
         }
         // Render knobbies, faintly.
         ctx.lineWidth = 0.25;
-      } else {
-        // All modes except normalMode.
+        break;
+      case highlightMode:
+        ctx.strokeStyle = theme.highlightColor;
+        ctx.lineWidth = 2;
         ctx.stroke();
-      }
-      drawKnobby(renderer, x + w - knobbyRadius, y + r + knobbyRadius);
-      drawArrow(renderer, x + w + renderer.arrowSize, lineBase);
-    } else if (type == 'circuit') {
-      if (mode & normalMode) {
-        var textSize = theme.fontSize, knobbyRadius = renderer.knobbyRadius,
-            master = state.master, name = master.name,
-            inputs = master.inputs, outputs = master.outputs,
-            gutter = 2 * knobbyRadius + 4;
-        ctx.fillRect(x, y, w, h);
-        ctx.strokeRect(x, y, w, h);
-        ctx.fillStyle = theme.textColor;
-        // if (name) {
-        // }
-        inputs.forEach(function(input, i) {
-          var name = input.name, top = y + i * textSize;
-          drawKnobby(renderer, x + knobbyRadius, top + textSize / 2);
-          if (name)
-            ctx.fillText(name, x + gutter, top + textSize);
-        });
-        ctx.textAlign = 'right';
-        outputs.forEach(function(output, i) {
-          var name = output.name, top = y + i * textSize;;
-          drawKnobby(renderer, x + w - knobbyRadius, top + textSize / 2);
-          if (name)
-            ctx.fillText(name, x + w - gutter, top + textSize);
-        });
-        ctx.textAlign = 'left';
-      } else {
-        // All modes except normalMode.
-        ctx.strokeRect(x, y, w, h);
-      }
-    } else if (type == 'start') {
-      diagrams.diskPath(x + r, y + r, r, ctx);
-      if (mode & normalMode) {
+        break;
+      case hotTrackMode:
+        ctx.strokeStyle = theme.hotTrackColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        break;
+    }
+    drawKnobby(this, x + w - knobbyRadius, y + r + knobbyRadius);
+    drawArrow(this, x + w + this.arrowSize, lineBase);
+  }
+
+  StatechartRenderer.prototype.drawPseudoState = function(state, mode) {
+    var ctx = this.ctx, theme = this.theme, r = this.radius,
+        transform = this.transformableModel.getAbsolute(state),
+        x = transform[4], y = transform[5];
+    // TODO handle other psuedo state types.
+    diagrams.diskPath(x + r, y + r, r, ctx);
+    switch (mode) {
+      case normalMode:
         ctx.fillStyle = theme.strokeColor;
         ctx.fill();
         // Render knobbies, faintly.
         ctx.lineWidth = 0.25;
-      } else {
+        break;
+      case highlightMode:
+        ctx.strokeStyle = theme.highlightColor;
+        ctx.lineWidth = 2;
         ctx.stroke();
-      }
-      drawArrow(renderer, x + 2 * r + renderer.arrowSize, y + r);
-    } else if (type == 'statechart') {
-      diagrams.roundRectPath(x, y, w, h, r, ctx);
-      ctx.stroke();
+        break;
+      case hotTrackMode:
+        ctx.strokeStyle = theme.hotTrackColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        break;
+    }
+    drawArrow(this, x + 2 * r + this.arrowSize, y + r);
+  }
+
+  StatechartRenderer.prototype.drawStatechart = function(statechart, mode) {
+    switch (mode) {
+      case normalMode:
+        break;
+      case highlightMode:
+        break;
+      case hotTrackMode:
+        var ctx = this.ctx, theme = this.theme, r = this.radius,
+            transform = this.transformableModel.getAbsolute(statechart),
+            x = transform[4], y = transform[5],
+            w = statechart.width, h = statechart.height;
+        diagrams.roundRectPath(x, y, w, h, r, ctx);
+        ctx.strokeStyle = theme.hotTrackColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        break;
     }
   }
 
-  Renderer.prototype.drawState = function(state) {
-    drawState(this, state, normalMode);
+  StatechartRenderer.prototype.drawEvent = function(event, mode) {
+    this.drawCircuit(event, mode);
+    //TODO
   }
 
-  Renderer.prototype.drawStateHighlight = function(state) {
-    drawState(this, state, highlightMode);
-  }
-
-  Renderer.prototype.drawStateHotTrack = function(state) {
-    drawState(this, state, hotTrackMode);
-  }
-
-  Renderer.prototype.updateTransition = function(transition) {
-    var referencingModel = this.model.referencingModel,
-        v1 = referencingModel.resolveReference(transition, 'srcId'),
-        v2 = referencingModel.resolveReference(transition, 'dstId'),
-        p1 = transition._p1, p2 = transition._p2;
-
-    if (v1)
-      p1 = this.stateParamToPoint(v1, transition.t1);
-    if (v2)
-      p2 = this.stateParamToPoint(v2, transition.t2);
-
-    transition._bezier = diagrams.getEdgeBezier(p1, p2);
-    transition._mid = EvaluateCurveSegment(transition._bezier, 0.5);
-  }
-
-  function drawTransition(renderer, transition, mode) {
-    var ctx = renderer.ctx, theme = renderer.theme,
-        textSize = theme.fontSize,
-        mid = transition._mid;
-    if (mode & normalMode) {
-      ctx.strokeStyle = theme.strokeColor;
-      ctx.lineWidth = 1;
+  StatechartRenderer.prototype.drawCircuit = function(circuit, mode) {
+    var self = this, ctx = this.ctx, theme = this.theme, r = this.radius,
+        master = circuit._master,
+        transform = this.transformableModel.getAbsolute(circuit),
+        x = transform[4], y = transform[5],
+        w = master.width, h = master.height;
+    switch (mode) {
+      case normalMode:
+        var textSize = theme.fontSize, knobbyRadius = this.knobbyRadius,
+            name = master.name,
+            inputs = master.inputs, outputs = master.outputs,
+            gutter = 2 * knobbyRadius + 4;
+        ctx.fillStyle = theme.bgColor;
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = theme.strokeColor;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, y, w, h);
+        ctx.fillStyle = theme.textColor;
+        var baseLine = y + textSize;
+        if (name) {
+          ctx.fillText(name, x, baseLine);
+          baseLine += textSize;
+        }
+        inputs.forEach(function(input, i) {
+          var name = input.name, top = baseLine + i * textSize;
+          drawKnobby(self, x + knobbyRadius, top - textSize / 2);
+          if (name)
+            ctx.fillText(name, x + gutter, top);
+        });
+        ctx.textAlign = 'right';
+        outputs.forEach(function(output, i) {
+          var name = output.name, top = baseLine + i * textSize;;
+          drawKnobby(self, x + w - knobbyRadius, top - textSize / 2);
+          if (name)
+            ctx.fillText(name, x + w - gutter, top);
+        });
+        ctx.textAlign = 'left';
+        break;
+      case highlightMode:
+        ctx.strokeStyle = theme.highlightColor;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, w, h);
+        break;
+      case hotTrackMode:
+        ctx.strokeStyle = theme.hotTrackColor;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, w, h);
+        break;
     }
-    if (mode & highlightMode) {
-      ctx.strokeStyle = theme.highlightColor;
-      ctx.lineWidth = 2;
+  }
+
+  StatechartRenderer.prototype.drawTransition = function(transition, mode) {
+    var ctx = this.ctx;
+    diagrams.bezierEdgePath(transition._bezier, ctx, this.arrowSize);
+    switch (mode) {
+      case normalMode:
+        ctx.strokeStyle = theme.strokeColor;
+        ctx.lineWidth = 1;
+        break;
+      case highlightMode:
+        ctx.strokeStyle = theme.highlightColor;
+        ctx.lineWidth = 2;
+        break;
+      case hotTrackMode:
+        ctx.strokeStyle = theme.hotTrackColor;
+        ctx.lineWidth = 2;
+        break;
     }
-    if (mode & hotTrackMode) {
-      ctx.strokeStyle = theme.hotTrackColor;
-      ctx.lineWidth = 2;
-    }
-    diagrams.bezierEdgePath(transition._bezier, ctx, renderer.arrowSize);
     ctx.stroke();
   }
 
-  Renderer.prototype.drawTransition = function(transition) {
-    drawTransition(this, transition, normalMode);
+  StatechartRenderer.prototype.draw = function(item, mode) {
+    switch (item.type) {
+      case 'state':
+        this.drawState(item, mode);
+        break;
+      case 'start':
+        this.drawPseudoState(item, mode);
+        break;
+      case 'event':
+        this.drawEvent(item, mode);
+        break;
+      case 'circuit':
+        this.drawCircuit(item, mode);
+        break;
+      case 'transition':
+        this.drawTransition(item, mode);
+        break;
+      case 'statechart':
+        this.drawStatechart(item, mode);
+        break;
+    }
   }
 
-  Renderer.prototype.drawTransitionHighlight = function(transition) {
-    drawTransition(this, transition, normalMode | highlightMode);
-  }
-
-  Renderer.prototype.drawTransitionHotTrack = function(transition) {
-    drawTransition(this, transition, hotTrackMode);
-  }
-
-  Renderer.prototype.getStateMinSize = function(state) {
+  StatechartRenderer.prototype.getStateMinSize = function(state) {
     var ctx = this.ctx, theme = this.theme, r = this.radius,
         width = this.stateMinWidth, height = this.stateMinHeight,
         metrics;
@@ -641,14 +707,14 @@ var statecharts = (function() {
     return { width: width, height: height };
   }
 
-  Renderer.prototype.hitTestItem = function(item, p) {
+  StatechartRenderer.prototype.hitTestItem = function(item, p) {
     if (isStateOrStatechart(item))
       return this.hitTestStateOrStatechart(item, p);
     if (isTransition(item))
       return this.hitTestTransition(item, p);
   }
 
-  Renderer.prototype.hitTestStateOrStatechart = function(state, p) {
+  StatechartRenderer.prototype.hitTestStateOrStatechart = function(state, p) {
     var theme = this.theme, tol = this.hitTolerance,
         r = this.radius,
         rect = this.getStateRect(state),
@@ -674,14 +740,235 @@ var statecharts = (function() {
     return hitInfo;
   }
 
-  Renderer.prototype.hitTestTransition = function(transition, p) {
+  StatechartRenderer.prototype.hitTestTransition = function(transition, p) {
     var hitInfo = diagrams.hitTestBezier(transition._bezier, p, this.hitTolerance);
     if (hitInfo)
       hitInfo.item = transition;
     return hitInfo;
   }
 
-  Renderer.prototype.drawHoverText = function(item, p) {
+  StatechartRenderer.prototype.drawHoverText = function(item, p) {
+    var self = this, theme = this.theme,
+        props = [];
+    this.model.dataModel.visitProperties(item, function(item, attr) {
+      var value = item[attr];
+      if (Array.isArray(value))
+        return;
+      props.push({ name: attr, value: value });
+    });
+    var x = p.x, y = p.y,
+        textSize = theme.fontSize, gap = 16, border = 4,
+        height = textSize * props.length + 2 * border,
+        maxWidth = diagrams.measureNameValuePairs(props, gap, ctx) + 2 * border;
+    ctx.fillStyle = theme.hoverColor;
+    ctx.fillRect(x, y, maxWidth, height);
+    ctx.fillStyle = theme.hoverTextColor;
+    props.forEach(function(prop) {
+      ctx.textAlign = 'left';
+      ctx.fillText(prop.name, x + border, y + textSize);
+      ctx.textAlign = 'right';
+      ctx.fillText(prop.value, x + maxWidth - border, y + textSize);
+      y += textSize;
+    });
+  }
+
+//------------------------------------------------------------------------------
+
+  function CircuitRenderer(model, ctx, theme) {
+    this.model = model;
+    this.transformableModel = this.model.transformableModel;
+    this.ctx = ctx;
+    this.theme = theme || diagrams.theme.create();
+
+    this.knobbyRadius = 4;
+
+    this.hitTolerance = 8;
+  }
+
+  CircuitRenderer.prototype.beginDraw = function() {
+    var ctx = this.ctx;
+    ctx.save();
+    ctx.font = this.theme.font;
+  }
+
+  CircuitRenderer.prototype.endDraw = function() {
+    this.ctx.restore();
+  }
+
+  CircuitRenderer.prototype.layoutCircuitMaster = function(master) {
+    var ctx = this.ctx, theme = this.theme,
+        textSize = theme.fontSize, knobbyRadius = this.knobbyRadius,
+        name = master.name, inputs = master.inputs, outputs = master.outputs,
+        inputsLength = inputs.length, outputsLength = outputs.length,
+        rows = Math.max(inputsLength, outputsLength),
+        height = rows * textSize,
+        gutter = 2 * knobbyRadius + 4,
+        maxWidth = 0;
+    if (name) {
+      maxWidth = ctx.measureText(name).width;
+      height += textSize;
+    }
+    for (var i = 0; i < rows; i++) {
+      var inWidth = (i < inputsLength) ? ctx.measureText(inputs[i].name).width : 0,
+          outWidth = (i < outputsLength) ? ctx.measureText(outputs[i].name).width : 0,
+          width = inWidth + 16 + outWidth,
+          maxWidth = Math.max(maxWidth, width);
+    }
+    master.width = gutter + maxWidth + gutter;
+    master.height = 4 + height;
+  }
+
+  // CircuitRenderer.prototype.updateWire = function(transition) {
+  //   var referencingModel = this.model.referencingModel,
+  //       v1 = referencingModel.resolveReference(transition, 'srcId'),
+  //       v2 = referencingModel.resolveReference(transition, 'dstId'),
+  //       p1 = transition._p1, p2 = transition._p2;
+
+  //   if (v1)
+  //     p1 = this.stateParamToPoint(v1, transition.t1);
+  //   if (v2)
+  //     p2 = this.stateParamToPoint(v2, transition.t2);
+
+  //   transition._bezier = diagrams.getEdgeBezier(p1, p2);
+  //   transition._mid = EvaluateCurveSegment(transition._bezier, 0.5);
+  // }
+
+  function drawKnobby(renderer, x, y) {
+    var r = renderer.knobbyRadius, d = 2 * r;
+    renderer.ctx.strokeRect(x - r, y - r, d, d);
+  }
+
+  CircuitRenderer.prototype.drawEvent = function(event, mode) {
+    this.drawCircuit(event, mode);
+    //TODO
+  }
+
+  CircuitRenderer.prototype.drawCircuit = function(circuit, mode) {
+    var self = this, ctx = this.ctx, theme = this.theme, r = this.radius,
+        master = circuit._master,
+        transform = this.transformableModel.getAbsolute(circuit),
+        x = transform[4], y = transform[5],
+        w = master.width, h = master.height;
+    switch (mode) {
+      case normalMode:
+        var textSize = theme.fontSize, knobbyRadius = this.knobbyRadius,
+            name = master.name,
+            inputs = master.inputs, outputs = master.outputs,
+            gutter = 2 * knobbyRadius + 4;
+        ctx.fillStyle = theme.bgColor;
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = theme.strokeColor;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, y, w, h);
+        ctx.fillStyle = theme.textColor;
+        var baseLine = y + textSize;
+        if (name) {
+          ctx.fillText(name, x, baseLine);
+          baseLine += textSize;
+        }
+        inputs.forEach(function(input, i) {
+          var name = input.name, top = baseLine + i * textSize;
+          drawKnobby(self, x + knobbyRadius, top - textSize / 2);
+          if (name)
+            ctx.fillText(name, x + gutter, top);
+        });
+        ctx.textAlign = 'right';
+        outputs.forEach(function(output, i) {
+          var name = output.name, top = baseLine + i * textSize;;
+          drawKnobby(self, x + w - knobbyRadius, top - textSize / 2);
+          if (name)
+            ctx.fillText(name, x + w - gutter, top);
+        });
+        ctx.textAlign = 'left';
+        break;
+      case highlightMode:
+        ctx.strokeStyle = theme.highlightColor;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, w, h);
+        break;
+      case hotTrackMode:
+        ctx.strokeStyle = theme.hotTrackColor;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, w, h);
+        break;
+    }
+  }
+
+  // CircuitRenderer.prototype.drawTransition = function(transition, mode) {
+  //   var ctx = this.ctx;
+  //   diagrams.bezierEdgePath(transition._bezier, ctx, this.arrowSize);
+  //   switch (mode) {
+  //     case normalMode:
+  //       ctx.strokeStyle = theme.strokeColor;
+  //       ctx.lineWidth = 1;
+  //       break;
+  //     case highlightMode:
+  //       ctx.strokeStyle = theme.highlightColor;
+  //       ctx.lineWidth = 2;
+  //       break;
+  //     case hotTrackMode:
+  //       ctx.strokeStyle = theme.hotTrackColor;
+  //       ctx.lineWidth = 2;
+  //       break;
+  //   }
+  //   ctx.stroke();
+  // }
+
+  CircuitRenderer.prototype.draw = function(item, mode) {
+    switch (item.type) {
+      case 'event':
+        this.drawEvent(item, mode);
+        break;
+      case 'circuit':
+        this.drawCircuit(item, mode);
+        break;
+      // case 'transition':
+      //   this.drawTransition(item, mode);
+      //   break;
+    }
+  }
+
+  CircuitRenderer.prototype.hitTestItem = function(item, p) {
+    if (isStateOrStatechart(item))
+      return this.hitTestStateOrStatechart(item, p);
+    if (isTransition(item))
+      return this.hitTestTransition(item, p);
+  }
+
+  CircuitRenderer.prototype.hitTestStateOrStatechart = function(state, p) {
+    var theme = this.theme, tol = this.hitTolerance,
+        r = this.radius,
+        rect = this.getStateRect(state),
+        x = rect.x, y = rect.y, w = rect.width, h = rect.height,
+        hitInfo;
+    if (w && h) {
+      var lineBase = y + theme.fontSize + this.textLeading,
+          knobbyRadius = this.knobbyRadius;
+      if (diagrams.hitPoint(x + w + this.arrowSize, lineBase, p, tol))
+        hitInfo = { arrow: true };
+      else
+        hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
+    } else {
+      if (diagrams.hitPoint(x + 2 * r + this.arrowSize, y + r, p, tol))
+        hitInfo = { arrow: true };
+      else
+        hitInfo = diagrams.hitTestDisk(x + r, y + r, r, p, tol);
+    }
+
+    if (hitInfo) {
+      hitInfo.item = state;
+    }
+    return hitInfo;
+  }
+
+  CircuitRenderer.prototype.hitTestTransition = function(transition, p) {
+    var hitInfo = diagrams.hitTestBezier(transition._bezier, p, this.hitTolerance);
+    if (hitInfo)
+      hitInfo.item = transition;
+    return hitInfo;
+  }
+
+  CircuitRenderer.prototype.drawHoverText = function(item, p) {
     var self = this, theme = this.theme,
         props = [];
     this.model.dataModel.visitProperties(item, function(item, attr) {
@@ -761,13 +1048,13 @@ var statecharts = (function() {
             type: 'circuit',
             x: 32,
             y: 104,
-            master: circuitTypes.event1,
+            _master: circuitTypes.event1,
           },
           {
             type: 'circuit',
             x: 32,
             y: 160,
-            master: circuitTypes.or,
+            _master: circuitTypes.or,
           },
         ]
       }
@@ -784,11 +1071,11 @@ var statecharts = (function() {
     this.ctx = canvasController.ctx;
 
     if (!this.renderer)
-      this.renderer = new Renderer(this.model, ctx, canvasController.theme);
+      this.renderer = new StatechartRenderer(this.model, ctx, canvasController.theme);
     var renderer = this.renderer;
     this.palette.root.items.forEach(function(item) {
       if (item.type == 'circuit') {
-        renderer.layoutCircuitMaster(item.master);
+        renderer.layoutCircuitMaster(item._master);
       }
     })
   }
@@ -805,16 +1092,16 @@ var statecharts = (function() {
   Editor.prototype.addTemporaryItem = function(item) {
     if (isTransition(item))
       this.renderer.updateTransition(item);
-    this.model.observableModel.changeValue(this.statechart, 'temporary', item);
+    this.model.observableModel.changeValue(this.statechart, '_temporary', item);
   }
 
   Editor.prototype.removeTemporaryItem = function(item) {
     var statechart = this.statechart;
-    return this.model.observableModel.changeValue(statechart, 'temporary', null);
+    return this.model.observableModel.changeValue(statechart, '_temporary', null);
   }
 
   Editor.prototype.getTemporaryItem = function() {
-    return this.statechart.temporary;
+    return this.statechart._temporary;
   }
 
   Editor.prototype.draw = function() {
@@ -830,28 +1117,25 @@ var statecharts = (function() {
       renderer.updateTransition(transition);
     });
 
-    visit(statechart, isState, function(state) {
-      renderer.drawState(state);
+    visit(statechart, isStatechartContent, function(item) {
+      renderer.draw(item, normalMode);
     });
     visit(statechart, isTransition, function(transition) {
-      renderer.drawTransition(transition);
+      renderer.draw(transition, normalMode);
     });
 
     model.selectionModel.forEach(function(item) {
-      if (isState(item))
-        renderer.drawStateHighlight(item);
-      else
-        renderer.drawTransitionHighlight(item);
+      renderer.draw(item, highlightMode);
     });
     if (this.hotTrackInfo)
-      renderer.drawStateHotTrack(this.hotTrackInfo.item);
+      renderer.draw(this.hotTrackInfo.item, hotTrackMode);
     renderer.endDraw();
 
     renderer.beginDraw();
     ctx.fillStyle = renderer.theme.altBgColor;
     ctx.fillRect(palette.root.x, palette.root.y, 128, 300);
     palette.root.items.forEach(function(item) {
-      renderer.drawItem(item);
+      renderer.draw(item, normalMode);
     });
     renderer.endDraw();
 
@@ -861,7 +1145,7 @@ var statecharts = (function() {
       canvasController.applyTransform();
       if (isTransition(temporary))
         renderer.updateTransition(temporary);
-      renderer.drawItem(temporary);
+      renderer.draw(temporary, normalMode);
       renderer.endDraw();
     }
 
@@ -962,6 +1246,9 @@ var statecharts = (function() {
       var cp = this.canvasController.viewToCanvas({ x: dragItem.x, y: dragItem.y });
       dragItem.x = cp.x;
       dragItem.y = cp.y;
+      // Set master for circuit items.
+      if (dragItem.type == 'circuit')
+        dragItem._master = mouseHitInfo.item._master;
     } else {
       switch (type) {
         case 'state':
@@ -1241,7 +1528,12 @@ var statecharts = (function() {
 
   return {
     editingModel: editingModel,
-    Renderer: Renderer,
+
+    normalMode: normalMode,
+    highlightMode: highlightMode,
+    hotTrackMode: hotTrackMode,
+    StatechartRenderer: StatechartRenderer,
+
     Editor: Editor,
   };
 })();

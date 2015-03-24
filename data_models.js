@@ -976,57 +976,71 @@ var hierarchicalModel = (function () {
 
 //------------------------------------------------------------------------------
 
-function ValueChangeTracker(model, isValueFn, onChangedFn) {
+// The ValueChangeTracker observes value changes on the model and maintains the
+// original values. Clients can request snapshots of changing objects, and can
+// end the change inside a transaction, which will generate the final change
+// events.
+function ValueChangeTracker(model) {
+  var dataModel = model.dataModel, observableModel = model.observableModel;
+  if (!dataModel)
+    throw new Error('dataModel required');
+  if (!observableModel)
+    throw new Error('observableModel required');
+
   this.model = model;
-  this.isValueFn = isValueFn || function (item, attr) {
-    return typeof item[attr] == 'number';
+  var changedItems = this.changedItems = new HashMap();
+  this.changeHandler_ = function (change) {
+    // Only track value changes.
+    if (change.type != 'change')
+      return;
+    var item = change.item, attr = change.attr;
+    if (!dataModel.isProperty(item, attr))
+      return;
+    var id = dataModel.getId(item),
+        changedItem = changedItems.find(id),
+        snapshot, oldValue;
+    if (changedItem) {
+      snapshot = changedItem.snapshot;
+      if (snapshot.hasOwnProperty(attr))
+        oldValue = snapshot[attr];
+    } else {
+      snapshot = Object.create(item);
+      changedItem = { item: item, snapshot: snapshot };
+      changedItems.add(id, changedItem);
+    }
+    if (!oldValue) {
+      snapshot[attr] = change.oldValue;
+    }
   }
-  this.onChangedFn = onChangedFn || function (item, attr, oldValue) {
-    model.observableModel.onValueChanged(item, attr, oldValue);
-  }
-  this.snapshots = new HashMap();
-  var self = this;
-  var dataModel = this.model.dataModel;
-  dataModel.visitSubtree(this.model.root, function (item) {
-    var snapshot = {}, nonEmpty = false;
-    dataModel.visitProperties(item, function (item, attr) {
-      if (self.isValueFn(item, attr)) {
-        snapshot[attr] = item[attr];
-        nonEmpty = true;
-      }
-    });
-    if (nonEmpty)
-      self.snapshots.add(dataModel.getId(item), snapshot);
-  });
+  observableModel.addHandler('changed', this.changeHandler_);
 }
 
 ValueChangeTracker.prototype.getSnapshot = function (item) {
-  var snapshots = this.snapshots;
-  if (snapshots)
-    return snapshots.find(this.model.dataModel.getId(item));
+  var changedItems = this.changedItems;
+  if (!changedItems)
+    return;
+  var dataModel = this.model.dataModel;
+  var changedItem = changedItems.find(dataModel.getId(item));
+  return changedItem ? changedItem.snapshot : item;
 }
 
 ValueChangeTracker.prototype.end = function () {
   var self = this;
-  var dataModel = this.model.dataModel;
-  dataModel.visitSubtree(this.model.root, function (item) {
-    var snapshot = self.getSnapshot(item);
-    if (snapshot) {
-      dataModel.visitProperties(item, function (item, attr) {
-        if (self.isValueFn(item, attr)) {
-          var oldValue = snapshot[attr];
-          var newValue = item[attr];
-          if (oldValue !== newValue)
-            self.onChangedFn(item, attr, oldValue);
-        }
-      });
-    }
+  var observableModel = this.model.observableModel;
+  this.changedItems.forEach(function(id, changedItem) {
+    var item = changedItem.item, snapshot = changedItem.snapshot;
+    for (var attr in snapshot) {
+      if (snapshot.hasOwnProperty(attr) && snapshot[attr] !== item[attr]) {
+        observableModel.onValueChanged(item, attr, snapshot[attr]);
+      }
+    };
   });
-  this.snapshots = null;
+  observableModel.removeHandler('changed', this.changeHandler_);
 }
 
 //------------------------------------------------------------------------------
 
+// transformableModel maintains transform matrices on a hierarchy of items.
 var transformableModel = (function () {
   var proto = {
     hasTransform: function (item) {
