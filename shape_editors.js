@@ -119,21 +119,6 @@ var shapes = (function() {
         this.prototype.doPaste.call(this);
       },
 
-      addTemporaryItem: function(item) {
-        var model = this.model,
-            board = model.root,
-            items = board.items;
-        model.observableModel.insertElement(board, items, items.length, item);
-      },
-
-      removeTemporaryItem: function() {
-        var model = this.model,
-            board = model.root,
-            items = board.items;
-        return model.observableModel.removeElement(board, items, items.length - 1);
-      },
-
-
       addItem: function(item, oldParent, parent) {
         var model = this.model;
         if (oldParent === parent)
@@ -472,9 +457,22 @@ var shapes = (function() {
     return hierarchicalModel.getParent(item) === this.palette.root;
   }
 
+  Editor.prototype.addTemporaryItem = function(item) {
+    this.model.observableModel.changeValue(this.board, '_temporary', item);
+  }
+
+  Editor.prototype.removeTemporaryItem = function(item) {
+    return this.model.observableModel.changeValue(this.board, '_temporary', null);
+  }
+
+  Editor.prototype.getTemporaryItem = function() {
+    return this.board._temporary;
+  }
+
   Editor.prototype.draw = function() {
     var renderer = this.renderer, ctx = this.ctx,
-        palette = this.palette;
+        palette = this.palette,
+        canvasController = this.canvasController;
 
     this.updateGeometry();
 
@@ -497,6 +495,14 @@ var shapes = (function() {
     palette.root.items.forEach(function(item) {
       renderer.drawItem(item);
     })
+    ctx.restore();
+
+    ctx.save();
+    var temporary = this.getTemporaryItem();
+    if (temporary) {
+      canvasController.applyTransform();
+      renderer.drawItem(temporary);
+    }
     ctx.restore();
   }
 
@@ -583,7 +589,7 @@ var shapes = (function() {
       // Clone palette item and add the clone to the board. Don't notify
       // observers yet.
       item = model.instancingModel.clone(item);
-      model.editingModel.addTemporaryItem(item);
+      this.addTemporaryItem(item);
       drag = {
         type: 'paletteItem',
         name: 'Add new ' + item.type,
@@ -781,10 +787,8 @@ var shapes = (function() {
       var newItem = drag.item;
       // Remove any item that have been temporarily added before starting the
       // transaction.
-      editingModel.removeTemporaryItem()
+      this.removeTemporaryItem();
     }
-
-    transactionModel.beginTransaction(drag.name);
 
     if (drag.type == 'moveSelection' || isNewItem) {
       // Find group beneath mouse.
@@ -822,6 +826,8 @@ var shapes = (function() {
         });
       }
     }
+
+    transactionModel.beginTransaction(drag.name);
 
     this.valueTracker.end();
     this.valueTracker = null;
@@ -1068,8 +1074,7 @@ var shapes = (function() {
   }
 
   Editor.prototype.onKeyDown = function(e) {
-    var model = this.model,
-        statechart = this.statechart,
+    var model = this.model, board = this.board,
         selectionModel = model.selectionModel,
         editingModel = model.editingModel,
         transactionHistory = model.transactionHistory,
@@ -1116,7 +1121,7 @@ var shapes = (function() {
           return false;
         case 83:  // 's'
           var text = JSON.stringify(
-            this.board,
+            board,
             function(key, value) {
               if (key.toString().charAt(0) == '_')
                 return;
