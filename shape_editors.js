@@ -635,9 +635,8 @@ var shapes = (function() {
         model.editingModel.reduceSelection();
       drag.item = item;
       this.drag = drag;
+      model.transactionModel.beginTransaction(drag.name);
     }
-
-    this.valueTracker = new dataModels.ValueChangeTracker(model);
   }
 
   Editor.prototype.calcDrags = function(item, model, p, p0) {
@@ -678,10 +677,10 @@ var shapes = (function() {
         drag = this.drag,
         item = drag.item,
         model = this.model,
+        transactionModel = model.transactionModel,
         renderer = this.renderer,
-        valueTracker = this.valueTracker,
         mouseHitInfo = this.mouseHitInfo,
-        snapshot = valueTracker.getSnapshot(drag.item),
+        snapshot = transactionModel.getSnapshot(drag.item),
         canvasController = this.canvasController,
         cp0 = canvasController.viewToCanvas(p0),
         cp = canvasController.viewToCanvas(p),
@@ -690,7 +689,7 @@ var shapes = (function() {
         hitInfo, newLength;
     switch (drag.type) {
       case 'paletteItem':
-        var snapshot = valueTracker.getSnapshot(item),
+        var snapshot = transactionModel.getSnapshot(item),
             drags = self.calcDrags(item, model, cp, cp0),
             parentDrag = drags.parentDrag;
         model.observableModel.changeValue(item, 'x', snapshot.x + parentDrag.x);
@@ -699,7 +698,7 @@ var shapes = (function() {
       case 'moveSelection':
         var hitInfo = this.hotTrackInfo = this.hitTestUnselectedItems(p);
         model.selectionModel.forEach(function(item) {
-          var snapshot = valueTracker.getSnapshot(item),
+          var snapshot = transactionModel.getSnapshot(item),
               drags = self.calcDrags(item, model, cp, cp0),
               parentDrag = drags.parentDrag;
           model.observableModel.changeValue(item, 'x', snapshot.x + parentDrag.x);
@@ -826,11 +825,6 @@ var shapes = (function() {
         });
       }
     }
-
-    transactionModel.beginTransaction(drag.name);
-
-    this.valueTracker.end();
-    this.valueTracker = null;
 
     transactionModel.endTransaction();
 

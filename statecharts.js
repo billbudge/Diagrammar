@@ -1074,7 +1074,7 @@ var statecharts = (function() {
       if (drag.type == 'moveSelection')
         this.model.editingModel.reduceSelection();
       drag.item = dragItem;
-      this.valueTracker = new dataModels.ValueChangeTracker(model);
+      model.transactionModel.beginTransaction(drag.name);
     }
   }
 
@@ -1086,6 +1086,7 @@ var statecharts = (function() {
         model = this.model,
         dataModel = model.dataModel,
         observableModel = model.observableModel,
+        transactionModel = model.transactionModel,
         referencingModel = model.referencingModel,
         selectionModel = model.selectionModel,
         renderer = this.renderer,
@@ -1093,16 +1094,15 @@ var statecharts = (function() {
         cp0 = canvasController.viewToCanvas(p0),
         cp = canvasController.viewToCanvas(p),
         dx = cp.x - cp0.x, dy = cp.y - cp0.y,
-        valueTracker = this.valueTracker,
         mouseHitInfo = this.mouseHitInfo,
-        snapshot = valueTracker.getSnapshot(drag.item),
+        snapshot = transactionModel.getSnapshot(drag.item),
         hitList = this.hitTest(p), hitInfo,
         srcState, dstState, srcStateId, dstStateId, t1, t2;
     switch (drag.type) {
       case 'paletteItem':
         if (isState(dragItem))
           hitInfo = this.getFirstHit(hitList, isDropTarget);
-        var snapshot = valueTracker.getSnapshot(dragItem);
+        var snapshot = transactionModel.getSnapshot(dragItem);
         if (snapshot) {
           observableModel.changeValue(dragItem, 'x', snapshot.x + dx);
           observableModel.changeValue(dragItem, 'y', snapshot.y + dy);
@@ -1112,7 +1112,7 @@ var statecharts = (function() {
         if (isState(dragItem))
           hitInfo = this.getFirstHit(hitList, isDropTarget);
         selectionModel.forEach(function(item) {
-          var snapshot = valueTracker.getSnapshot(item);
+          var snapshot = transactionModel.getSnapshot(item);
           if (snapshot) {
             observableModel.changeValue(item, 'x', snapshot.x + dx);
             observableModel.changeValue(item, 'y', snapshot.y + dy);
@@ -1195,6 +1195,7 @@ var statecharts = (function() {
       // Add new items.
       if (newItem) {
         editingModel.addItem(newItem, null, parent);
+        selectionModel.set([newItem]);
       } else {
         // Reparent existing items.
         selectionModel.forEach(function(item) {
@@ -1208,14 +1209,6 @@ var statecharts = (function() {
     }
 
     editingModel.layout(this.statechart, this.renderer);
-
-    transactionModel.beginTransaction(drag.name);
-    if (newItem) {
-      selectionModel.set([newItem]);
-    }
-
-    this.valueTracker.end();
-    this.valueTracker = null;
 
     // If dragItem is a disconnected transition, delete it.
     if (isTransition(dragItem)) {

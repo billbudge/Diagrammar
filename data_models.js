@@ -291,6 +291,8 @@ var transactionModel = (function () {
         ops: [],
       };
       this.transaction = transaction;
+      this.changedItems = new HashMap();
+
       this.onBeginTransaction(transaction);
       this.onEvent('transactionBegan', function (handler) {
         handler(transaction);
@@ -305,7 +307,10 @@ var transactionModel = (function () {
       this.onEvent('transactionEnding', function (handler) {
         handler(transaction);
       });
+
       this.transaction = null;
+      this.changedItems = null;
+
       this.onEvent('transactionEnded', function (handler) {
         handler(transaction);
       });
@@ -339,6 +344,15 @@ var transactionModel = (function () {
       var length = ops.length;
       for (var i = 0; i < length; i++)
         ops[i].redo();
+    },
+
+    getSnapshot: function(item) {
+      var changedItems = this.changedItems;
+      if (!changedItems)
+        return;
+      var dataModel = this.model.dataModel,
+          changedItem = changedItems.find(dataModel.getId(item));
+      return changedItem ? changedItem.snapshot : item;
     },
 
     onBeginTransaction: function (transaction) {
@@ -375,13 +389,46 @@ var transactionModel = (function () {
       this.startingSelection = null;
     },
 
-    onChanged_: function (change) {
-      if (!this.transaction)
-        return;
+    recordChange_: function(change) {
       var op = Object.create(opProto);
       op.change = change;
       op.observableModel = this.model.observableModel;
       this.transaction.ops.push(op);
+    },
+
+    onChanged_: function (change) {
+      if (!this.transaction)
+        return;
+
+      var dataModel = this.model.dataModel,
+          item = change.item, attr = change.attr;
+
+      if (change.type != 'change') {
+        // Record insert and remove element changes.
+        this.recordChange_(change);
+      } else {
+        // Coalesce value changes. Only record them if this is the first time
+        // we've observed the (item, attr) change.
+        var id = dataModel.getId(item),
+            changedItems = this.changedItems,
+            changedItem = changedItems.find(id),
+            snapshot, oldValue;
+        if (changedItem) {
+          snapshot = changedItem.snapshot;
+          if (snapshot.hasOwnProperty(attr))
+            oldValue = snapshot[attr];
+        } else {
+          // The snapshot just extends the item, and gradually overrides it as
+          // we receive attribute changes for it.
+          snapshot = Object.create(item);
+          changedItem = { item: item, snapshot: snapshot };
+          changedItems.add(id, changedItem);
+        }
+        if (!oldValue) {
+          snapshot[attr] = change.oldValue;
+          this.recordChange_(change);
+        }
+      }
     },
   }
 
@@ -389,6 +436,7 @@ var transactionModel = (function () {
     if (model.transactionModel)
       return model.transactionModel;
 
+    dataModel.extend(model);
     observableModel.extend(model);
 
     var instance = Object.create(proto);
@@ -976,78 +1024,6 @@ var hierarchicalModel = (function () {
 
 //------------------------------------------------------------------------------
 
-// The ValueChangeTracker observes changes on the model and coalesces multiple
-// changes to the same values. It's useful during extended editing, such as drag
-// and drop operations. It also maintains a snapshot of the old values of
-// changed items. Clients can access these snapshots, which are useful for
-// determining new values when only offsets are available.
-function ValueChangeTracker(model) {
-  var dataModel = model.dataModel, observableModel = model.observableModel;
-  if (!dataModel)
-    throw new Error('dataModel required');
-  if (!observableModel)
-    throw new Error('observableModel required');
-
-  this.model = model;
-  var changedItems = new HashMap(),
-      changes = [];
-  this.changedItems = changedItems;
-  // It's important to maintain the incoming changes in the order they were
-  // received, as they are not commutative.
-  this.changes = changes;
-  this.changeHandler_ = function (change) {
-    if (change.type != 'change') {
-      // Push insert and remove element changes.
-      changes.push(change);
-    } else {
-      // Coalesce value changes. Only push them if it's the first time we've
-      // seen this (item, attr) change.
-      var item = change.item, attr = change.attr;
-      if (!dataModel.isProperty(item, attr))
-        return;
-      var id = dataModel.getId(item),
-          changedItem = changedItems.find(id),
-          snapshot, oldValue;
-      if (changedItem) {
-        snapshot = changedItem.snapshot;
-        if (snapshot.hasOwnProperty(attr))
-          oldValue = snapshot[attr];
-      } else {
-        // The snapshot just extends the item, and gradually overrides it as we
-        // receive attribute changes for it.
-        snapshot = Object.create(item);
-        changedItem = { item: item, snapshot: snapshot };
-        changedItems.add(id, changedItem);
-      }
-      if (!oldValue) {
-        snapshot[attr] = change.oldValue;
-        changes.push(change);
-      }
-    }
-  }
-  observableModel.addHandler('changed', this.changeHandler_);
-}
-
-ValueChangeTracker.prototype.getSnapshot = function (item) {
-  var changedItems = this.changedItems;
-  if (!changedItems)
-    return;
-  var dataModel = this.model.dataModel;
-  var changedItem = changedItems.find(dataModel.getId(item));
-  return changedItem ? changedItem.snapshot : item;
-}
-
-ValueChangeTracker.prototype.end = function () {
-  var self = this;
-  var observableModel = this.model.observableModel;
-  observableModel.removeHandler('changed', this.changeHandler_);
-  this.changes.forEach(function(change) {
-    observableModel.onChanged(change);
-  });
-}
-
-//------------------------------------------------------------------------------
-
 // transformableModel maintains transform matrices on a hierarchy of items.
 var transformableModel = (function () {
   var proto = {
@@ -1207,7 +1183,5 @@ var transformableModel = (function () {
     editingModel: editingModel,
     hierarchicalModel: hierarchicalModel,
     transformableModel: transformableModel,
-
-    ValueChangeTracker: ValueChangeTracker,
   }
 })();
