@@ -25,7 +25,11 @@ var statecharts = (function() {
     return item.type == 'statechart';
   }
 
-  function isStateOrStatechart(item) {
+  function isContainer(item) {
+    return item.type == 'state' || item.type == 'statechart';
+  }
+
+  function isContainable(item) {
     return item.type != 'transition';
   }
 
@@ -216,7 +220,7 @@ var statecharts = (function() {
 
       addItem: function(item, oldParent, parent) {
         var model = this.model, transformableModel = model.transformableModel;
-        if (oldParent !== parent && isState(item)) {
+        if (oldParent !== parent && isContainable(item)) {
           var transform = transformableModel.getAbsolute(item),
               parentTransform = transformableModel.getAbsolute(parent),
               x = transform[4] - parentTransform[4],
@@ -225,7 +229,7 @@ var statecharts = (function() {
           this.setAttr(item, 'y', y);
         }
         var itemToAdd = item;
-        if (isState(parent)) {
+        if (isTrueState(parent)) {
           if (!Array.isArray(parent.items))
             model.observableModel.changeValue(parent, 'items', []);
           if (parent.items.length == 0) {
@@ -266,13 +270,13 @@ var statecharts = (function() {
               xMax = Number.MIN_VALUE,
               yMax = Number.MIN_VALUE;
           items.forEach(function(item) {
-            if (!isState(item))
+            if (!isContainable(item))
               return;
-            var x = item.x, y = item.y;
+            var x = item.x, y = item.y, rect = renderer.getItemRect(item);
             xMin = Math.min(xMin, x);
             yMin = Math.min(yMin, y);
-            xMax = Math.max(xMax, x + (item.width || pseudoStateWidth));
-            yMax = Math.max(yMax, y + (item.height || pseudoStateWidth));
+            xMax = Math.max(xMax, x + rect.w);
+            yMax = Math.max(yMax, y + rect.h);
           });
           var padding = renderer.padding;
           // Add padding.
@@ -337,7 +341,7 @@ var statecharts = (function() {
 
       layout: function(statechart, renderer) {
         var self = this;
-        reverseVisit(statechart, isStateOrStatechart, function(item) {
+        reverseVisit(statechart, isContainer, function(item) {
           if (isState(item))
             self.layoutState(item, renderer);
           else if (isStatechart(item))
@@ -401,40 +405,6 @@ var statecharts = (function() {
 
     this.hitTolerance = 8;
   }
-//TODO remove this
-  StatechartRenderer.prototype.getStateRect = function(state) {
-    var transform = this.transformableModel.getAbsolute(state),
-        x = transform[4], y = transform[5], master = state._master,
-        w, h;
-    if (master) {
-      w = master.width;
-      h = master.height;
-    } else {
-      w = state.width;
-      h = state.height;
-    }
-    if (w && h)
-      return { x: x, y: y, width: w, height: h };
-
-    return { x: x, y: y };
-  }
-
-  StatechartRenderer.prototype.statePointToParam = function(state, p) {
-    var r = this.radius, rect = this.getStateRect(state);
-    if (rect.width && rect.height)
-      return diagrams.rectPointToParam(rect.x, rect.y, rect.width, rect.height, p);
-
-    return diagrams.circlePointToParam(rect.x + r, rect.y + r, p);
-  }
-
-  StatechartRenderer.prototype.stateParamToPoint = function(state, t) {
-    var r = this.radius, rect = this.getStateRect(state);
-    if (rect.width && rect.height)
-      return diagrams.roundRectParamToPoint(
-          rect.x, rect.y, rect.width, rect.height, r, t);
-
-    return diagrams.circleParamToPoint(rect.x + r, rect.y + r, r, t);
-  }
 
   StatechartRenderer.prototype.beginDraw = function() {
     var ctx = this.ctx;
@@ -444,6 +414,42 @@ var statecharts = (function() {
 
   StatechartRenderer.prototype.endDraw = function() {
     this.ctx.restore();
+  }
+
+  StatechartRenderer.prototype.getItemRect = function(item) {
+    var transform = this.transformableModel.getAbsolute(item),
+        x = transform[4], y = transform[5], w, h;
+    switch (item.type) {
+      case 'state':
+      case 'statechart':
+        w = item.width;
+        h = item.height;
+        break;
+      case 'start':
+        w = h = 2 * this.radius;
+        break;
+      case 'circuit':
+        w = item._master.width;
+        h = item._master.height;
+        break;
+    }
+    return { x: x, y: y, w: w, h: h };
+  }
+
+  StatechartRenderer.prototype.statePointToParam = function(state, p) {
+    var r = this.radius, rect = this.getItemRect(state);
+    if (isTrueState(state))
+      return diagrams.rectPointToParam(rect.x, rect.y, rect.w, rect.h, p);
+
+    return diagrams.circlePointToParam(rect.x + r, rect.y + r, p);
+  }
+
+  StatechartRenderer.prototype.stateParamToPoint = function(state, t) {
+    var r = this.radius, rect = this.getItemRect(state);
+    if (isTrueState(state))
+      return diagrams.roundRectParamToPoint(rect.x, rect.y, rect.w, rect.h, r, t);
+
+    return diagrams.circleParamToPoint(rect.x + r, rect.y + r, r, t);
   }
 
   StatechartRenderer.prototype.layoutCircuitMaster = function(master) {
@@ -489,6 +495,15 @@ var statecharts = (function() {
     renderer.ctx.strokeRect(x - r, y - r, d, d);
   }
 
+  function drawJunction(renderer, x, y) {
+    var ctx = renderer.ctx, r = renderer.knobbyRadius;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, 2 * Math.PI);
+    ctx.fillStyle = renderer.theme.bgColor;
+    ctx.fill();
+    ctx.stroke();
+  }
+
   function drawArrow(renderer, x, y) {
     var ctx = renderer.ctx;
     ctx.beginPath();
@@ -498,8 +513,8 @@ var statecharts = (function() {
 
   StatechartRenderer.prototype.drawState = function(state, mode) {
     var ctx = this.ctx, theme = this.theme, r = this.radius,
-        transform = this.transformableModel.getAbsolute(state),
-        x = transform[4], y = transform[5], w = state.width, h = state.height,
+        rect = this.getItemRect(state),
+        x = rect.x, y = rect.y, w = rect.w, h = rect.h,
         knobbyRadius = this.knobbyRadius, textSize = theme.fontSize,
         lineBase = y + textSize + this.textLeading;
     diagrams.roundRectPath(x, y, w, h, r, ctx);
@@ -552,8 +567,8 @@ var statecharts = (function() {
 
   StatechartRenderer.prototype.drawPseudoState = function(state, mode) {
     var ctx = this.ctx, theme = this.theme, r = this.radius,
-        transform = this.transformableModel.getAbsolute(state),
-        x = transform[4], y = transform[5];
+        rect = this.getItemRect(state),
+        x = rect.x, y = rect.y;
     // TODO handle other psuedo state types.
     diagrams.diskPath(x + r, y + r, r, ctx);
     switch (mode) {
@@ -585,9 +600,8 @@ var statecharts = (function() {
         break;
       case hotTrackMode:
         var ctx = this.ctx, theme = this.theme, r = this.radius,
-            transform = this.transformableModel.getAbsolute(statechart),
-            x = transform[4], y = transform[5],
-            w = statechart.width, h = statechart.height;
+            rect = this.getItemRect(statechart),
+            x = rect.x, y = rect.y, w = rect.w, h = rect.h;
         diagrams.roundRectPath(x, y, w, h, r, ctx);
         ctx.strokeStyle = theme.hotTrackColor;
         ctx.lineWidth = 2;
@@ -596,17 +610,11 @@ var statecharts = (function() {
     }
   }
 
-  StatechartRenderer.prototype.drawEvent = function(event, mode) {
-    this.drawCircuit(event, mode);
-    //TODO
-  }
-
   StatechartRenderer.prototype.drawCircuit = function(circuit, mode) {
     var self = this, ctx = this.ctx, theme = this.theme, r = this.radius,
         master = circuit._master,
-        transform = this.transformableModel.getAbsolute(circuit),
-        x = transform[4], y = transform[5],
-        w = master.width, h = master.height;
+        rect = this.getItemRect(circuit),
+        x = rect.x, y = rect.y, w = rect.w, h = rect.h;
     switch (mode) {
       case normalMode:
         var textSize = theme.fontSize, knobbyRadius = this.knobbyRadius,
@@ -616,12 +624,13 @@ var statecharts = (function() {
         ctx.fillStyle = theme.bgColor;
         ctx.fillRect(x, y, w, h);
         ctx.strokeStyle = theme.strokeColor;
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 0.5;
         ctx.strokeRect(x, y, w, h);
         ctx.fillStyle = theme.textColor;
         var baseLine = y + textSize;
         if (name) {
-          ctx.fillText(name, x, baseLine);
+          ctx.textAlign = 'center';
+          ctx.fillText(name, x + w / 2, baseLine);
           baseLine += textSize;
         }
         inputs.forEach(function(input, i) {
@@ -653,23 +662,27 @@ var statecharts = (function() {
   }
 
   StatechartRenderer.prototype.drawTransition = function(transition, mode) {
-    var ctx = this.ctx;
+    var ctx = this.ctx, mid = transition._mid;
     diagrams.bezierEdgePath(transition._bezier, ctx, this.arrowSize);
     switch (mode) {
       case normalMode:
         ctx.strokeStyle = theme.strokeColor;
         ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.lineWidth = 0.25;
+        drawJunction(this, mid.x, mid.y);
         break;
       case highlightMode:
         ctx.strokeStyle = theme.highlightColor;
         ctx.lineWidth = 2;
+        ctx.stroke();
         break;
       case hotTrackMode:
         ctx.strokeStyle = theme.hotTrackColor;
         ctx.lineWidth = 2;
+        ctx.stroke();
         break;
     }
-    ctx.stroke();
   }
 
   StatechartRenderer.prototype.draw = function(item, mode) {
@@ -679,9 +692,6 @@ var statecharts = (function() {
         break;
       case 'start':
         this.drawPseudoState(item, mode);
-        break;
-      case 'event':
-        this.drawEvent(item, mode);
         break;
       case 'circuit':
         this.drawCircuit(item, mode);
@@ -706,54 +716,67 @@ var statecharts = (function() {
     return { width: width, height: height };
   }
 
-  StatechartRenderer.prototype.hitTestStateOrStatechart = function(state, p, mode) {
-    var theme = this.theme, tol = this.hitTolerance,
-        r = this.radius,
-        rect = this.getStateRect(state),
-        x = rect.x, y = rect.y, w = rect.width, h = rect.height,
-        hitInfo;
-    if (w && h) {
-      var lineBase = y + theme.fontSize + this.textLeading,
-          knobbyRadius = this.knobbyRadius;
-      if (diagrams.hitPoint(x + w + this.arrowSize, lineBase, p, tol))
-        hitInfo = { arrow: true };
-      else
-        hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
-    } else {
-      if (diagrams.hitPoint(x + 2 * r + this.arrowSize, y + r, p, tol))
-        hitInfo = { arrow: true };
-      else
-        hitInfo = diagrams.hitTestDisk(x + r, y + r, r, p, tol);
-    }
+  StatechartRenderer.prototype.hitTestState = function(state, p, mode) {
+    var theme = this.theme, tol = this.hitTolerance, r = this.radius,
+        rect = this.getItemRect(state),
+        x = rect.x, y = rect.y, w = rect.w, h = rect.h;
+    var lineBase = y + theme.fontSize + this.textLeading,
+        knobbyRadius = this.knobbyRadius;
+    if (diagrams.hitPoint(x + w + this.arrowSize, lineBase, p, tol))
+      return { arrow: true };
+    return diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
+  }
 
-    if (hitInfo) {
-      hitInfo.item = state;
-    }
-    return hitInfo;
+  StatechartRenderer.prototype.hitTestStatechart = function(statechart, p, mode) {
+    var tol = this.hitTolerance, r = this.radius,
+        rect = this.getItemRect(statechart),
+        x = rect.x, y = rect.y, w = rect.w, h = rect.h;
+    return diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
+  }
+
+  StatechartRenderer.prototype.hitTestPseudoState = function(state, p, mode) {
+    var tol = this.hitTolerance, r = this.radius,
+        rect = this.getItemRect(state),
+        x = rect.x, y = rect.y;
+    if (diagrams.hitPoint(x + 2 * r + this.arrowSize, y + r, p, tol))
+      return { arrow: true };
+
+    return diagrams.hitTestDisk(x + r, y + r, r, p, tol);
+  }
+
+  StatechartRenderer.prototype.hitTestCircuit = function(circuit, p, mode) {
+    var theme = this.theme, tol = this.hitTolerance, r = this.radius,
+        rect = this.getItemRect(circuit),
+        x = rect.x, y = rect.y, w = rect.w, h = rect.h;
+    return diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
   }
 
   StatechartRenderer.prototype.hitTestTransition = function(transition, p, mode) {
-    var hitInfo = diagrams.hitTestBezier(transition._bezier, p, this.hitTolerance);
-    if (hitInfo)
-      hitInfo.item = transition;
-    return hitInfo;
+    return diagrams.hitTestBezier(transition._bezier, p, this.hitTolerance);
   }
 
   StatechartRenderer.prototype.hitTest = function(item, p, mode) {
+    var hitInfo;
     switch (item.type) {
       case 'state':
-        return this.hitTestStateOrStatechart(item, p, mode);
+        hitInfo = this.hitTestState(item, p, mode);
+        break;
       case 'start':
-        return this.hitTestStateOrStatechart(item, p, mode);
-      case 'event':
-        return this.hitTestStateOrStatechart(item, p, mode);
+        hitInfo = this.hitTestPseudoState(item, p, mode);
+        break;
       case 'circuit':
-        return this.hitTestStateOrStatechart(item, p, mode);
+        hitInfo = this.hitTestCircuit(item, p, mode);
+        break;
       case 'transition':
-        return this.hitTestTransition(item, p, mode);
+        hitInfo = this.hitTestTransition(item, p, mode);
+        break;
       case 'statechart':
-        return this.hitTestStateOrStatechart(item, p, mode);
+        hitInfo = this.hitTestStatechart(item, p, mode);
+        break;
     }
+    if (hitInfo)
+      hitInfo.item = item;
+    return hitInfo;
   }
 
   StatechartRenderer.prototype.drawHoverText = function(item, p) {
@@ -795,10 +818,10 @@ var statecharts = (function() {
       // Each event has an un-named guard input and the event name. Make the
       // event name the input name, since that's how we want to lay it out.
       event1: {
-        inputs: [
+        inputs: [],
+        outputs: [
           { name: 'Event 1', type: 'bool' },
         ],
-        outputs: [],
       },
       or: {
         name: 'or',
@@ -957,7 +980,7 @@ var statecharts = (function() {
     reverseVisit(statechart, isTransition, function(transition) {
       pushInfo(renderer.hitTest(transition, cp));
     });
-    reverseVisit(statechart, isStateOrStatechart, function(item) {
+    reverseVisit(statechart, isContainable, function(item) {
       pushInfo(renderer.hitTest(item, cp));
     });
     return hitList;
@@ -981,9 +1004,9 @@ var statecharts = (function() {
     return !isStatechart(hitInfo.item);
   }
 
-  function isDropTarget(hitInfo, model) {
+  function isContainerTarget(hitInfo, model) {
     var item = hitInfo.item;
-    return isStateOrStatechart(item) &&
+    return isContainer(item) &&
            !model.hierarchicalModel.isItemInSelection(item);
   }
 
@@ -1100,8 +1123,8 @@ var statecharts = (function() {
         srcState, dstState, srcStateId, dstStateId, t1, t2;
     switch (drag.type) {
       case 'paletteItem':
-        if (isState(dragItem))
-          hitInfo = this.getFirstHit(hitList, isDropTarget);
+        if (isContainable(dragItem))
+          hitInfo = this.getFirstHit(hitList, isContainerTarget);
         var snapshot = transactionModel.getSnapshot(dragItem);
         if (snapshot) {
           observableModel.changeValue(dragItem, 'x', snapshot.x + dx);
@@ -1109,8 +1132,8 @@ var statecharts = (function() {
         }
         break;
       case 'moveSelection':
-        if (isState(dragItem))
-          hitInfo = this.getFirstHit(hitList, isDropTarget);
+        if (isContainable(dragItem))
+          hitInfo = this.getFirstHit(hitList, isContainerTarget);
         selectionModel.forEach(function(item) {
           var snapshot = transactionModel.getSnapshot(item);
           if (snapshot) {
@@ -1188,10 +1211,8 @@ var statecharts = (function() {
     } else if (newItem || drag.type == 'moveSelection') {
       // Find state beneath mouse.
       var hitList = this.hitTest(p),
-          hitInfo = this.getFirstHit(hitList, isDropTarget),
-          parent = statechart;
-      if (hitInfo)
-        parent = hitInfo.item;
+          hitInfo = this.getFirstHit(hitList, isContainerTarget),
+          parent = hitInfo ? hitInfo.item : statechart;
       // Add new items.
       if (newItem) {
         editingModel.addItem(newItem, null, parent);
@@ -1199,7 +1220,7 @@ var statecharts = (function() {
       } else {
         // Reparent existing items.
         selectionModel.forEach(function(item) {
-          if (isState(item)) {
+          if (isContainable(item)) {
             var oldParent = hierarchicalModel.getParent(item);
             if (oldParent != parent)
               editingModel.addItem(item, oldParent, parent);
