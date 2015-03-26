@@ -549,11 +549,11 @@ var theme = (function() {
   var themes = {
     normal: {
       bgColor: 'white',
-      altBgColor: '#C0C0C0',
+      altBgColor: '#F0F0F0',
       strokeColor: '#909090',
       textColor: '#707070',
       highlightColor: '#40F040',
-      hotTrackColor: '#F0F040',
+      hotTrackColor: 'blue',
       dimColor: '#c0c0c0',
       hoverColor: '#FCF0AD',
       hoverTextColor: '#404040',

@@ -448,6 +448,17 @@ var statecharts = (function() {
     return diagrams.circleParamToPoint(rect.x + r, rect.y + r, r, t);
   }
 
+  StatechartRenderer.prototype.getStateMinSize = function(state) {
+    var ctx = this.ctx, theme = this.theme, r = this.radius,
+        width = this.stateMinWidth, height = this.stateMinHeight,
+        metrics;
+    if (state.type != 'state')
+      return;
+    width = Math.max(width, ctx.measureText(state.name).width + 2 * r);
+    height = Math.max(height, theme.fontSize + this.textLeading);
+    return { width: width, height: height };
+  }
+
   StatechartRenderer.prototype.layoutCircuitMaster = function(master) {
     var ctx = this.ctx, theme = this.theme,
         textSize = theme.fontSize, knobbyRadius = this.knobbyRadius,
@@ -564,6 +575,17 @@ var statecharts = (function() {
     drawArrow(this, x + w + this.arrowSize, lineBase);
   }
 
+  StatechartRenderer.prototype.hitTestState = function(state, p, mode) {
+    var theme = this.theme, tol = this.hitTolerance, r = this.radius,
+        rect = this.getItemRect(state),
+        x = rect.x, y = rect.y, w = rect.w, h = rect.h;
+    var lineBase = y + theme.fontSize + this.textLeading,
+        knobbyRadius = this.knobbyRadius;
+    if (diagrams.hitPoint(x + w + this.arrowSize, lineBase, p, tol))
+      return { arrow: true };
+    return diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
+  }
+
   StatechartRenderer.prototype.drawPseudoState = function(state, mode) {
     var ctx = this.ctx, theme = this.theme, r = this.radius,
         rect = this.getItemRect(state),
@@ -591,6 +613,16 @@ var statecharts = (function() {
     drawArrow(this, x + 2 * r + this.arrowSize, y + r);
   }
 
+  StatechartRenderer.prototype.hitTestPseudoState = function(state, p, mode) {
+    var tol = this.hitTolerance, r = this.radius,
+        rect = this.getItemRect(state),
+        x = rect.x, y = rect.y;
+    if (diagrams.hitPoint(x + 2 * r + this.arrowSize, y + r, p, tol))
+      return { arrow: true };
+
+    return diagrams.hitTestDisk(x + r, y + r, r, p, tol);
+  }
+
   StatechartRenderer.prototype.drawStatechart = function(statechart, mode) {
     switch (mode) {
       case normalMode:
@@ -607,6 +639,13 @@ var statecharts = (function() {
         ctx.stroke();
         break;
     }
+  }
+
+  StatechartRenderer.prototype.hitTestStatechart = function(statechart, p, mode) {
+    var tol = this.hitTolerance, r = this.radius,
+        rect = this.getItemRect(statechart),
+        x = rect.x, y = rect.y, w = rect.w, h = rect.h;
+    return diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
   }
 
   StatechartRenderer.prototype.drawCircuit = function(circuit, mode) {
@@ -660,6 +699,33 @@ var statecharts = (function() {
     }
   }
 
+  StatechartRenderer.prototype.hitTestCircuit = function(circuit, p, mode) {
+    var tol = this.hitTolerance, r = this.radius,
+        rect = this.getItemRect(circuit),
+        x = rect.x, y = rect.y, w = rect.w, h = rect.h,
+        hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
+    if (hitInfo) {
+      var textSize = this.theme.fontSize,
+          knobbyRadius = this.knobbyRadius,
+          master = circuit._master,
+          inputs = master.inputs, outputs = master.outputs;
+      var baseLine = y + textSize;
+      if (master.name)
+        baseLine += textSize;
+      inputs.forEach(function(input, i) {
+        var top = baseLine + i * textSize;
+        if (diagrams.hitPoint(x + knobbyRadius, top - textSize / 2, p, tol))
+          hitInfo.input = i;
+      });
+      outputs.forEach(function(output, i) {
+        var top = baseLine + i * textSize;;
+        if (diagrams.hitPoint(x + w - knobbyRadius, top - textSize / 2, p, tol))
+          hitInfo.output = i;
+      });
+    }
+    return hitInfo;
+  }
+
   StatechartRenderer.prototype.drawTransition = function(transition, mode) {
     var ctx = this.ctx, mid = transition._mid;
     diagrams.bezierEdgePath(transition._bezier, ctx, this.arrowSize);
@@ -684,6 +750,10 @@ var statecharts = (function() {
     }
   }
 
+  StatechartRenderer.prototype.hitTestTransition = function(transition, p, mode) {
+    return diagrams.hitTestBezier(transition._bezier, p, this.hitTolerance);
+  }
+
   StatechartRenderer.prototype.draw = function(item, mode) {
     switch (item.type) {
       case 'state':
@@ -702,56 +772,6 @@ var statecharts = (function() {
         this.drawStatechart(item, mode);
         break;
     }
-  }
-
-  StatechartRenderer.prototype.getStateMinSize = function(state) {
-    var ctx = this.ctx, theme = this.theme, r = this.radius,
-        width = this.stateMinWidth, height = this.stateMinHeight,
-        metrics;
-    if (state.type != 'state')
-      return;
-    width = Math.max(width, ctx.measureText(state.name).width + 2 * r);
-    height = Math.max(height, theme.fontSize + this.textLeading);
-    return { width: width, height: height };
-  }
-
-  StatechartRenderer.prototype.hitTestState = function(state, p, mode) {
-    var theme = this.theme, tol = this.hitTolerance, r = this.radius,
-        rect = this.getItemRect(state),
-        x = rect.x, y = rect.y, w = rect.w, h = rect.h;
-    var lineBase = y + theme.fontSize + this.textLeading,
-        knobbyRadius = this.knobbyRadius;
-    if (diagrams.hitPoint(x + w + this.arrowSize, lineBase, p, tol))
-      return { arrow: true };
-    return diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
-  }
-
-  StatechartRenderer.prototype.hitTestStatechart = function(statechart, p, mode) {
-    var tol = this.hitTolerance, r = this.radius,
-        rect = this.getItemRect(statechart),
-        x = rect.x, y = rect.y, w = rect.w, h = rect.h;
-    return diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
-  }
-
-  StatechartRenderer.prototype.hitTestPseudoState = function(state, p, mode) {
-    var tol = this.hitTolerance, r = this.radius,
-        rect = this.getItemRect(state),
-        x = rect.x, y = rect.y;
-    if (diagrams.hitPoint(x + 2 * r + this.arrowSize, y + r, p, tol))
-      return { arrow: true };
-
-    return diagrams.hitTestDisk(x + r, y + r, r, p, tol);
-  }
-
-  StatechartRenderer.prototype.hitTestCircuit = function(circuit, p, mode) {
-    var theme = this.theme, tol = this.hitTolerance, r = this.radius,
-        rect = this.getItemRect(circuit),
-        x = rect.x, y = rect.y, w = rect.w, h = rect.h;
-    return diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
-  }
-
-  StatechartRenderer.prototype.hitTestTransition = function(transition, p, mode) {
-    return diagrams.hitTestBezier(transition._bezier, p, this.hitTolerance);
   }
 
   StatechartRenderer.prototype.hitTest = function(item, p, mode) {
