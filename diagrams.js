@@ -484,7 +484,7 @@ CanvasPanZoomLayer.prototype.initialize = function(canvasController) {
   canvasController.canvas.addEventListener('mousewheel', function(e) {
     var pan = self.pan, zoom = self.zoom,
         center = { x: e.offsetX, y: e.offsetY },
-        dZoom = 1.0 + e.wheelDelta / 2048,
+        dZoom = 1.0 + e.wheelDelta / 8192,
         newZoom = zoom * dZoom;
     newZoom = Math.max(self.minZoom, Math.min(self.maxZoom, newZoom));
     dZoom = newZoom / zoom;

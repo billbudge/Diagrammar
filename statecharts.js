@@ -13,10 +13,6 @@ var statecharts = (function() {
     return item.type == 'state' || isPseudostate(item);
   }
 
-  function isStatechartContent(item) {
-    return item.type == 'state' || item.type == 'circuit' || isPseudostate(item);
-  }
-
   function isTrueState(item) {
     return item.type == 'state';
   }
@@ -475,7 +471,7 @@ var statecharts = (function() {
     master.height = 4 + height;
   }
 
-  StatechartRenderer.prototype.updateTransition = function(transition) {
+  StatechartRenderer.prototype.layoutTransition = function(transition) {
     var referencingModel = this.model.referencingModel,
         v1 = referencingModel.resolveReference(transition, 'srcId'),
         v2 = referencingModel.resolveReference(transition, 'dstId'),
@@ -496,12 +492,15 @@ var statecharts = (function() {
   }
 
   function drawJunction(renderer, x, y) {
-    var ctx = renderer.ctx, r = renderer.knobbyRadius;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, 2 * Math.PI);
+    var ctx = renderer.ctx, r = renderer.knobbyRadius, d = 2 * r;
+    // ctx.beginPath();
+    // ctx.arc(x, y, r, 0, 2 * Math.PI);
+    // ctx.fillStyle = renderer.theme.bgColor;
+    // ctx.fill();
+    // ctx.stroke();
     ctx.fillStyle = renderer.theme.bgColor;
-    ctx.fill();
-    ctx.stroke();
+    ctx.fillRect(x - r, y - r, d, d);
+    ctx.strokeRect(x - r, y - r, d, d);
   }
 
   function drawArrow(renderer, x, y) {
@@ -898,7 +897,7 @@ var statecharts = (function() {
 
   Editor.prototype.addTemporaryItem = function(item) {
     if (isTransition(item))
-      this.renderer.updateTransition(item);
+      this.renderer.layoutTransition(item);
     this.model.observableModel.changeValue(this.statechart, '_temporary', item);
   }
 
@@ -916,14 +915,11 @@ var statecharts = (function() {
         ctx = this.ctx, canvasController = this.canvasController;
     renderer.beginDraw();
     canvasController.applyTransform();
-    visit(palette.root, isTransition, function(transition) {
-      renderer.updateTransition(transition);
-    });
     visit(statechart, isTransition, function(transition) {
-      renderer.updateTransition(transition);
+      renderer.layoutTransition(transition);
     });
 
-    visit(statechart, isStatechartContent, function(item) {
+    visit(statechart, isContainable, function(item) {
       renderer.draw(item, normalMode);
     });
     visit(statechart, isTransition, function(transition) {
@@ -950,7 +946,7 @@ var statecharts = (function() {
       renderer.beginDraw();
       canvasController.applyTransform();
       if (isTransition(temporary))
-        renderer.updateTransition(temporary);
+        renderer.layoutTransition(temporary);
       renderer.draw(temporary, normalMode);
       renderer.endDraw();
     }
@@ -1039,12 +1035,12 @@ var statecharts = (function() {
       return false;
     var dragItem = mouseHitInfo.item, type = dragItem.type,
         model = this.model,
-        drag = null;
+        drag = null,
+        newItem = null;
     if (this.isPaletteItem(dragItem)) {
       // Clone palette item and add the clone to the top level statechart. Don't
       // notify observers yet.
-      dragItem = model.instancingModel.clone(dragItem);
-      this.addTemporaryItem(dragItem);
+      newItem = dragItem = model.instancingModel.clone(dragItem);
       drag = {
         type: 'paletteItem',
         name: 'Add new ' + dragItem.type,
@@ -1098,6 +1094,8 @@ var statecharts = (function() {
         this.model.editingModel.reduceSelection();
       drag.item = dragItem;
       model.transactionModel.beginTransaction(drag.name);
+      if (newItem)
+        this.addTemporaryItem(newItem);
     }
   }
 
