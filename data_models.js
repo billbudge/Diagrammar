@@ -9,15 +9,9 @@ var dataModels = (function () {
 var dataModel = (function () {
   var proto = {
     // Returns unique id (number) for an item, to allow references to be
-    // resolved. Only items have ids and can be referenced. Zero is an invalid
-    // id and can be used to signal null.
+    // resolved. Only items have ids and can be referenced. 0 is an invalid id.
     getId: function (item) {
       return item.id;
-    },
-
-    // Assign a unique id to the item.
-    assignId: function (item) {
-      item.id = this.nextId++;
     },
 
     isItem: function (value) {
@@ -87,6 +81,23 @@ var dataModel = (function () {
         self.visitSubtree(child, itemFn);
       });
     },
+
+    addInitializer: function(initialize) {
+      this.initializers.push(initialize);
+    },
+
+    initialize: function (item) {
+      this.initializers.forEach(function(initializer) {
+        initializer(item);
+      });
+    },
+
+    initializeAll: function() {
+      var self = this;
+      this.visitSubtree(this.model.root, function(item) {
+        self.initialize(item);
+      });
+    },
   }
 
   function extend(model) {
@@ -105,6 +116,14 @@ var dataModel = (function () {
       });
     // Note that this dataModel will never assign an id of 0.
     instance.nextId = maxId + 1;
+
+    instance.initializers = [];
+    // Assign a unique id when items are created.
+    instance.addInitializer(function(item) {
+      // 0 is not a valid id in this model.
+      if (!item.id)
+        item.id = instance.nextId++;
+    });
 
     model.dataModel = instance;
     return instance;
@@ -776,7 +795,7 @@ var instancingModel = (function () {
       });
       // Assign unique id after cloning all properties.
       if (!Array.isArray(copy)) {
-        this.model.dataModel.assignId(copy);
+        this.model.dataModel.initialize(copy);
         if (map) {
           var id = this.model.dataModel.getId(item);
           map.add(id, copy);

@@ -360,24 +360,25 @@ CanvasController.prototype.onMouseDown = function(e) {
 }
 
 CanvasController.prototype.onMouseMove = function(e) {
-  var mouse = this.mouse = { x: e.offsetX, y: e.offsetY };
+  var mouse = this.mouse = { x: e.offsetX, y: e.offsetY },
+      click = this.click;
   if (this.clickOwner) {
-    var dx = mouse.x - this.click.x,
-        dy = mouse.y - this.click.y;
+    var dx = mouse.x - click.x,
+        dy = mouse.y - click.y;
     if (!this.isDragging) {
       this.isDragging = Math.abs(dx) >= this.dragThreshold ||
                         Math.abs(dy) >= this.dragThreshold;
       if (this.isDragging) {
         this.cancelHover_();
-        this.clickOwner.onBeginDrag();
+        this.clickOwner.onBeginDrag(click);
       }
     }
     if (this.isDragging) {
-      this.clickOwner.onDrag(this.click, mouse);
+      this.clickOwner.onDrag(click, mouse);
       this.draw();
     }
   }
-  if (!this.click)
+  if (!click)
     this.startHover_();
 }
 
@@ -510,7 +511,7 @@ CanvasPanZoomLayer.prototype.onClick = function(p) {
   return true;
 }
 
-CanvasPanZoomLayer.prototype.onBeginDrag = function() {
+CanvasPanZoomLayer.prototype.onBeginDrag = function(p0) {
   this.pan0 = this.pan;
 }
 

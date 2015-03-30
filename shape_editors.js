@@ -578,27 +578,27 @@ var shapes = (function() {
     return mouseHitInfo != null;
   }
 
-  Editor.prototype.onBeginDrag = function() {
+  Editor.prototype.onBeginDrag = function(p0) {
     if (!this.mouseHitInfo)
       return;
     var mouseHitInfo = this.mouseHitInfo,
-        item = mouseHitInfo.item,
+        dragItem = mouseHitInfo.item,
         model = this.model,
         drag;
-    if (this.isPaletteItem(item)) {
+    if (this.isPaletteItem(dragItem)) {
       // Clone palette item and add the clone to the board. Don't notify
       // observers yet.
-      item = model.instancingModel.clone(item);
-      this.addTemporaryItem(item);
+      dragItem = model.instancingModel.clone(dragItem);
+      this.addTemporaryItem(dragItem);
       drag = {
         type: 'paletteItem',
-        name: 'Add new ' + item.type,
+        name: 'Add new ' + dragItem.type,
       }
-      var cp = this.canvasController.viewToCanvas({ x: item.x, y: item.y });
-      item.x = cp.x;
-      item.y = cp.y;
+      var cp = this.canvasController.viewToCanvas(dragItem);
+      dragItem.x = cp.x;
+      dragItem.y = cp.y;
     } else {
-      switch (item.type) {
+      switch (dragItem.type) {
         case 'disk':
           if (mouseHitInfo.resizer)
             drag = { type: 'resizeDisk', name: 'Resize disk' };
@@ -633,7 +633,7 @@ var shapes = (function() {
     if (drag) {
       if (drag.type == 'moveSelection')
         model.editingModel.reduceSelection();
-      drag.item = item;
+      drag.item = dragItem;
       this.drag = drag;
       model.transactionModel.beginTransaction(drag.name);
     }
@@ -809,7 +809,7 @@ var shapes = (function() {
             y: newItem.y,
             items: [ newItem ],
           };
-          model.dataModel.assignId(group);
+          model.dataModel.initialize(group);
           newItem.x = 0;
           newItem.y = 0;
           newItem = group;

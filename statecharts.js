@@ -26,7 +26,7 @@ var statecharts = (function() {
   }
 
   function isContainable(item) {
-    return item.type != 'transition';
+    return item.type != 'transition' && item.type != 'wire';
   }
 
   function isTransition(item) {
@@ -206,7 +206,7 @@ var statecharts = (function() {
           name: '',
           items: [ item ],
         };
-        this.model.dataModel.assignId(statechart);
+        this.model.dataModel.initialize(statechart);
         return statechart;
       },
 
@@ -831,9 +831,7 @@ var statecharts = (function() {
     this.statechart = model.root;
     this.renderer = renderer;
 
-    editingModel.extend(model);
-
-    var circuitTypes = {
+    var circuitMasters = this.circuitMasters = {
       // Each event has an un-named guard input and the event name. Make the
       // event name the input name, since that's how we want to lay it out.
       event1: {
@@ -878,21 +876,34 @@ var statecharts = (function() {
             type: 'circuit',
             x: 32,
             y: 104,
-            _master: circuitTypes.event1,
+            master: 'event1',
           },
           {
             type: 'circuit',
             x: 32,
             y: 160,
-            _master: circuitTypes.or,
+            master: 'or',
           },
         ]
       }
     }
 
+    function initialize(item) {
+      if (item.type == 'circuit') {
+        item._master = circuitMasters[item.master];
+      }
+    }
+
+    editingModel.extend(model);
+
     dataModels.observableModel.extend(palette);
     dataModels.hierarchicalModel.extend(palette);
     dataModels.transformableModel.extend(palette);
+    palette.dataModel.addInitializer(initialize);
+    palette.dataModel.initializeAll();
+
+    model.dataModel.addInitializer(initialize);
+    model.dataModel.initializeAll();
   }
 
   Editor.prototype.initialize = function(canvasController) {
@@ -903,11 +914,8 @@ var statecharts = (function() {
     if (!this.renderer)
       this.renderer = new StatechartRenderer(this.model, ctx, canvasController.theme);
     var renderer = this.renderer;
-    this.palette.root.items.forEach(function(item) {
-      if (item.type == 'circuit') {
-        renderer.layoutCircuitMaster(item._master);
-      }
-    })
+    for (var master in this.circuitMasters)
+      renderer.layoutCircuitMaster(this.circuitMasters[master]);
   }
 
   Editor.prototype.isPaletteItem = function(item) {
@@ -916,8 +924,8 @@ var statecharts = (function() {
   }
 
   Editor.prototype.addTemporaryItem = function(item) {
-    if (isTransition(item))
-      this.renderer.layoutTransition(item);
+    // if (isTransition(item))
+    //   this.renderer.layoutTransition(item);
     this.model.observableModel.changeValue(this.statechart, '_temporary', item);
   }
 
@@ -1049,24 +1057,22 @@ var statecharts = (function() {
     return mouseHitInfo != null;
   }
 
-  Editor.prototype.onBeginDrag = function() {
-    var mouseHitInfo = this.mouseHitInfo;
+  Editor.prototype.onBeginDrag = function(p0) {
+    var mouseHitInfo = this.mouseHitInfo,
+        canvasController = this.canvasController;
     if (!mouseHitInfo)
       return false;
     var dragItem = mouseHitInfo.item, type = dragItem.type,
         model = this.model,
-        drag = null,
-        newItem = null;
+        drag, newItem;
     if (this.isPaletteItem(dragItem)) {
-      // Clone palette item and add the clone to the top level statechart. Don't
-      // notify observers yet.
       newItem = dragItem = model.instancingModel.clone(dragItem);
       drag = {
         type: 'paletteItem',
         name: 'Add new ' + dragItem.type,
         isNewItem: true,
       }
-      var cp = this.canvasController.viewToCanvas({ x: dragItem.x, y: dragItem.y });
+      var cp = canvasController.viewToCanvas(dragItem);
       dragItem.x = cp.x;
       dragItem.y = cp.y;
       // Set master for circuit items.
@@ -1076,19 +1082,16 @@ var statecharts = (function() {
       switch (type) {
         case 'state':
         case 'start':
-        case 'circuit':
           if (mouseHitInfo.arrow) {
-            var stateId = model.dataModel.getId(dragItem);
+            var stateId = model.dataModel.getId(dragItem),
+                p2 = canvasController.viewToCanvas(p0);
             // Start the new transition as connecting the src state to itself.
-            dragItem = {
+            newItem = dragItem = {
               type: 'transition',
               srcId: stateId,
               t1: 0,
-              dstId: stateId,
-              t2: 0,
+              _p2: p2,
             };
-            model.dataModel.assignId(dragItem),
-            this.addTemporaryItem(dragItem);
             drag = {
               type: 'connectingP2',
               name: 'Add new transition',
@@ -1096,6 +1099,27 @@ var statecharts = (function() {
             };
           } else if (type == 'state' && mouseHitInfo.border) {
             drag = { type: 'resizeState', name: 'Resize state' };
+          } else {
+            drag = { type: 'moveSelection', name: 'Move selection' };
+          }
+          break;
+        case 'circuit':
+          // We can only create a wire from an output pin for now.
+          if (mouseHitInfo.output !== undefined) {
+            var circuitId = model.dataModel.getId(dragItem),
+                p2 = canvasController.viewToCanvas(p0);
+            // Start the new transition as connecting the src state to itself.
+            newItem = dragItem = {
+              type: 'wire',
+              srcId: circuitId,
+              output: mouseHitInfo.output,
+              _p2: p2,
+            };
+            drag = {
+              type: 'connectingW2',
+              name: 'Add new wire',
+              isNewItem: true,
+            };
           } else {
             drag = { type: 'moveSelection', name: 'Move selection' };
           }
@@ -1114,8 +1138,10 @@ var statecharts = (function() {
         this.model.editingModel.reduceSelection();
       drag.item = dragItem;
       model.transactionModel.beginTransaction(drag.name);
-      if (newItem)
+      if (newItem) {
+        model.dataModel.initialize(newItem),
         this.addTemporaryItem(newItem);
+      }
     }
   }
 
@@ -1369,6 +1395,134 @@ var statechart_data = {
     {
       "type": "start",
       "id": 1002,
+      "x": 181,
+      "y": 40
+    },
+    {
+      "type": "state",
+      "id": 1003,
+      "x": 207,
+      "y": 81,
+      "width": 326.52224878096933,
+      "height": 200,
+      "name": "State_1",
+      "items": [
+        {
+          "type": "statechart",
+          "id": 1004,
+          "x": 0,
+          "y": 0,
+          "width": 326.52224878096933,
+          "height": 200,
+          "items": [
+            {
+              "type": "state",
+              "id": 1005,
+              "x": 29,
+              "y": 53,
+              "width": 100,
+              "height": 60,
+              "name": "State_3",
+              "items": []
+            },
+            {
+              "type": "state",
+              "id": 1006,
+              "x": 218.52224878096933,
+              "y": 30.539545265991876,
+              "width": 100,
+              "height": 60,
+              "name": "State_4"
+            },
+            {
+              "type": "start",
+              "x": 9,
+              "y": 23,
+              "id": 1012
+            },
+            {
+              "type": "circuit",
+              "x": 225.6317484169972,
+              "y": 119.02496888866085,
+              "master": "or",
+              "id": 1015
+            },
+            {
+              "type": "circuit",
+              "x": 92.36406771700172,
+              "y": 24.604547340081055,
+              "master": "event1",
+              "id": 1017
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "state",
+      "id": 1007,
+      "x": 545,
+      "y": 222,
+      "width": 300,
+      "height": 200,
+      "name": "State_2",
+      "items": []
+    },
+    {
+      "type": "transition",
+      "srcId": 1003,
+      "t1": 0.5975,
+      "id": 1009,
+      "dstId": 1007,
+      "t2": 3.3758169934640523
+    },
+    {
+      "type": "transition",
+      "srcId": 1002,
+      "t1": 0.431442498944115,
+      "id": 1010,
+      "dstId": 1003,
+      "t2": 3.1258503401360542
+    },
+    {
+      "type": "transition",
+      "srcId": 1012,
+      "t1": 0.42955342504544625,
+      "id": 1013,
+      "dstId": 1005,
+      "t2": 3.2636363636363637
+    },
+    {
+      "type": "transition",
+      "srcId": 1005,
+      "t1": 0.584127478385535,
+      "id": 1018,
+      "dstId": 1006,
+      "t2": 2.4502947345221404
+    },
+    {
+      "type": "transition",
+      "id": 1008,
+      "srcId": 1003,
+      "t1": 1.4019607843137254,
+      "dstId": 1007,
+      "t2": 2.3
+    }
+  ]
+}
+/*
+{
+  "type": "statechart",
+  "id": 1001,
+  "x": 0,
+  "y": 0,
+  "width": 853,
+  "height": 430,
+  "name": "Example",
+  "items": [
+    {
+      "type": "start",
+      "id": 1002,
       "x": 165,
       "y": 83
     },
@@ -1432,3 +1586,4 @@ var statechart_data = {
     }
   ]
 }
+*/
