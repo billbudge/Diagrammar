@@ -551,8 +551,8 @@ var theme = (function() {
     normal: {
       bgColor: 'white',
       altBgColor: '#F0F0F0',
-      strokeColor: '#909090',
-      textColor: '#707070',
+      strokeColor: '#505050',
+      textColor: '#505050',
       highlightColor: '#40F040',
       hotTrackColor: 'blue',
       dimColor: '#c0c0c0',

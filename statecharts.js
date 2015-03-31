@@ -33,8 +33,12 @@ var statecharts = (function() {
     return item.type == 'transition';
   }
 
-  function isEvent(item) {
-    return item.type == 'event';
+  function isWire(item) {
+    return item.type == 'wire';
+  }
+
+  function isConnection(item) {
+    return item.type == 'transition' || item.type == 'wire';
   }
 
   function visit(item, filterFn, itemFn) {
@@ -448,6 +452,34 @@ var statecharts = (function() {
     return diagrams.circleParamToPoint(rect.x + r, rect.y + r, r, t);
   }
 
+  StatechartRenderer.prototype.pinToPoint = function(item, pin, input) {
+    if (isTransition(item)) {
+      // pin === 0, input === true.
+      var mid = item._mid;
+      return { x: mid.x, y: mid.y };
+    }
+    // Otherwise, it's a state or circuit element.
+    var rect = this.getItemRect(item),
+        x = rect.x, y = rect.y, w = rect.w, h = rect.h,
+        textSize = this.theme.fontSize,
+        knobbyRadius = this.knobbyRadius;
+    if (isTrueState(item)) {
+      y += this.radius + knobbyRadius;
+    } else {
+      // Circuit.
+      y += textSize / 2;
+      if (item._master.name)
+        y += textSize;
+    }
+
+    return {
+      x: input ? x + knobbyRadius : x + w - knobbyRadius,
+      y: y + pin * textSize,
+      nx: input ? -1 : 1,
+      ny: 0,
+    }
+  }
+
   StatechartRenderer.prototype.getStateMinSize = function(state) {
     var ctx = this.ctx, theme = this.theme, r = this.radius,
         width = this.stateMinWidth, height = this.stateMinHeight,
@@ -457,44 +489,6 @@ var statecharts = (function() {
     width = Math.max(width, ctx.measureText(state.name).width + 2 * r);
     height = Math.max(height, theme.fontSize + this.textLeading);
     return { width: width, height: height };
-  }
-
-  StatechartRenderer.prototype.layoutCircuitMaster = function(master) {
-    var ctx = this.ctx, theme = this.theme,
-        textSize = theme.fontSize, knobbyRadius = this.knobbyRadius,
-        name = master.name, inputs = master.inputs, outputs = master.outputs,
-        inputsLength = inputs.length, outputsLength = outputs.length,
-        rows = Math.max(inputsLength, outputsLength),
-        height = rows * textSize,
-        gutter = 2 * knobbyRadius + 4,
-        maxWidth = 0;
-    if (name) {
-      maxWidth = ctx.measureText(name).width;
-      height += textSize;
-    }
-    for (var i = 0; i < rows; i++) {
-      var inWidth = (i < inputsLength) ? ctx.measureText(inputs[i].name).width : 0,
-          outWidth = (i < outputsLength) ? ctx.measureText(outputs[i].name).width : 0,
-          width = inWidth + 16 + outWidth,
-          maxWidth = Math.max(maxWidth, width);
-    }
-    master.width = gutter + maxWidth + gutter;
-    master.height = 4 + height;
-  }
-
-  StatechartRenderer.prototype.layoutTransition = function(transition) {
-    var referencingModel = this.model.referencingModel,
-        v1 = referencingModel.resolveReference(transition, 'srcId'),
-        v2 = referencingModel.resolveReference(transition, 'dstId'),
-        p1 = transition._p1, p2 = transition._p2;
-
-    if (v1)
-      p1 = this.stateParamToPoint(v1, transition.t1);
-    if (v2)
-      p2 = this.stateParamToPoint(v2, transition.t2);
-
-    transition._bezier = diagrams.getEdgeBezier(p1, p2);
-    transition._mid = EvaluateCurveSegment(transition._bezier, 0.5);
   }
 
   function drawKnobby(renderer, x, y) {
@@ -583,6 +577,8 @@ var statecharts = (function() {
         knobbyRadius = this.knobbyRadius;
     if (diagrams.hitPoint(x + w + this.arrowSize, lineBase, p, tol))
       return { arrow: true };
+    if (diagrams.hitPoint(x + w - knobbyRadius, y + r + knobbyRadius, p, tol))
+      return { output: 0 };
     return diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
   }
 
@@ -648,6 +644,29 @@ var statecharts = (function() {
     return diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
   }
 
+  StatechartRenderer.prototype.layoutCircuitMaster = function(master) {
+    var ctx = this.ctx, theme = this.theme,
+        textSize = theme.fontSize, knobbyRadius = this.knobbyRadius,
+        name = master.name, inputs = master.inputs, outputs = master.outputs,
+        inputsLength = inputs.length, outputsLength = outputs.length,
+        rows = Math.max(inputsLength, outputsLength),
+        height = rows * textSize,
+        gutter = 2 * knobbyRadius + 4,
+        maxWidth = 0;
+    if (name) {
+      maxWidth = ctx.measureText(name).width;
+      height += textSize;
+    }
+    for (var i = 0; i < rows; i++) {
+      var inWidth = (i < inputsLength) ? ctx.measureText(inputs[i].name).width : 0,
+          outWidth = (i < outputsLength) ? ctx.measureText(outputs[i].name).width : 0,
+          width = inWidth + 16 + outWidth,
+          maxWidth = Math.max(maxWidth, width);
+    }
+    master.width = gutter + maxWidth + gutter;
+    master.height = 4 + height;
+  }
+
   StatechartRenderer.prototype.drawCircuit = function(circuit, mode) {
     var self = this, ctx = this.ctx, theme = this.theme, r = this.radius,
         master = circuit._master,
@@ -700,10 +719,10 @@ var statecharts = (function() {
   }
 
   StatechartRenderer.prototype.hitTestCircuit = function(circuit, p, mode) {
-    var tol = this.hitTolerance, r = this.radius,
+    var tol = this.hitTolerance,
         rect = this.getItemRect(circuit),
         x = rect.x, y = rect.y, w = rect.w, h = rect.h,
-        hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
+        hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol);
     if (hitInfo) {
       var textSize = this.theme.fontSize,
           knobbyRadius = this.knobbyRadius,
@@ -716,6 +735,7 @@ var statecharts = (function() {
         var top = baseLine + i * textSize;
         if (diagrams.hitPoint(x + knobbyRadius, top - textSize / 2, p, tol))
           hitInfo.input = i;
+        //TODO should return here.
       });
       outputs.forEach(function(output, i) {
         var top = baseLine + i * textSize;;
@@ -726,8 +746,23 @@ var statecharts = (function() {
     return hitInfo;
   }
 
+  StatechartRenderer.prototype.layoutTransition = function(transition) {
+    var referencingModel = this.model.referencingModel,
+        v1 = referencingModel.resolveReference(transition, 'srcId'),
+        v2 = referencingModel.resolveReference(transition, 'dstId'),
+        p1 = transition._p1, p2 = transition._p2;
+
+    if (v1)
+      p1 = this.stateParamToPoint(v1, transition.t1);
+    if (v2)
+      p2 = this.stateParamToPoint(v2, transition.t2);
+
+    transition._bezier = diagrams.getEdgeBezier(p1, p2);
+    transition._mid = EvaluateCurveSegment(transition._bezier, 0.5);
+  }
+
   StatechartRenderer.prototype.drawTransition = function(transition, mode) {
-    var ctx = this.ctx, mid = transition._mid;
+    var ctx = this.ctx;
     diagrams.bezierEdgePath(transition._bezier, ctx, this.arrowSize);
     switch (mode) {
       case normalMode:
@@ -735,6 +770,7 @@ var statecharts = (function() {
         ctx.lineWidth = 1;
         ctx.stroke();
         ctx.lineWidth = 0.25;
+        var mid = transition._mid;
         drawJunction(this, mid.x, mid.y);
         break;
       case highlightMode:
@@ -751,7 +787,58 @@ var statecharts = (function() {
   }
 
   StatechartRenderer.prototype.hitTestTransition = function(transition, p, mode) {
-    return diagrams.hitTestBezier(transition._bezier, p, this.hitTolerance);
+    var tol = this.hitTolerance, mid = transition._mid;
+    if (diagrams.hitPoint(mid.x, mid.y, p, tol))
+      return { input: 0 };
+    return diagrams.hitTestBezier(transition._bezier, p, tol);
+  }
+
+  StatechartRenderer.prototype.layoutWire = function(wire) {
+    var referencingModel = this.model.referencingModel,
+        c1 = referencingModel.resolveReference(wire, 'outId'),
+        c2 = referencingModel.resolveReference(wire, 'inId'),
+        p1 = wire._p1, p2 = wire._p2;
+
+    if (c1)
+      p1 = this.pinToPoint(c1, wire.outPin, false);
+    if (c2)
+      p2 = this.pinToPoint(c2, wire.inPin, true);
+    wire._bezier = diagrams.getEdgeBezier(p1, p2);
+  }
+
+  StatechartRenderer.prototype.drawWire = function(wire, mode) {
+    var ctx = this.ctx;
+    diagrams.bezierEdgePath(wire._bezier, ctx, 0);
+    switch (mode) {
+      case normalMode:
+        ctx.strokeStyle = theme.strokeColor;
+        ctx.lineWidth = 1;
+        break;
+      case highlightMode:
+        ctx.strokeStyle = theme.highlightColor;
+        ctx.lineWidth = 2;
+        break;
+      case hotTrackMode:
+        ctx.strokeStyle = theme.hotTrackColor;
+        ctx.lineWidth = 2;
+        break;
+    }
+    ctx.stroke();
+  }
+
+  StatechartRenderer.prototype.hitTestWire = function(wire, p, mode) {
+    return diagrams.hitTestBezier(wire._bezier, p, this.hitTolerance);
+  }
+
+  StatechartRenderer.prototype.layout = function(item) {
+    switch (item.type) {
+      case 'transition':
+        this.layoutTransition(item);
+        break;
+      case 'wire':
+        this.layoutWire(item);
+        break;
+    }
   }
 
   StatechartRenderer.prototype.draw = function(item, mode) {
@@ -767,6 +854,9 @@ var statecharts = (function() {
         break;
       case 'transition':
         this.drawTransition(item, mode);
+        break;
+      case 'wire':
+        this.drawWire(item, mode);
         break;
       case 'statechart':
         this.drawStatechart(item, mode);
@@ -788,6 +878,9 @@ var statecharts = (function() {
         break;
       case 'transition':
         hitInfo = this.hitTestTransition(item, p, mode);
+        break;
+      case 'wire':
+        hitInfo = this.hitTestWire(item, p, mode);
         break;
       case 'statechart':
         hitInfo = this.hitTestStatechart(item, p, mode);
@@ -943,14 +1036,14 @@ var statecharts = (function() {
         ctx = this.ctx, canvasController = this.canvasController;
     renderer.beginDraw();
     canvasController.applyTransform();
-    visit(statechart, isTransition, function(transition) {
-      renderer.layoutTransition(transition);
+    visit(statechart, isConnection, function(item) {
+      renderer.layout(item);
     });
 
     visit(statechart, isContainable, function(item) {
       renderer.draw(item, normalMode);
     });
-    visit(statechart, isTransition, function(transition) {
+    visit(statechart, isConnection, function(transition) {
       renderer.draw(transition, normalMode);
     });
 
@@ -973,8 +1066,8 @@ var statecharts = (function() {
     if (temporary) {
       renderer.beginDraw();
       canvasController.applyTransform();
-      if (isTransition(temporary))
-        renderer.layoutTransition(temporary);
+      if (isConnection(temporary))
+        renderer.layout(temporary);
       renderer.draw(temporary, normalMode);
       renderer.endDraw();
     }
@@ -1001,7 +1094,7 @@ var statecharts = (function() {
       pushInfo(renderer.hitTest(item, p));
     });
     // TODO hit test selection in highlightMode.
-    reverseVisit(statechart, isTransition, function(transition) {
+    reverseVisit(statechart, isConnection, function(transition) {
       pushInfo(renderer.hitTest(transition, cp));
     });
     reverseVisit(statechart, isContainable, function(item) {
@@ -1026,6 +1119,14 @@ var statecharts = (function() {
 
   function isDraggable(hitInfo, model) {
     return !isStatechart(hitInfo.item);
+  }
+
+  function isInputPin(hitInfo, model) {
+    return hitInfo.input !== undefined;
+  }
+
+  function isOutputPin(hitInfo, model) {
+    return hitInfo.output !== undefined;
   }
 
   function isContainerTarget(hitInfo, model) {
@@ -1075,60 +1176,61 @@ var statecharts = (function() {
       var cp = canvasController.viewToCanvas(dragItem);
       dragItem.x = cp.x;
       dragItem.y = cp.y;
-      // Set master for circuit items.
-      if (dragItem.type == 'circuit')
-        dragItem._master = mouseHitInfo.item._master;
+    } else if (mouseHitInfo.arrow) {
+      var stateId = model.dataModel.getId(dragItem),
+          p2 = canvasController.viewToCanvas(p0);
+      // Start the new transition as connecting the src state to itself.
+      newItem = dragItem = {
+        type: 'transition',
+        srcId: stateId,
+        t1: 0,
+        _p2: p2,
+      };
+      drag = {
+        type: 'connectingP2',
+        name: 'Add new transition',
+        isNewItem: true,
+      };
+    } else if (mouseHitInfo.output !== undefined) {
+        // We can only create a wire from an output pin for now.
+        var circuitId = model.dataModel.getId(dragItem),
+            p2 = canvasController.viewToCanvas(p0);
+        // Start the new transition as connecting the src state to itself.
+        newItem = dragItem = {
+          type: 'wire',
+          outId: circuitId,
+          outPin: mouseHitInfo.output,
+          _p2: p2,
+        };
+        drag = {
+          type: 'connectingW2',
+          name: 'Add new wire',
+          isNewItem: true,
+        };
     } else {
       switch (type) {
         case 'state':
         case 'start':
-          if (mouseHitInfo.arrow) {
-            var stateId = model.dataModel.getId(dragItem),
-                p2 = canvasController.viewToCanvas(p0);
-            // Start the new transition as connecting the src state to itself.
-            newItem = dragItem = {
-              type: 'transition',
-              srcId: stateId,
-              t1: 0,
-              _p2: p2,
-            };
-            drag = {
-              type: 'connectingP2',
-              name: 'Add new transition',
-              isNewItem: true,
-            };
-          } else if (type == 'state' && mouseHitInfo.border) {
+          if (type == 'state' && mouseHitInfo.border) {
             drag = { type: 'resizeState', name: 'Resize state' };
           } else {
             drag = { type: 'moveSelection', name: 'Move selection' };
           }
           break;
         case 'circuit':
-          // We can only create a wire from an output pin for now.
-          if (mouseHitInfo.output !== undefined) {
-            var circuitId = model.dataModel.getId(dragItem),
-                p2 = canvasController.viewToCanvas(p0);
-            // Start the new transition as connecting the src state to itself.
-            newItem = dragItem = {
-              type: 'wire',
-              srcId: circuitId,
-              output: mouseHitInfo.output,
-              _p2: p2,
-            };
-            drag = {
-              type: 'connectingW2',
-              name: 'Add new wire',
-              isNewItem: true,
-            };
-          } else {
-            drag = { type: 'moveSelection', name: 'Move selection' };
-          }
+          drag = { type: 'moveSelection', name: 'Move selection' };
           break;
         case 'transition':
           if (mouseHitInfo.p1)
             drag = { type: 'connectingP1', name: 'Edit transition' };
           else if (mouseHitInfo.p2)
             drag = { type: 'connectingP2', name: 'Edit transition' };
+          break;
+        case 'wire':
+          if (mouseHitInfo.p1)
+            drag = { type: 'connectingW1', name: 'Edit wire' };
+          else if (mouseHitInfo.p2)
+            drag = { type: 'connectingW2', name: 'Edit wire' };
           break;
       }
     }
@@ -1164,7 +1266,7 @@ var statecharts = (function() {
         mouseHitInfo = this.mouseHitInfo,
         snapshot = transactionModel.getSnapshot(drag.item),
         hitList = this.hitTest(p), hitInfo,
-        srcState, dstState, srcStateId, dstStateId, t1, t2;
+        src, dst, srcId, dstId, t1, t2;
     switch (drag.type) {
       case 'paletteItem':
         if (isContainable(dragItem))
@@ -1202,11 +1304,11 @@ var statecharts = (function() {
         break;
       case 'connectingP1':
         hitInfo = this.getFirstHit(hitList, isStateBorder);
-        srcStateId = hitInfo ? dataModel.getId(hitInfo.item) : 0;
-        observableModel.changeValue(dragItem, 'srcId', srcStateId);
-        srcState = referencingModel.getReference(dragItem, 'srcId');
-        if (srcState) {
-          t1 = renderer.statePointToParam(srcState, cp);
+        srcId = hitInfo ? dataModel.getId(hitInfo.item) : 0;
+        observableModel.changeValue(dragItem, 'srcId', srcId);
+        src = referencingModel.getReference(dragItem, 'srcId');
+        if (src) {
+          t1 = renderer.statePointToParam(src, cp);
           observableModel.changeValue(dragItem, 't1', t1);
         } else {
           dragItem._p1 = cp;
@@ -1214,16 +1316,41 @@ var statecharts = (function() {
         break;
       case 'connectingP2':
         if (drag.isNewItem) {
-          srcState = referencingModel.getReference(dragItem, 'srcId');
-          observableModel.changeValue(dragItem, 't1', renderer.statePointToParam(srcState, cp));
+          src = referencingModel.getReference(dragItem, 'srcId');
+          observableModel.changeValue(dragItem, 't1', renderer.statePointToParam(src, cp));
         }
         hitInfo = this.getFirstHit(hitList, isStateBorder);
-        dstStateId = hitInfo ? dataModel.getId(hitInfo.item) : 0;
-        observableModel.changeValue(dragItem, 'dstId', dstStateId);
-        dstState = referencingModel.getReference(dragItem, 'dstId');
-        if (dstState) {
-          t2 = renderer.statePointToParam(dstState, cp);
+        dstId = hitInfo ? dataModel.getId(hitInfo.item) : 0;
+        observableModel.changeValue(dragItem, 'dstId', dstId);
+        dst = referencingModel.getReference(dragItem, 'dstId');
+        if (dst) {
+          t2 = renderer.statePointToParam(dst, cp);
           observableModel.changeValue(dragItem, 't2', t2);
+        } else {
+          dragItem._p2 = cp;
+        }
+        break;
+      case 'connectingW1':
+        hitInfo = this.getFirstHit(hitList, isOutputPin);
+        srcId = hitInfo ? dataModel.getId(hitInfo.item) : 0;
+        observableModel.changeValue(dragItem, 'outId', srcId);
+        src = referencingModel.getReference(dragItem, 'outId');
+        if (src) {
+          observableModel.changeValue(dragItem, 'outPin', hitInfo.output);
+        } else {
+          dragItem._p1 = cp;
+        }
+        break;
+      case 'connectingW2':
+        if (drag.isNewItem) {
+          src = referencingModel.getReference(dragItem, 'outId');
+        }
+        hitInfo = this.getFirstHit(hitList, isInputPin);
+        dstId = hitInfo ? dataModel.getId(hitInfo.item) : 0;
+        observableModel.changeValue(dragItem, 'inId', dstId);
+        dst = referencingModel.getReference(dragItem, 'inId');
+        if (dst) {
+          observableModel.changeValue(dragItem, 'inPin', hitInfo.input);
         } else {
           dragItem._p2 = cp;
         }
@@ -1278,6 +1405,11 @@ var statecharts = (function() {
     // If dragItem is a disconnected transition, delete it.
     if (isTransition(dragItem)) {
       if (!dragItem.srcId || !dragItem.dstId) {
+        editingModel.deleteItem(dragItem);
+        selectionModel.remove(dragItem);
+      }
+    } else if (isWire(dragItem)) {
+      if (!dragItem.outId || !dragItem.inId) {
         editingModel.deleteItem(dragItem);
         selectionModel.remove(dragItem);
       }
@@ -1507,6 +1639,14 @@ var statechart_data = {
       "t1": 1.4019607843137254,
       "dstId": 1007,
       "t2": 2.3
+    },
+    {
+      "type": "wire",
+      "outId": 1017,
+      "outPin": 0,
+      "id": 1019,
+      "inId": 1008,
+      "inPin": 0
     }
   ]
 }
