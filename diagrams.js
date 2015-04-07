@@ -299,6 +299,8 @@ function CanvasController(canvas, ctx, theme) {
   this.hoverTimeout = 500;  // milliseconds
   this.mouse = { x: 0, y: 0 };
   this.dragOffset = { x: 0, y: 0 };
+  this.translation = { x: 0, y: 0 };
+  this.scale = { x: 1.0, y: 1.0 };
   this.transform = [1, 0, 0, 1, 0, 0];
   this.inverseTransform = [1, 0, 0, 1, 0, 0];
 }
@@ -323,10 +325,12 @@ CanvasController.prototype.setTransform = function(translation, scale) {
   if (translation) {
     tx = translation.x;
     ty = translation.y;
+    this.translation = translation;
   }
   if (scale) {
     sx = scale.x;
     sy = scale.y;
+    this.scale = scale;
   }
   this.transform = [sx, 0, 0, sy, tx, ty];
   var ooSx = 1.0 / sx, ooSy = 1.0 / sy;
@@ -475,7 +479,7 @@ function CanvasPanZoomLayer() {
   this.pan = { x: 0, y: 0 };
   this.zoom = 1.0;
   this.minZoom = 0.50;
-  this.maxZoom = 10.0;
+  this.maxZoom = 2.0;
 }
 
 CanvasPanZoomLayer.prototype.initialize = function(canvasController) {

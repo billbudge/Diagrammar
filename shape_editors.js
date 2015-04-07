@@ -180,8 +180,6 @@ var shapes = (function() {
     this.knobbyRadius = 4;
 
     this.theme = theme || diagrams.theme.create();
-
-    this.hitTolerance = 8;
   }
 
   function drawKnobby(renderer, x, y) {
@@ -324,8 +322,8 @@ var shapes = (function() {
     return hitInfo.item;
   }
 
-  Renderer.prototype.hitTestItem = function(item, p) {
-    var knobbyRadius = this.knobbyRadius, hitTolerance = this.hitTolerance,
+  Renderer.prototype.hitTestItem = function(item, p, tol) {
+    var knobbyRadius = this.knobbyRadius,
         transformableModel = this.model.transformableModel,
         inverseTransform = transformableModel.getInverseAbsolute(item),
         localP = geometry.matMulPtNew(p, inverseTransform),
@@ -333,7 +331,7 @@ var shapes = (function() {
     switch (item.type) {
       case 'disk':
         r = item.radius;
-        hitInfo = diagrams.hitTestDisk(0, 0, r, localP, hitTolerance);
+        hitInfo = diagrams.hitTestDisk(0, 0, r, localP, tol);
         if (hitInfo) {
           if (diagrams.hitPoint(0, 0, localP, knobbyRadius)) {
             hitInfo.center = true;
@@ -347,29 +345,29 @@ var shapes = (function() {
         break;
       case 'linear':
         hitInfo = diagrams.hitTestLine(
-            { x:0, y:0 }, { x: item.dx, y: item.dy }, localP, hitTolerance);
+            { x:0, y:0 }, { x: item.dx, y: item.dy }, localP, tol);
         return hitInfo;
         break;
       case 'bezier':
-        if (Math.abs(localP.x + item.halfLength) <= knobbyRadius + hitTolerance &&
-            Math.abs(localP.y) <= knobbyRadius + hitTolerance)
+        if (Math.abs(localP.x + item.halfLength) <= knobbyRadius + tol &&
+            Math.abs(localP.y) <= knobbyRadius + tol)
           return { end0: true };
-        else if (Math.abs(localP.x) <= knobbyRadius + hitTolerance &&
-                 Math.abs(localP.y) <= knobbyRadius + hitTolerance)
+        else if (Math.abs(localP.x) <= knobbyRadius + tol &&
+                 Math.abs(localP.y) <= knobbyRadius + tol)
           return { mid: true };
-        else if (Math.abs(localP.x - item.halfLength) <= knobbyRadius + hitTolerance &&
-                 Math.abs(localP.y) <= knobbyRadius + hitTolerance)
+        else if (Math.abs(localP.x - item.halfLength) <= knobbyRadius + tol &&
+                 Math.abs(localP.y) <= knobbyRadius + tol)
           return { end1: true };
 
         for (var i = 0; i < item.points.length; i++) {
           var pi = item.points[i];
-          if (Math.abs(localP.x - pi.x) <= knobbyRadius + hitTolerance &&
-              Math.abs(localP.y - pi.y) <= knobbyRadius + hitTolerance)
+          if (Math.abs(localP.x - pi.x) <= knobbyRadius + tol &&
+              Math.abs(localP.y - pi.y) <= knobbyRadius + tol)
             return { point: true, index: i };
         }
         for (var i = 0; i < item._curves.length; i++) {
           var curve = item._curves[i];
-          if (geometry.hitTestCurveSegment(curve[0], curve[1], curve[2], curve[3], localP, hitTolerance))
+          if (geometry.hitTestCurveSegment(curve[0], curve[1], curve[2], curve[3], localP, tol))
             return { curve: true, index: i };
         }
         break;
@@ -399,6 +397,8 @@ var shapes = (function() {
     this.model = model;
     this.board = model.root;
     this.renderer = renderer;
+
+    this.hitTolerance = 8;
 
     editingModel.extend(model);
 
@@ -518,7 +518,11 @@ var shapes = (function() {
     var renderer = this.renderer,
         board = this.board, model = this.model,
         palette = this.palette,
-        cp = this.canvasController.viewToCanvas(p);
+        canvasController = this.canvasController,
+        cp = canvasController.viewToCanvas(p),
+        scale = canvasController.scale,
+        zoom = Math.max(scale.x, scale.y),
+        tol = this.hitTolerance, cTol = tol / zoom;
     var hitInfo = null;
     if (!filterFn)
       filterFn = firstHit;
@@ -526,7 +530,7 @@ var shapes = (function() {
     reverseVisit(palette.root, function(item) {
       if (filterFn(item, hitInfo))
         return;
-      hitInfo = renderer.hitTestItem(item, p);
+      hitInfo = renderer.hitTestItem(item, p, tol);
       if (hitInfo)
         hitInfo.item = item;
     });
@@ -536,7 +540,7 @@ var shapes = (function() {
     reverseVisit(board, function(item) {
       if (filterFn(item, hitInfo))
         return;
-      hitInfo = renderer.hitTestItem(item, cp);
+      hitInfo = renderer.hitTestItem(item, cp, cTol);
       if (hitInfo)
         hitInfo.item = item;
     });

@@ -1155,6 +1155,56 @@ var transformableModel = (function () {
 
 //------------------------------------------------------------------------------
 
+// var viewableModel = (function () {
+//   var proto = {
+//     getItemRect: function(item) {
+//       var x = item.x, y = item.y, w = item.width, h = item.height;
+//       if (x && y && w && h)
+//         return { x: x, y: y, width: w, height: h };
+//     },
+
+//     getSelectionRect: function() {
+//       var selectionModel = this.model.selectionModel;
+//       if (selectionModel) {
+//         var xMin = Number.MAX_VALUE, yMin = Number.MAX_VALUE,
+//             xMax = Number.MIN_VALUE, yMax = Number.MIN_VALUE,
+//             exists,
+//             self = this;
+//         selectionModel.forEach(function(item) {
+//           var rect = self.getItemRect(item);
+//           if (rect) {
+//             var x = rect.x, y = rect.y;
+//             xMin = Math.min(xMin, x);
+//             yMin = Math.min(yMin, y);
+//             xMax = Math.max(xMax, x + rect.width);
+//             yMax = Math.max(yMax, y + rect.height);
+//             exists = true;
+//           }
+//         });
+//       }
+//       if (exists)
+//         return { x: xMin, y: yMin, width: xMax - xMin, height: yMax - yMin };
+//     }
+//   }
+
+//   function extend(model) {
+//     if (model.viewableModel)
+//       return model.viewableModel;
+
+//     var instance = Object.create(proto);
+//     instance.model = model;
+
+//     model.viewableModel = instance;
+//     return instance;
+//   }
+
+//   return {
+//     extend: extend,
+//   };
+// })();
+
+//------------------------------------------------------------------------------
+
 // var myModel = (function () {
 //   var proto = {
 //     getParent: function (item) {
