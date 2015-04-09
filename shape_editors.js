@@ -197,7 +197,7 @@ var shapes = (function() {
     if (mode & normalMode) {
       ctx.fillStyle = theme.bgColor;
       ctx.strokeStyle = theme.strokeColor;
-      ctx.lineWidth = 0.5;
+      ctx.lineWidth = 0.25;
     } else if (mode & highlightMode) {
       ctx.strokeStyle = theme.highlightColor;
       ctx.lineWidth = 2.0;
@@ -212,19 +212,22 @@ var shapes = (function() {
         var r = item.radius;
         if (mode & normalMode) {
           ctx.arc(0, 0, r, 0, 2 * Math.PI, false);
+          ctx.setLineDash([4]);
           ctx.stroke();
+          ctx.setLineDash([0]);
         }
         drawKnobby(renderer, 0, 0);
         ctx.strokeRect(-knobbyRadius, -knobbyRadius, 2 * knobbyRadius, 2 * knobbyRadius);
-        if (mode & highlightMode)
-          drawKnobby(renderer, r, 0);
+        drawKnobby(renderer, r, 0);
         break;
       case 'linear':
-        ctx.lineWidth = 0.5;
+        ctx.lineWidth = 0.25;
         ctx.beginPath();
         ctx.moveTo(0, 0);
         ctx.lineTo(item.dx, item.dy);
+        ctx.setLineDash([4]);
         ctx.stroke();
+        ctx.setLineDash([0]);
         if (mode & highlightMode) {
           var p1 = item._p1, p2 = item._p2;
           if (p1 && p2) {
@@ -400,8 +403,6 @@ var shapes = (function() {
 
     this.hitTolerance = 8;
 
-    editingModel.extend(model);
-
     var palette = this.palette = {
       root: {
         type: 'palette',
@@ -441,6 +442,11 @@ var shapes = (function() {
     dataModels.observableModel.extend(palette);
     dataModels.hierarchicalModel.extend(palette);
     dataModels.transformableModel.extend(palette);
+    palette.dataModel.initialize();
+
+    editingModel.extend(model);
+    model.dataModel.initialize();
+
     this.updateGeometry(palette.root);
   }
 
@@ -458,15 +464,15 @@ var shapes = (function() {
   }
 
   Editor.prototype.addTemporaryItem = function(item) {
-    this.model.observableModel.changeValue(this.board, '_temporary', item);
+    this.model.observableModel.changeValue(this.board, 'temporary', item);
   }
 
   Editor.prototype.removeTemporaryItem = function(item) {
-    return this.model.observableModel.changeValue(this.board, '_temporary', null);
+    return this.model.observableModel.changeValue(this.board, 'temporary', null);
   }
 
   Editor.prototype.getTemporaryItem = function() {
-    return this.board._temporary;
+    return this.board.temporary;
   }
 
   Editor.prototype.draw = function() {
@@ -588,19 +594,17 @@ var shapes = (function() {
     var mouseHitInfo = this.mouseHitInfo,
         dragItem = mouseHitInfo.item,
         model = this.model,
-        drag;
+        newItem, drag;
     if (this.isPaletteItem(dragItem)) {
-      // Clone palette item and add the clone to the board. Don't notify
-      // observers yet.
-      dragItem = model.instancingModel.clone(dragItem);
-      this.addTemporaryItem(dragItem);
+      newItem = model.instancingModel.clone(dragItem);
       drag = {
         type: 'paletteItem',
         name: 'Add new ' + dragItem.type,
+        isNewItem: true,
       }
-      var cp = this.canvasController.viewToCanvas(dragItem);
-      dragItem.x = cp.x;
-      dragItem.y = cp.y;
+      var cp = canvasController.viewToCanvas(newItem);
+      newItem.x = cp.x;
+      newItem.y = cp.y;
     } else {
       switch (dragItem.type) {
         case 'disk':
@@ -634,12 +638,18 @@ var shapes = (function() {
           break;
       }
     }
+    this.drag = drag;
     if (drag) {
-      if (drag.type == 'moveSelection')
+      if (drag.type === 'moveSelection')
         model.editingModel.reduceSelection();
-      drag.item = dragItem;
-      this.drag = drag;
       model.transactionModel.beginTransaction(drag.name);
+      if (newItem) {
+        drag.item = newItem;
+        model.dataModel.initialize(newItem);
+        this.addTemporaryItem(newItem);
+      } else {
+        drag.item = dragItem;
+      }
     }
   }
 
@@ -785,15 +795,17 @@ var shapes = (function() {
         selectionModel = model.selectionModel,
         editingModel = model.editingModel,
         transactionModel = model.transactionModel,
-        isNewItem = (drag.type == 'paletteItem');
-    if (isNewItem) {
-      var newItem = drag.item;
-      // Remove any item that have been temporarily added before starting the
-      // transaction.
-      this.removeTemporaryItem();
+        newItem = this.removeTemporaryItem();
+    if (newItem) {
+      // Clone the new item, since we're about to roll back the transaction. We
+      // do this to collapse all of the edits into a single insert operation.
+      newItem = model.instancingModel.clone(newItem);
+      model.dataModel.initialize(newItem);
+      transactionModel.cancelTransaction();
+      transactionModel.beginTransaction(drag.name);
     }
 
-    if (drag.type == 'moveSelection' || isNewItem) {
+    if (drag.type == 'moveSelection' || newItem) {
       // Find group beneath mouse.
       var hitInfo = this.hitTestUnselectedItems(p);
       var parent = board;
@@ -802,8 +814,7 @@ var shapes = (function() {
         while (parent.type != 'group')
           parent = model.hierarchicalModel.getParent(parent);
       }
-      // Add new items.
-      if (isNewItem) {
+      if (newItem) {
         // Items that can't be added to the board without being wrapped in a group.
         if (parent === board && isHullItem(newItem)) {
           var group = {
@@ -884,8 +895,8 @@ var shapes = (function() {
         diffPathStack = [];
     if (!root)
       root = this.board;
-    function updatePass1(item) {
 
+    function updatePass1(item) {
       if (item.type == 'group')
         diffPathStack.push(new ClipperLib.Paths());
 
@@ -982,7 +993,6 @@ var shapes = (function() {
         // }
 
         if (item.op == 'hull') {
-          var itemMap = new HashMap(self.model.dataModel.getId);
           var subItems = item.items;
           for (var i = 0; i < subItems.length; i++) {
             var subItem = subItems[i];
@@ -1003,6 +1013,7 @@ var shapes = (function() {
           var hull = geometry.getConvexHull(points, item),
               centroid = geometry.getCentroid(hull);
           geometry.annotateConvexHull(hull, centroid);
+          // geometry.insetConvexHull(hull, -16);
 
           var subItems = item.items;
           for (var i = 0; i < subItems.length; i++) {
@@ -1121,7 +1132,9 @@ var shapes = (function() {
           var text = JSON.stringify(
             board,
             function(key, value) {
-              if (key.toString().charAt(0) == '_')
+              if (key.toString().charAt(0) === '_')
+                return;
+              if (value === undefined || value === null)
                 return;
               return value;
             },

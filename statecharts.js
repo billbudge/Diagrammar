@@ -668,8 +668,8 @@ var statecharts = (function() {
     for (var i = 0; i < rows; i++) {
       var inWidth = (i < inputsLength) ? ctx.measureText(inputs[i].name).width : 0,
           outWidth = (i < outputsLength) ? ctx.measureText(outputs[i].name).width : 0,
-          width = inWidth + 16 + outWidth,
-          maxWidth = Math.max(maxWidth, width);
+          width = inWidth + 4 + outWidth;
+      maxWidth = Math.max(maxWidth, width);
     }
     master.width = gutter + maxWidth + gutter;
     master.height = 4 + height;
@@ -996,7 +996,7 @@ var statecharts = (function() {
             y: 160,
             master: 'or',
           },
-        ]
+        ],
       }
     }
 
@@ -1012,10 +1012,10 @@ var statecharts = (function() {
     dataModels.hierarchicalModel.extend(palette);
     dataModels.transformableModel.extend(palette);
     palette.dataModel.addInitializer(initialize);
-    palette.dataModel.initializeAll();
+    palette.dataModel.initialize();
 
     model.dataModel.addInitializer(initialize);
-    model.dataModel.initializeAll();
+    model.dataModel.initialize();
   }
 
   Editor.prototype.initialize = function(canvasController) {
@@ -1026,8 +1026,10 @@ var statecharts = (function() {
     if (!this.renderer)
       this.renderer = new StatechartRenderer(this.model, ctx, canvasController.theme);
     var renderer = this.renderer;
+    renderer.beginDraw();
     for (var master in this.circuitMasters)
       renderer.layoutCircuitMaster(this.circuitMasters[master]);
+    renderer.endDraw();
   }
 
   Editor.prototype.isPaletteItem = function(item) {
@@ -1036,17 +1038,15 @@ var statecharts = (function() {
   }
 
   Editor.prototype.addTemporaryItem = function(item) {
-    // if (isTransition(item))
-    //   this.renderer.layoutTransition(item);
-    this.model.observableModel.changeValue(this.statechart, '_temporary', item);
+    this.model.observableModel.changeValue(this.statechart, 'temporary', item);
   }
 
   Editor.prototype.removeTemporaryItem = function(item) {
-    return this.model.observableModel.changeValue(this.statechart, '_temporary', null);
+    return this.model.observableModel.changeValue(this.statechart, 'temporary', null);
   }
 
   Editor.prototype.getTemporaryItem = function() {
-    return this.statechart._temporary;
+    return this.statechart.temporary;
   }
 
   Editor.prototype.draw = function() {
@@ -1113,7 +1113,6 @@ var statecharts = (function() {
       if (info)
         hitList.push(info);
     }
-    console.log(tol, cTol);
     reverseVisit(palette.root, null, function(item) {
       pushInfo(renderer.hitTest(item, p, tol));
     });
@@ -1140,7 +1139,7 @@ var statecharts = (function() {
   }
 
   function isStateBorder(hitInfo, model) {
-    return isState(hitInfo.item) && hitInfo.border || hitInfo.arrow;
+    return isState(hitInfo.item) && hitInfo.border && !hitInfo.arrow;
   }
 
   function isDraggable(hitInfo, model) {
@@ -1191,26 +1190,26 @@ var statecharts = (function() {
       return false;
     var dragItem = mouseHitInfo.item, type = dragItem.type,
         model = this.model,
-        drag, newItem;
+        newItem, drag;
     if (this.isPaletteItem(dragItem)) {
-      newItem = dragItem = model.instancingModel.clone(dragItem);
+      newItem = model.instancingModel.clone(dragItem);
       drag = {
         type: 'paletteItem',
         name: 'Add new ' + dragItem.type,
         isNewItem: true,
       }
-      var cp = canvasController.viewToCanvas(dragItem);
-      dragItem.x = cp.x;
-      dragItem.y = cp.y;
+      var cp = canvasController.viewToCanvas(newItem);
+      newItem.x = cp.x;
+      newItem.y = cp.y;
     } else if (mouseHitInfo.arrow) {
       var stateId = model.dataModel.getId(dragItem),
-          p2 = canvasController.viewToCanvas(p0);
+          cp0 = canvasController.viewToCanvas(p0);
       // Start the new transition as connecting the src state to itself.
-      newItem = dragItem = {
+      newItem = {
         type: 'transition',
         srcId: stateId,
         t1: 0,
-        _p2: p2,
+        _p2: cp0,
       };
       drag = {
         type: 'connectingP2',
@@ -1218,21 +1217,21 @@ var statecharts = (function() {
         isNewItem: true,
       };
     } else if (mouseHitInfo.output !== undefined) {
-        // We can only create a wire from an output pin for now.
-        var circuitId = model.dataModel.getId(dragItem),
-            p2 = canvasController.viewToCanvas(p0);
-        // Start the new transition as connecting the src state to itself.
-        newItem = dragItem = {
-          type: 'wire',
-          srcId: circuitId,
-          srcPin: mouseHitInfo.output,
-          _p2: p2,
-        };
-        drag = {
-          type: 'connectingW2',
-          name: 'Add new wire',
-          isNewItem: true,
-        };
+      // We can only create a wire from an output pin for now.
+      var circuitId = model.dataModel.getId(dragItem),
+          cp0 = canvasController.viewToCanvas(p0);
+      // Start the new transition as connecting the src state to itself.
+      newItem = {
+        type: 'wire',
+        srcId: circuitId,
+        srcPin: mouseHitInfo.output,
+        _p2: cp0,
+      };
+      drag = {
+        type: 'connectingW2',
+        name: 'Add new wire',
+        isNewItem: true,
+      };
     } else {
       switch (type) {
         case 'state':
@@ -1262,13 +1261,15 @@ var statecharts = (function() {
     }
     this.drag = drag;
     if (drag) {
-      if (drag.type == 'moveSelection')
-        this.model.editingModel.reduceSelection();
-      drag.item = dragItem;
+      if (drag.type === 'moveSelection')
+        model.editingModel.reduceSelection();
       model.transactionModel.beginTransaction(drag.name);
       if (newItem) {
-        model.dataModel.initialize(newItem),
+        drag.item = newItem;
+        model.dataModel.initialize(newItem);
         this.addTemporaryItem(newItem);
+      } else {
+        drag.item = dragItem;
       }
     }
   }
@@ -1399,13 +1400,21 @@ var statecharts = (function() {
         transactionModel = model.transactionModel,
         editingModel = model.editingModel,
         newItem = this.removeTemporaryItem();
+    if (newItem) {
+      // Clone the new item, since we're about to roll back the transaction. We
+      // do this to collapse all of the edits into a single insert operation.
+      newItem = model.instancingModel.clone(newItem);
+      model.dataModel.initialize(newItem);
+      transactionModel.cancelTransaction();
+      transactionModel.beginTransaction(drag.name);
+    }
     if (isTransition(dragItem)) {
       dragItem._p1 = dragItem._p2 = null;
       if (newItem) {
         observableModel.insertElement(
             statechart, statechart.items, statechart.items.length - 1, newItem);
       }
-    } else if (newItem || drag.type == 'moveSelection') {
+    } else if (drag.type == 'moveSelection' || newItem) {
       // Find state beneath mouse.
       var hitList = this.hitTest(p),
           hitInfo = this.getFirstHit(hitList, isContainerTarget),
@@ -1516,7 +1525,9 @@ var statecharts = (function() {
           var text = JSON.stringify(
             statechart,
             function(key, value) {
-              if (key.toString().charAt(0) == '_')
+              if (key.toString().charAt(0) === '_')
+                return;
+              if (value === undefined || value === null)
                 return;
               return value;
             },

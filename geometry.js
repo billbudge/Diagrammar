@@ -349,6 +349,29 @@ var geometry = (function() {
     return intersection;
   }
 
+  // Moves the convex hull points in the normal direction by amount.
+  function insetConvexHull(hull, amount) {
+    // normals[i] is normal to edge from p[i - 1] to p[i].
+    var length = hull.length,
+        normals = [], pLast = hull[length - 1];
+    for (var i = 0; i < length; i++) {
+      var pi = hull[i];
+      var dx = pi.x - pLast.x, dy = pi.y - pLast.y;
+      var ns = 1 / Math.sqrt(dx * dx + dy * dy);
+      normals[i] = { x: dy * ns, y: -dx * ns };
+      pLast = pi;
+    }
+    var outset = [], nLast = normals[length - 1];
+    for (var i = 0; i < length; i++) {
+      var pi = hull[i], ni = normals[i];
+      // average the normals of the edges adjacent to each point.
+      var bx = (ni.x + nLast.x) / 2, by = (ni.y + nLast.y) / 2;
+      pi.x += bx * amount;
+      pi.y += by * amount;
+      nLast = ni;
+    }
+  }
+
   return {
     lineLength: lineLength,
     vecLength: vecLength,
@@ -378,6 +401,7 @@ var geometry = (function() {
     pointInConvexHull: pointInConvexHull,
     projectPointToConvexHull: projectPointToConvexHull,
     angleToConvexHull: angleToConvexHull,
+    insetConvexHull: insetConvexHull,
   };
 })();
 

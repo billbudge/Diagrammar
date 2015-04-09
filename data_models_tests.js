@@ -20,7 +20,7 @@ test("dataModel ids", function() {
   deepEqual(test, model.dataModel);
   deepEqual(21, test.nextId);
   var item = {};
-  test.assignId(item);
+  test.initialize(item);
   deepEqual(21, item.id);
   deepEqual(22, test.nextId);
 });
@@ -124,13 +124,17 @@ test("eventMixin", function() {
 // Observable model unit tests.
 
 test("observableModel extend", function() {
-  var model = {};
+  var model = {
+    root: {},
+  };
   var test = dataModels.observableModel.extend(model);
   deepEqual(test, model.observableModel);
 });
 
 test("observableModel", function() {
-  var model = {};
+  var model = {
+    root: {},
+  };
   var test = dataModels.observableModel.extend(model);
 
   var array = [];
@@ -169,7 +173,9 @@ test("transactionModel extend", function() {
 });
 
 test("transactionModel events", function() {
-  var model = {};
+  var model = {
+    root: {},
+  };
   var test = dataModels.transactionModel.extend(model);
   var started, ending, ended;
   test.addHandler('transactionBegan', function(transaction) {
@@ -201,7 +207,9 @@ test("transactionModel events", function() {
 });
 
 test("transactionModel transaction", function() {
-  var model = {};
+  var model = {
+    root: {},
+  };
   model.prop1 = 'foo';
   model.array = [];
   var test = dataModels.transactionModel.extend(model);
@@ -233,7 +241,9 @@ test("transactionModel transaction", function() {
 });
 
 test("transactionModel cancel", function() {
-  var model = {};
+  var model = {
+    root: {},
+  };
   model.prop1 = 'foo';
   var test = dataModels.transactionModel.extend(model);
   var ending, canceled;

@@ -86,16 +86,13 @@ var dataModel = (function () {
       this.initializers.push(initialize);
     },
 
-    initialize: function (item) {
-      this.initializers.forEach(function(initializer) {
-        initializer(item);
-      });
-    },
-
-    initializeAll: function() {
-      var self = this;
-      this.visitSubtree(this.model.root, function(item) {
-        self.initialize(item);
+    initialize: function(item) {
+      var self = this,
+          root = item || this.model.root;
+      this.visitSubtree(root, function(item) {
+        self.initializers.forEach(function(initializer) {
+          initializer(item);
+        });
       });
     },
   }
@@ -111,9 +108,9 @@ var dataModel = (function () {
     var maxId = 0;
     var self = this;
     instance.visitSubtree(model.root, function (item) {
-        var id = instance.getId(item);
-        maxId = Math.max(maxId, id);
-      });
+      var id = instance.getId(item);
+      maxId = Math.max(maxId, id);
+    });
     // Note that this dataModel will never assign an id of 0.
     instance.nextId = maxId + 1;
 
@@ -692,8 +689,8 @@ var referenceValidator = (function () {
 
 var selectionModel = (function () {
   var proto = {
-    getLength: function () {
-      return this.selection.length;
+    isEmpty: function () {
+      return this.selection.length > 0;
     },
 
     contains: function (item) {
@@ -1083,26 +1080,31 @@ var transformableModel = (function () {
                           -tx * cos + ty * sin, -tx * sin - ty * cos ];
     },
 
-    updateTransforms: function (item, parent) {
+    updateTransforms: function (item) {
       if (!this.hasTransform(item))
         return;
+
       this.updateLocal(item);
+
+      var hierarchicalModel = this.model.hierarchicalModel,
+          parent = hierarchicalModel.getParent(item);
       while (parent && !this.hasTransform(parent))
-        parent = this.model.hierarchicalModel.getParent(parent);
+        parent = hierarchicalModel.getParent(parent);
 
       if (parent) {
         item._atransform = geometry.matMulNew(item._transform, parent._atransform);
         item._aitransform = geometry.matMulNew(parent._aitransform, item._itransform);
       } else {
-        item._atransform = item._aitransform = [1, 0, 0, 1, 0, 0];
+        item._atransform = item._transform;
+        item._aitransform = item._itransform;
       }
     },
 
-    update: function (item, parent) {
+    update: function (item) {
       var self = this, hierarchicalModel = this.model.hierarchicalModel;
-      this.updateTransforms(item, parent);
+      this.updateTransforms(item);
       hierarchicalModel.visitDescendants(item, function (child, parent) {
-        self.updateTransforms(child, parent);
+        self.updateTransforms(child);
       });
     },
 
@@ -1113,14 +1115,14 @@ var transformableModel = (function () {
         case 'change':
           var newValue = item[attr];
           if (this.model.dataModel.isItem(newValue))
-            this.update(newValue, item);
+            this.update(newValue);
           else
-            this.update(item, hierarchicalModel.getParent(item));
+            this.update(item);
           break;
         case 'insert':
           var newValue = array[attr];
           if (this.model.dataModel.isItem(newValue))
-            this.update(newValue, item);
+            this.update(newValue);
           break;
         case 'remove':
           break;
@@ -1132,6 +1134,9 @@ var transformableModel = (function () {
     if (model.transformableModel)
       return model.transformableModel;
 
+    dataModel.extend(model);
+    hierarchicalModel.extend(model);
+
     var instance = Object.create(proto);
     instance.model = model;
 
@@ -1142,7 +1147,10 @@ var transformableModel = (function () {
       });
     }
 
-    instance.update(model.root, null);
+    // Make sure new objects have transforms.
+    instance.model.dataModel.addInitializer(function(item) {
+      instance.updateTransforms(item);
+    });
 
     model.transformableModel = instance;
     return instance;
