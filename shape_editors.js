@@ -493,6 +493,8 @@ var shapes = (function() {
     this.model.selectionModel.forEach(function(item) {
       renderer.drawItemHighlight(item);
     });
+    if (this.hotTrackInfo)
+      renderer.drawItemHotTrack(this.hotTrackInfo.item);
     ctx.restore();
 
     ctx.save();
@@ -703,6 +705,7 @@ var shapes = (function() {
         hitInfo, newLength;
     switch (drag.type) {
       case 'paletteItem':
+        hitInfo = this.hitTestUnselectedItems(p);
         var snapshot = transactionModel.getSnapshot(item),
             drags = self.calcDrags(item, model, cp, cp0),
             parentDrag = drags.parentDrag;
@@ -710,7 +713,7 @@ var shapes = (function() {
         model.observableModel.changeValue(item, 'y', snapshot.y + parentDrag.y);
         break;
       case 'moveSelection':
-        var hitInfo = this.hotTrackInfo = this.hitTestUnselectedItems(p);
+        hitInfo = this.hitTestUnselectedItems(p);
         model.selectionModel.forEach(function(item) {
           var snapshot = transactionModel.getSnapshot(item),
               drags = self.calcDrags(item, model, cp, cp0),
@@ -786,6 +789,7 @@ var shapes = (function() {
       //   }
       //   break;
     }
+    this.hotTrackInfo = (hitInfo && hitInfo.item !== this.board) ? hitInfo : null;
   }
 
   Editor.prototype.onEndDrag = function(p) {
