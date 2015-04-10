@@ -1106,22 +1106,21 @@ var statecharts = (function() {
         scale = canvasController.scale,
         zoom = Math.max(scale.x, scale.y),
         tol = this.hitTolerance, cTol = tol / zoom,
-        statechart = this.statechart, model = this.model,
-        palette = this.palette,
+        statechart = this.statechart,
         hitList = [];
     function pushInfo(info) {
       if (info)
         hitList.push(info);
     }
-    reverseVisit(palette.root, null, function(item) {
-      pushInfo(renderer.hitTest(item, p, tol));
+    reverseVisit(this.palette.root, null, function(item) {
+      pushInfo(renderer.hitTest(item, p, tol, normalMode));
     });
-    // TODO hit test selection in highlightMode.
+    // TODO hit test selection first, in selectionMode, first.
     reverseVisit(statechart, isConnection, function(transition) {
-      pushInfo(renderer.hitTest(transition, cp, cTol));
+      pushInfo(renderer.hitTest(transition, cp, cTol, normalMode));
     });
     reverseVisit(statechart, isContainable, function(item) {
-      pushInfo(renderer.hitTest(item, cp, cTol));
+      pushInfo(renderer.hitTest(item, cp, cTol, normalMode));
     });
     return hitList;
   }

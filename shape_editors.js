@@ -30,13 +30,18 @@ var shapes = (function() {
     return item.type == 'disk';
   }
 
+  function isContainable(item) {
+    return true;
+  }
+
+  function isContainer(item) {
+    return item.type == 'group';
+  }
+
   function isHullEdgeItem(item) {
     return item.type == 'linear' || item.type == 'bezier';
   }
 
-  function isPaletteItem(item) {
-    return item._palette;
-  }
 
 //------------------------------------------------------------------------------
 
@@ -187,9 +192,9 @@ var shapes = (function() {
     renderer.ctx.strokeRect(x - r, y - r, d, d);
   }
 
-  function drawItem(renderer, item, mode) {
-    var ctx = renderer.ctx, theme = renderer.theme,
-        knobbyRadius = renderer.knobbyRadius, knobbyDiameter = 2 * knobbyRadius,
+  Renderer.prototype.drawItem = function(item, mode) {
+    var ctx = this.ctx, theme = this.theme,
+        knobbyRadius = this.knobbyRadius, knobbyDiameter = 2 * knobbyRadius,
         t = item._atransform;
     ctx.save();
     ctx.transform(t[0], t[2], t[1], t[3], t[4], t[5]); // local to world
@@ -216,9 +221,9 @@ var shapes = (function() {
           ctx.stroke();
           ctx.setLineDash([0]);
         }
-        drawKnobby(renderer, 0, 0);
+        drawKnobby(this, 0, 0);
         ctx.strokeRect(-knobbyRadius, -knobbyRadius, 2 * knobbyRadius, 2 * knobbyRadius);
-        drawKnobby(renderer, r, 0);
+        drawKnobby(this, r, 0);
         break;
       case 'linear':
         ctx.lineWidth = 0.25;
@@ -231,11 +236,11 @@ var shapes = (function() {
         if (mode & highlightMode) {
           var p1 = item._p1, p2 = item._p2;
           if (p1 && p2) {
-            drawKnobby(renderer, p1.x, p1.y);
-            drawKnobby(renderer, p2.x, p2.y);
+            drawKnobby(this, p1.x, p1.y);
+            drawKnobby(this, p2.x, p2.y);
           }
-          drawKnobby(renderer, 0, 0);
-          drawKnobby(renderer, item.dx, item.dy);
+          drawKnobby(this, 0, 0);
+          drawKnobby(this, item.dx, item.dy);
         }
         break;
       case 'bezier':
@@ -256,11 +261,11 @@ var shapes = (function() {
         if (mode & highlightMode) {
           for (var i = 0; i < item.points.length; i++) {
             var pi = item.points[i];
-            drawKnobby(renderer, pi.x, pi.y);
+            drawKnobby(this, pi.x, pi.y);
           }
-          drawKnobby(renderer, -item.halfLength, 0);
-          drawKnobby(renderer, 0, 0);
-          drawKnobby(renderer, item.halfLength, 0);
+          drawKnobby(this, -item.halfLength, 0);
+          drawKnobby(this, 0, 0);
+          drawKnobby(this, item.halfLength, 0);
         }
         break;
       case 'group':
@@ -291,41 +296,7 @@ var shapes = (function() {
     ctx.restore();
   }
 
-  Renderer.prototype.drawItem = function(item) {
-    drawItem(this, item, normalMode);
-  }
-
-  Renderer.prototype.drawItemHighlight = function(item) {
-    drawItem(this, item, highlightMode);
-  }
-
-  Renderer.prototype.drawItemHotTrack = function(item) {
-    drawItem(this, item, hotTrackMode);
-  }
-
-  // function getSelectionBounds(root) {
-  //   var bounds = {};
-  //   visit(
-  //       root,
-  //       function(item) {
-  //         if (!isSelected(item))
-  //           return;
-  //         var itemBounds = item._bounds;
-  //         var leftTop = { x: itemBounds.left, y: itemBounds.top };
-  //         var rightBtm = { x: itemBounds.right, y: itemBounds.bottom };
-  //         geometry.matMulPt(leftTop, item._atransform);
-  //         geometry.matMulPt(rightBtm, item._atransform);
-  //         Box2d.extend(bounds, leftTop.x, leftTop.y);
-  //         Box2d.extend(bounds, rightBtm.x, rightBtm.y);
-  //       });
-  //   return bounds;
-  // }
-
-  function firstHit(item, hitInfo) {
-    return hitInfo.item;
-  }
-
-  Renderer.prototype.hitTestItem = function(item, p, tol) {
+  Renderer.prototype.hitTest = function(item, p, tol, mode) {
     var knobbyRadius = this.knobbyRadius,
         transformableModel = this.model.transformableModel,
         inverseTransform = transformableModel.getInverseAbsolute(item),
@@ -338,49 +309,52 @@ var shapes = (function() {
         if (hitInfo) {
           if (diagrams.hitPoint(0, 0, localP, knobbyRadius)) {
             hitInfo.center = true;
-            return hitInfo;
           } else if (diagrams.hitPoint(r, 0, localP, knobbyRadius)) {
             hitInfo.resizer = true;
-            return hitInfo;
+          } else {
+            return null;
           }
-          return null;
         }
         break;
       case 'linear':
         hitInfo = diagrams.hitTestLine(
             { x:0, y:0 }, { x: item.dx, y: item.dy }, localP, tol);
-        return hitInfo;
         break;
-      case 'bezier':
-        if (Math.abs(localP.x + item.halfLength) <= knobbyRadius + tol &&
-            Math.abs(localP.y) <= knobbyRadius + tol)
-          return { end0: true };
-        else if (Math.abs(localP.x) <= knobbyRadius + tol &&
-                 Math.abs(localP.y) <= knobbyRadius + tol)
-          return { mid: true };
-        else if (Math.abs(localP.x - item.halfLength) <= knobbyRadius + tol &&
-                 Math.abs(localP.y) <= knobbyRadius + tol)
-          return { end1: true };
+      // case 'bezier':
+      //   if (Math.abs(localP.x + item.halfLength) <= knobbyRadius + tol &&
+      //       Math.abs(localP.y) <= knobbyRadius + tol)
+      //     hitInfo = { end0: true };
+      //   else if (Math.abs(localP.x) <= knobbyRadius + tol &&
+      //            Math.abs(localP.y) <= knobbyRadius + tol)
+      //     hitInfo = { mid: true };
+      //   else if (Math.abs(localP.x - item.halfLength) <= knobbyRadius + tol &&
+      //            Math.abs(localP.y) <= knobbyRadius + tol)
+      //     hitInfo = { end1: true };
+      //   else {
 
-        for (var i = 0; i < item.points.length; i++) {
-          var pi = item.points[i];
-          if (Math.abs(localP.x - pi.x) <= knobbyRadius + tol &&
-              Math.abs(localP.y - pi.y) <= knobbyRadius + tol)
-            return { point: true, index: i };
-        }
-        for (var i = 0; i < item._curves.length; i++) {
-          var curve = item._curves[i];
-          if (geometry.hitTestCurveSegment(curve[0], curve[1], curve[2], curve[3], localP, tol))
-            return { curve: true, index: i };
-        }
-        break;
+      //   }
+
+      //   for (var i = 0; i < item.points.length; i++) {
+      //     var pi = item.points[i];
+      //     if (Math.abs(localP.x - pi.x) <= knobbyRadius + tol &&
+      //         Math.abs(localP.y - pi.y) <= knobbyRadius + tol)
+      //       hitInfo = { point: true, index: i };
+      //   }
+      //   for (var i = 0; i < item._curves.length; i++) {
+      //     var curve = item._curves[i];
+      //     if (geometry.hitTestCurveSegment(curve[0], curve[1], curve[2], curve[3], localP, tol))
+      //       return { curve: true, index: i };
+      //   }
+      //   break;
       case 'group':
         if (!item.op || !item._paths)
           return;
         for (var i = 0; i < item._paths.length; i++) {
           var path = item._paths[i];
-          if (geometry.pointInConvexHull(path, localP))
-            return { position: true };
+          if (geometry.pointInConvexHull(path, localP)) {
+            hitInfo = { position: true };
+          }
+          break;
           // ctx.beginPath();
           // ctx.moveTo(path[0].x, path[0].y);
           // for (var j = 1; j < path.length; j++)
@@ -391,6 +365,9 @@ var shapes = (function() {
         }
         break;
     }
+    if (hitInfo)
+      hitInfo.item = item;
+    return hitInfo;
   }
 
 //------------------------------------------------------------------------------
@@ -487,21 +464,21 @@ var shapes = (function() {
     ctx.lineJoin = 'round'
 
     visit(this.board, function(item) {
-      renderer.drawItem(item);
+      renderer.drawItem(item, normalMode);
     });
 
     this.model.selectionModel.forEach(function(item) {
-      renderer.drawItemHighlight(item);
+      renderer.drawItem(item, highlightMode);
     });
     if (this.hotTrackInfo)
-      renderer.drawItemHotTrack(this.hotTrackInfo.item);
+      renderer.drawItem(this.hotTrackInfo.item, hotTrackMode);
     ctx.restore();
 
     ctx.save();
     ctx.fillStyle = renderer.theme.altBgColor;
     ctx.fillRect(palette.root.x, palette.root.y, 160, 300);
     palette.root.items.forEach(function(item) {
-      renderer.drawItem(item);
+      renderer.drawItem(item, normalMode);
     })
     ctx.restore();
 
@@ -509,74 +486,62 @@ var shapes = (function() {
     var temporary = this.getTemporaryItem();
     if (temporary) {
       canvasController.applyTransform();
-      renderer.drawItem(temporary);
+      renderer.drawItem(temporary, normalMode);
     }
     ctx.restore();
   }
 
-  function firstHit(item, hitInfo) {
-    return hitInfo;
-  }
-
-  // function firstUnselectedStateHit(item, hitInfo) {
-  //   return hitInfo.item || isSelected(item);
-  // }
-
-  Editor.prototype.hitTest = function(p, filterFn) {
+  Editor.prototype.hitTest = function(p) {
     var renderer = this.renderer,
-        board = this.board, model = this.model,
-        palette = this.palette,
         canvasController = this.canvasController,
         cp = canvasController.viewToCanvas(p),
         scale = canvasController.scale,
         zoom = Math.max(scale.x, scale.y),
-        tol = this.hitTolerance, cTol = tol / zoom;
-    var hitInfo = null;
-    if (!filterFn)
-      filterFn = firstHit;
+        tol = this.hitTolerance, cTol = tol / zoom,
+        hitList = [];
+    function pushInfo(info) {
+      if (info)
+        hitList.push(info);
+    }
 
-    reverseVisit(palette.root, function(item) {
-      if (filterFn(item, hitInfo))
-        return;
-      hitInfo = renderer.hitTestItem(item, p, tol);
-      if (hitInfo)
-        hitInfo.item = item;
+    reverseVisit(this.palette.root, function(item) {
+      pushInfo(renderer.hitTest(item, p, tol, normalMode));
     });
-    if (hitInfo)
-      return hitInfo;
 
-    reverseVisit(board, function(item) {
-      if (filterFn(item, hitInfo))
-        return;
-      hitInfo = renderer.hitTestItem(item, cp, cTol);
-      if (hitInfo)
-        hitInfo.item = item;
+    // TODO hit test selection first, in selectionMode, first.
+    reverseVisit(this.board, function(item) {
+      pushInfo(renderer.hitTest(item, cp, cTol, normalMode));
     });
-    return hitInfo;
+    return hitList;
   }
 
-  Editor.prototype.hitTestUnselectedItems = function(p) {
-    var model = this.model,
-        hierarchicalModel = model.hierarchicalModel,
-        selectionModel = model.selectionModel;
-    return this.hitTest(p, function(item, hitInfo) {
-      if (firstHit(item, hitInfo))
-        return true;
-      var ancestor = item;
-      while (ancestor) {
-        if (selectionModel.contains(ancestor))
-          return true;
-        ancestor = hierarchicalModel.getParent(ancestor);
+  Editor.prototype.getFirstHit = function(hitList, filterFn) {
+    if (hitList) {
+      var model = this.model, length = hitList.length;
+      for (var i = 0; i < length; i++) {
+        var hitInfo = hitList[i];
+        if (filterFn(hitInfo, model))
+          return hitInfo;
       }
-      return false;
-    });
+    }
+    return null;
+  }
+
+  function isDraggable(hitInfo, model) {
+    return true;
+  }
+
+  function isContainerTarget(hitInfo, model) {
+    var item = hitInfo.item;
+    return isContainer(item) &&
+           !model.hierarchicalModel.isItemInSelection(item);
   }
 
   Editor.prototype.onClick = function(p) {
     var model = this.model,
-        canvasController = this.canvasController,
-        mouseHitInfo = this.mouseHitInfo = this.hitTest(p),
-        shiftKeyDown = this.canvasController.shiftKeyDown;
+        shiftKeyDown = this.canvasController.shiftKeyDown,
+        hitList = this.hitTest(p),
+        mouseHitInfo = this.mouseHitInfo = this.getFirstHit(hitList, isDraggable);
     if (mouseHitInfo) {
       if (!model.selectionModel.contains(mouseHitInfo.item) && !shiftKeyDown)
         model.selectionModel.clear();
@@ -691,29 +656,32 @@ var shapes = (function() {
   Editor.prototype.onDrag = function(p0, p) {
     var self = this,
         drag = this.drag,
-        item = drag.item,
+        dragItem = drag.item,
         model = this.model,
         transactionModel = model.transactionModel,
         renderer = this.renderer,
         mouseHitInfo = this.mouseHitInfo,
-        snapshot = transactionModel.getSnapshot(drag.item),
+        snapshot = transactionModel.getSnapshot(dragItem),
         canvasController = this.canvasController,
         cp0 = canvasController.viewToCanvas(p0),
         cp = canvasController.viewToCanvas(p),
         dx = cp.x - cp0.x, dy = cp.y - cp0.y,
-        drags = this.calcDrags(drag.item, model, cp, cp0),
-        hitInfo, newLength;
+        drags = this.calcDrags(dragItem, model, cp, cp0),
+        hitList = this.hitTest(p), hitInfo,
+        newLength;
     switch (drag.type) {
       case 'paletteItem':
-        hitInfo = this.hitTestUnselectedItems(p);
-        var snapshot = transactionModel.getSnapshot(item),
+        if (isContainable(dragItem))
+          hitInfo = this.getFirstHit(hitList, isContainerTarget);
+        var snapshot = transactionModel.getSnapshot(dragItem),
             drags = self.calcDrags(item, model, cp, cp0),
             parentDrag = drags.parentDrag;
-        model.observableModel.changeValue(item, 'x', snapshot.x + parentDrag.x);
-        model.observableModel.changeValue(item, 'y', snapshot.y + parentDrag.y);
+        model.observableModel.changeValue(dragItem, 'x', snapshot.x + parentDrag.x);
+        model.observableModel.changeValue(dragItem, 'y', snapshot.y + parentDrag.y);
         break;
       case 'moveSelection':
-        hitInfo = this.hitTestUnselectedItems(p);
+        if (isContainable(dragItem))
+          hitInfo = this.getFirstHit(hitList, isContainerTarget);
         model.selectionModel.forEach(function(item) {
           var snapshot = transactionModel.getSnapshot(item),
               drags = self.calcDrags(item, model, cp, cp0),
@@ -728,60 +696,60 @@ var shapes = (function() {
             localMouse = drags.localMouse,
             dx1 = localClick.x, dy1 = localClick.y,
             dx2 = localMouse.x, dy2 = localMouse.y;
-        model.observableModel.changeValue(item, 'radius',
+        model.observableModel.changeValue(dragItem, 'radius',
             snapshot.radius * Math.sqrt((dx2 * dx2 + dy2 * dy2) / (dx1 * dx1 + dy1 * dy1)));
         break;
 
       case 'p1':
-        model.observableModel.changeValue(item, 'x', snapshot.x + drags.parentDrag.x);
-        model.observableModel.changeValue(item, 'y', snapshot.y + drags.parentDrag.y);
-        model.observableModel.changeValue(item, 'dx', snapshot.dx - drags.localDrag.x);
-        model.observableModel.changeValue(item, 'dy', snapshot.dy - drags.localDrag.y);
-        item._angle1 = this.projectToParentHull(item, { x: 0, y: 0 });
+        model.observableModel.changeValue(dragItem, 'x', snapshot.x + drags.parentDrag.x);
+        model.observableModel.changeValue(dragItem, 'y', snapshot.y + drags.parentDrag.y);
+        model.observableModel.changeValue(dragItem, 'dx', snapshot.dx - drags.localDrag.x);
+        model.observableModel.changeValue(dragItem, 'dy', snapshot.dy - drags.localDrag.y);
+        item._angle1 = this.projectToParentHull(dragItem, { x: 0, y: 0 });
         break;
 
       case 'p2':
-        model.observableModel.changeValue(item, 'dx', snapshot.dx + drags.localDrag.x);
-        model.observableModel.changeValue(item, 'dy', snapshot.dy + drags.localDrag.y);
-        item._angle2 = this.projectToParentHull(item, { x: item.dx, y: item.dy });
+        model.observableModel.changeValue(dragItem, 'dx', snapshot.dx + drags.localDrag.x);
+        model.observableModel.changeValue(dragItem, 'dy', snapshot.dy + drags.localDrag.y);
+        dragItem._angle2 = this.projectToParentHull(dragItem, { x: dragItem.dx, y: dragItem.dy });
         break;
 
       case 'end0':
-        model.observableModel.changeValue(item, 'x', snapshot.x + drags.parentDrag.x / 2);
-        model.observableModel.changeValue(item, 'y', snapshot.y + drags.parentDrag.y / 2);
-        newLength = geometry.lineLength(drags.parentMouse.x, drags.parentMouse.y, item.x, item.y);
-        model.observableModel.changeValue(item, 'halfLength', newLength);
-        this.autoRotateBezier(item);
+        model.observableModel.changeValue(dragItem, 'x', snapshot.x + drags.parentDrag.x / 2);
+        model.observableModel.changeValue(dragItem, 'y', snapshot.y + drags.parentDrag.y / 2);
+        newLength = geometry.lineLength(drags.parentMouse.x, drags.parentMouse.y, dragItem.x, dragItem.y);
+        model.observableModel.changeValue(dragItem, 'halfLength', newLength);
+        this.autoRotateBezier(dragItem);
         break;
 
       // case 'bezier':
       //   var newLength;
       //   if (mouseHitInfo.part == 'position') {
-      //     observableModel.changeValue(item, 'x', snapshot.x + parent_drag.x);
-      //     observableModel.changeValue(item, 'y', snapshot.y + parent_drag.y);
-      //     autoRotateBezier(item);
+      //     observableModel.changeValue(dragItem, 'x', snapshot.x + parent_drag.x);
+      //     observableModel.changeValue(dragItem, 'y', snapshot.y + parent_drag.y);
+      //     autoRotateBezier(dragItem);
       //   } else if (mouseHitInfo.part == 'point') {
-      //     var pt = item.points[mouseHitInfo.index];
-      //     var oldPt = item._points[mouseHitInfo.index];
+      //     var pt = dragItem.points[mouseHitInfo.index];
+      //     var oldPt = dragItem._points[mouseHitInfo.index];
       //     observableModel.changeValue(pt, 'x', oldPt.x + local_drag.x);
       //     observableModel.changeValue(pt, 'y', oldPt.y + local_drag.y);
       //   } else if (mouseHitInfo.part == 'end0') {
       //   } else if (mouseHitInfo.part == 'end1') {
-      //     observableModel.changeValue(item, 'x', snapshot.x + parent_drag.x / 2);
-      //     observableModel.changeValue(item, 'y', snapshot.y + parent_drag.y / 2);
-      //     newLength = LineLength(parent_mouse.x, parent_mouse.y, item.x, item.y);
-      //     autoRotateBezier(item);
+      //     observableModel.changeValue(dragItem, 'x', snapshot.x + parent_drag.x / 2);
+      //     observableModel.changeValue(dragItem, 'y', snapshot.y + parent_drag.y / 2);
+      //     newLength = LineLength(parent_mouse.x, parent_mouse.y, dragItem.x, dragItem.y);
+      //     autoRotateBezier(dragItem);
       //   } else if (mouseHitInfo.part == 'mid') {
-      //     observableModel.changeValue(item, 'x', snapshot.x + parent_drag.x);
-      //     observableModel.changeValue(item, 'y', snapshot.y + parent_drag.y);
-      //     autoRotateBezier(item);
+      //     observableModel.changeValue(dragItem, 'x', snapshot.x + parent_drag.x);
+      //     observableModel.changeValue(dragItem, 'y', snapshot.y + parent_drag.y);
+      //     autoRotateBezier(dragItem);
       //   }
       //   if (newLength) {
       //     if (newLength > 0.00001) {
-      //       item.halfLength = newLength;
+      //       dragItem.halfLength = newLength;
       //       var scale = newLength / snapshot.halfLength;
-      //       for (var i = 0; i < item.points.length; i++) {
-      //         var pi = item.points[i], oldPi = item._points[i];
+      //       for (var i = 0; i < dragItem.points.length; i++) {
+      //         var pi = dragItem.points[i], oldPi = dragItem._points[i];
       //         observableModel.changeValue(pi, 'x', scale * oldPi.x);
       //         observableModel.changeValue(pi, 'y', scale * oldPi.y);
       //       }
@@ -811,13 +779,9 @@ var shapes = (function() {
 
     if (drag.type == 'moveSelection' || newItem) {
       // Find group beneath mouse.
-      var hitInfo = this.hitTestUnselectedItems(p);
-      var parent = board;
-      if (hitInfo) {
-        parent = hitInfo.item;
-        while (parent.type != 'group')
-          parent = model.hierarchicalModel.getParent(parent);
-      }
+      var hitList = this.hitTest(p),
+          hitInfo = this.getFirstHit(hitList, isContainerTarget),
+          parent = hitInfo ? hitInfo.item : board;
       if (newItem) {
         // Items that can't be added to the board without being wrapped in a group.
         if (parent === board && isHullItem(newItem)) {

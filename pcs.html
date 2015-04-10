@@ -23,7 +23,7 @@
 var canvas = document.getElementById('test_canvas');
 var ctx = canvas.getContext('2d');
 
-var theme = diagrams.theme.create(),
+var theme = diagrams.theme.createBlueprint(),
     canvasController = new diagrams.CanvasController(canvas, ctx, theme),
     statechartModel = { root: statechart_data },
     shapeModel = { root: shape_data };
