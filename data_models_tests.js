@@ -133,34 +133,35 @@ test("observableModel extend", function() {
 
 test("observableModel", function() {
   var model = {
-    root: {},
+    root: {
+      array: [],
+    },
   };
   var test = dataModels.observableModel.extend(model);
 
-  var array = [];
   var change;
   test.addHandler('changed', function(change_) {
     change = change_;
   });
 
-  test.changeValue(model, 'foo', 'bar');
-  deepEqual(model, change.item);
+  test.changeValue(model.root, 'foo', 'bar');
+  deepEqual(model.root, change.item);
   deepEqual('foo', change.attr);
   deepEqual(undefined, change.oldValue);
-  deepEqual(model.foo, 'bar');
+  deepEqual(model.root.foo, 'bar');
 
-  test.insertElement(model, array, 0, 'foo');
-  deepEqual(model, change.item);
-  deepEqual(array, change.array);
-  deepEqual(0, change.attr);
-  deepEqual(array, [ 'foo' ]);
+  test.insertElement(model.root, 'array', 0, 'foo');
+  deepEqual(model.root, change.item);
+  deepEqual('array', change.attr);
+  deepEqual(0, change.index);
+  deepEqual(model.root.array, [ 'foo' ]);
 
-  test.removeElement(model, array, 0);
-  deepEqual(model, change.item);
-  deepEqual(array, change.array);
-  deepEqual(0, change.attr);
+  test.removeElement(model.root, 'array', 0);
+  deepEqual(model.root, change.item);
+  deepEqual('array', change.attr);
+  deepEqual(0, change.index);
   deepEqual('foo', change.oldValue);
-  deepEqual(array, []);
+  deepEqual(model.root.array, []);
 });
 
 // Transaction model unit tests.
@@ -208,10 +209,11 @@ test("transactionModel events", function() {
 
 test("transactionModel transaction", function() {
   var model = {
-    root: {},
+    root: {
+      prop1: 'foo',
+      array: [],
+    },
   };
-  model.prop1 = 'foo';
-  model.array = [];
   var test = dataModels.transactionModel.extend(model);
   var ended;
   test.addHandler('transactionEnded', function(transaction) {
@@ -219,25 +221,25 @@ test("transactionModel transaction", function() {
   });
 
   test.beginTransaction('test trans');
-  model.prop1 = 'bar';
-  model.observableModel.onValueChanged(model, 'prop1', 'foo');
-  model.array.push('a');
-  model.observableModel.onElementInserted(model, model.array, 0);
-  model.array.push('b');
-  model.observableModel.onElementInserted(model, model.array, 1);
-  model.array.push('c');
-  model.observableModel.onElementInserted(model, model.array, 2);
-  model.array.splice(1, 1);  // remove middle element.
-  model.observableModel.onElementRemoved(model, model.array, 1, 'b');
+  model.root.prop1 = 'bar';
+  model.observableModel.onValueChanged(model.root, 'prop1', 'foo');
+  model.root.array.push('a');
+  model.observableModel.onElementInserted(model.root, 'array', 0);
+  model.root.array.push('b');
+  model.observableModel.onElementInserted(model.root, 'array', 1);
+  model.root.array.push('c');
+  model.observableModel.onElementInserted(model.root, 'array', 2);
+  model.root.array.splice(1, 1);  // remove middle element.
+  model.observableModel.onElementRemoved(model.root, 'array', 1, 'b');
   ok(!ended);
   test.endTransaction();
   ok(ended);
   test.undo(ended);
-  deepEqual(model.prop1, 'foo');
-  deepEqual(model.array, []);
+  deepEqual(model.root.prop1, 'foo');
+  deepEqual(model.root.array, []);
   test.redo(ended);
-  deepEqual(model.prop1, 'bar');
-  deepEqual(model.array, [ 'a', 'c' ]);
+  deepEqual(model.root.prop1, 'bar');
+  deepEqual(model.root.array, [ 'a', 'c' ]);
 });
 
 test("transactionModel cancel", function() {
@@ -269,7 +271,9 @@ test("transactionModel cancel", function() {
 // Referencing model unit tests.
 
 test("referencingModel extend", function() {
-  var model = { root: {} };
+  var model = {
+    root: {},
+  };
   var test = dataModels.referencingModel.extend(model);
   deepEqual(test, model.referencingModel);
 });
@@ -299,7 +303,7 @@ test("referencingModel", function() {
   model.observableModel.changeValue(child2, 'refId', 2);
   deepEqual(child2._refId, child1);
 
-  model.observableModel.insertElement(root, root.items, root.items.length - 1, child3);
+  model.observableModel.insertElement(root, 'items', root.items.length - 1, child3);
   deepEqual(child3._firstId, root);
   deepEqual(child3._secondId, child2);
 
@@ -335,7 +339,7 @@ test("hierarchicalModel", function() {
   deepEqual(test.getParent(root), null);
   deepEqual(test.getParent(child1), root);
 
-  model.observableModel.insertElement(root, root.items, root.items.length - 1, child2);
+  model.observableModel.insertElement(root, 'items', root.items.length - 1, child2);
   deepEqual(test.getParent(child2), root);
   deepEqual(test.getParent(child3), child2);
 

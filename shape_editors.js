@@ -60,7 +60,7 @@ var shapes = (function() {
           for (var i = 0; i < length; i++) {
             var subItem = items[i];
             if (subItem === item) {
-              model.observableModel.removeElement(parent, items, i);
+              model.observableModel.removeElement(parent, 'items', i);
               break;
             }
           }
@@ -139,7 +139,7 @@ var shapes = (function() {
         // if (item.type == 'bezier') {
         //   autoRotateBezier(item);
         // }
-        model.observableModel.insertElement(parent, parent.items, parent.items.length, item);
+        model.observableModel.insertElement(parent, 'items', parent.items.length, item);
       },
     }
 
@@ -674,7 +674,7 @@ var shapes = (function() {
         if (isContainable(dragItem))
           hitInfo = this.getFirstHit(hitList, isContainerTarget);
         var snapshot = transactionModel.getSnapshot(dragItem),
-            drags = self.calcDrags(item, model, cp, cp0),
+            drags = self.calcDrags(dragItem, model, cp, cp0),
             parentDrag = drags.parentDrag;
         model.observableModel.changeValue(dragItem, 'x', snapshot.x + parentDrag.x);
         model.observableModel.changeValue(dragItem, 'y', snapshot.y + parentDrag.y);

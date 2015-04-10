@@ -106,7 +106,7 @@ var statecharts = (function() {
           for (var i = 0; i < length; i++) {
             var subItem = items[i];
             if (subItem === item) {
-              model.observableModel.removeElement(parent, items, i);
+              model.observableModel.removeElement(parent, 'items', i);
               break;
             }
           }
@@ -165,9 +165,9 @@ var statecharts = (function() {
         var model = this.model, statechart = this.statechart,
             statechartItems = statechart.items;
         items.forEach(function(item) {
-          statechart.items.push(item);
+          statechartItems.push(item);
           model.selectionModel.add(item);
-          model.observableModel.onElementInserted(statechart, statechartItems, statechartItems.length - 1);
+          model.observableModel.onElementInserted(statechart, 'items', statechartItems.length - 1);
         });
       },
 
@@ -254,7 +254,7 @@ var statecharts = (function() {
           if (oldParent)            // if null, it's a new item.
             this.deleteItem(item);  // notifies observer
           parent.items.push(itemToAdd);
-          model.observableModel.onElementInserted(parent, parent.items, parent.items.length - 1);
+          model.observableModel.onElementInserted(parent, 'items', parent.items.length - 1);
         }
         return itemToAdd;
       },
@@ -519,7 +519,7 @@ var statecharts = (function() {
   }
 
   function hitArrow(renderer, x, y, p, tol) {
-    var r = renderer.arrowSize, d = 2 * r;
+    var d = renderer.arrowSize, r = d * 0.5;
     return diagrams.hitTestRect(x - r, y - r, d, d, p, tol);
   }
 
@@ -1402,7 +1402,7 @@ var statecharts = (function() {
     if (newItem) {
       // Clone the new item, since we're about to roll back the transaction. We
       // do this to collapse all of the edits into a single insert operation.
-      newItem = model.instancingModel.clone(newItem);
+      newItem = dragItem = model.instancingModel.clone(newItem);
       model.dataModel.initialize(newItem);
       transactionModel.cancelTransaction();
       transactionModel.beginTransaction(drag.name);
@@ -1411,7 +1411,7 @@ var statecharts = (function() {
       dragItem._p1 = dragItem._p2 = null;
       if (newItem) {
         observableModel.insertElement(
-            statechart, statechart.items, statechart.items.length - 1, newItem);
+            statechart, 'items', statechart.items.length - 1, newItem);
       }
     } else if (drag.type == 'moveSelection' || newItem) {
       // Find state beneath mouse.

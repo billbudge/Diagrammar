@@ -179,8 +179,8 @@ var observableModel = (function () {
     // Notifies observers that the value of a property has changed.
     // Standard formats:
     // 'change': item, attr, oldValue.
-    // 'insert': item, array, index.
-    // 'remove': item, array, index, oldValue.
+    // 'insert': item, attr, index.
+    // 'remove': item, attr, index, oldValue.
     onChanged: function (change) {
       // console.log(change);
       this.onEvent('changed', function (handler) {
@@ -206,34 +206,35 @@ var observableModel = (function () {
       return oldValue;
     },
 
-    onElementInserted: function (item, array, index) {
+    onElementInserted: function (item, attr, index) {
       this.onChanged({
         type: 'insert',
         item: item,
-        array: array,
-        attr: index,
+        attr: attr,
+        index: index,
       });
     },
 
-    insertElement: function (item, array, index, newValue) {
+    insertElement: function (item, attr, index, newValue) {
+      var array = item[attr];
       array.splice(index, 0, newValue);
-      this.onElementInserted(item, array, index);
+      this.onElementInserted(item, attr, index);
     },
 
-    onElementRemoved: function (item, array, index, oldValue) {
+    onElementRemoved: function (item, attr, index, oldValue) {
       this.onChanged({
         type: 'remove',
         item: item,
-        array: array,
-        attr: index,
+        attr: attr,
+        index: index,
         oldValue: oldValue,
       });
     },
 
-    removeElement: function (item, array, index) {
-      var oldValue = array[index];
+    removeElement: function (item, attr, index) {
+      var array = item[attr], oldValue = array[index];
       array.splice(index, 1);
-      this.onElementRemoved(item, array, index, oldValue);
+      this.onElementRemoved(item, attr, index, oldValue);
       return oldValue;
     },
   }
@@ -266,19 +267,21 @@ var transactionModel = (function () {
       switch (change.type) {
         case 'change':
           var oldValue = change.item[change.attr];
-          change.item[change.attr] = change.oldValue;
+          item[attr] = change.oldValue;
           change.oldValue = oldValue;
           observableModel.onChanged(change);  // this change is its own inverse.
           break;
         case 'insert':
-          change.oldValue = change.array[attr];
-          change.array.splice(attr, 1);
-          observableModel.onElementRemoved(item, change.array, attr, change.oldValue);
+          var array = item[attr], index = change.index;
+          change.oldValue = array[index];
+          array.splice(index, 1);
+          observableModel.onElementRemoved(item, attr, index, change.oldValue);
           change.type = 'remove';
           break;
         case 'remove':
-          change.array.splice(change.attr, 0, change.oldValue);
-          observableModel.onElementInserted(item, change.array, attr);
+          var array = item[attr], index = change.index;
+          array.splice(index, 0, change.oldValue);
+          observableModel.onElementInserted(item, attr, index);
           change.type = 'insert';
           break;
       }
@@ -584,15 +587,14 @@ var referencingModel = (function () {
 
     onChanged_: function (change) {
       var item = change.item,
-          array = change.array,
           attr = change.attr,
-          oldValue = change.oldValue,
           dataModel = this.model.dataModel;
       switch (change.type) {
         case 'change':
           if (dataModel.isReference(item, attr)) {
             this.resolveReference(item, attr);
           } else {
+            var oldValue = change.oldValue;
             if (dataModel.isItem(oldValue))
               this.removeTargets_(oldValue);
             var newValue = item[attr];
@@ -601,11 +603,12 @@ var referencingModel = (function () {
           }
           break;
         case 'insert':
-          var newValue = array[attr];
+          var newValue = item[attr][change.index];
           if (dataModel.isItem(newValue))
             this.addTargets_(newValue);
           break;
         case 'remove':
+          var oldValue = change.oldValue;
           if (dataModel.isItem(oldValue))
             this.removeTargets_(oldValue);
           break;
@@ -989,18 +992,17 @@ var hierarchicalModel = (function () {
 
     onChanged_: function (change) {
       var item = change.item,
-          array = change.array,
           attr = change.attr,
-          oldValue = change.oldValue;
+          dataModel = this.model.dataModel;
       switch (change.type) {
         case 'change':
           var newValue = item[attr];
-          if (this.model.dataModel.isItem(newValue))
+          if (dataModel.isItem(newValue))
             this.init(newValue, item);
           break;
         case 'insert':
-          var newValue = array[attr];
-          if (this.model.dataModel.isItem(newValue))
+          var newValue = item[attr][change.index];
+          if (dataModel.isItem(newValue))
             this.init(newValue, item);
           break;
         case 'remove':
@@ -1110,7 +1112,7 @@ var transformableModel = (function () {
 
     onChanged_: function (change) {
       var hierarchicalModel = this.model.hierarchicalModel,
-          item = change.item, array = change.array, attr = change.attr;
+          item = change.item, attr = change.attr;
       switch (change.type) {
         case 'change':
           var newValue = item[attr];
@@ -1120,7 +1122,7 @@ var transformableModel = (function () {
             this.update(item);
           break;
         case 'insert':
-          var newValue = array[attr];
+          var newValue = item[attr][change.index];
           if (this.model.dataModel.isItem(newValue))
             this.update(newValue);
           break;
