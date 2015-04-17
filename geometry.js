@@ -124,13 +124,13 @@ var geometry = (function() {
   }
 
   function matMulNew(m1, m2) {
-    var m11 = m1[0] * m2[0] + m1[1] * m2[2];
-    var m12 = m1[0] * m2[1] + m1[1] * m2[3];
-    var m21 = m1[2] * m2[0] + m1[3] * m2[2];
-    var m22 = m1[2] * m2[1] + m1[3] * m2[3];
-    var m31 = m1[4] * m2[0] + m1[5] * m2[2] + m2[4];
-    var m32 = m1[4] * m2[1] + m1[5] * m2[3] + m2[5];
-    return [ m11, m12, m21, m22, m31, m32 ];
+    return [ m1[0] * m2[0] + m1[1] * m2[2],
+             m1[0] * m2[1] + m1[1] * m2[3],
+             m1[2] * m2[0] + m1[3] * m2[2],
+             m1[2] * m2[1] + m1[3] * m2[3],
+             m1[4] * m2[0] + m1[5] * m2[2] + m2[4],
+             m1[4] * m2[1] + m1[5] * m2[3] + m2[5]
+           ];
   }
 
   function matMulVec(v, m) {
@@ -318,8 +318,13 @@ var geometry = (function() {
       lastP = pi;
     }
     var t = geometry.projectPointToSegment(minP0, minP1, p);
-    return { x: minP0.x + t * (minP1.x - minP0.x),
-             y: minP0.y + t * (minP1.y - minP0.y) };
+    return {
+      x: minP0.x + t * (minP1.x - minP0.x),
+      y: minP0.y + t * (minP1.y - minP0.y),
+      p0: minP0,
+      p1: minP1,
+      t: t,
+    };
   }
 
   function angleToConvexHull(hull, centroid, angle) {

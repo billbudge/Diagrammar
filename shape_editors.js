@@ -27,21 +27,21 @@ var shapes = (function() {
   }
 
   function isHullItem(item) {
-    return item.type == 'disk';
+    return item.type === 'disk' || item.type === 'edge' ||
+           item.type === 'group';
   }
 
-  function isContainable(item) {
-    return true;
+  function isHull(item) {
+    return item.type === 'group';
   }
 
-  function isContainer(item) {
-    return item.type == 'group';
+  function isEdgeItem(item) {
+    return item.type === 'point';
   }
 
-  function isHullEdgeItem(item) {
-    return item.type == 'linear' || item.type == 'bezier';
+  function isEdge(item) {
+    return item.type === 'edge';
   }
-
 
 //------------------------------------------------------------------------------
 
@@ -80,16 +80,15 @@ var shapes = (function() {
       },
 
       copyItems: function(items, map) {
-        var self = this,
-            copies = this.prototype.copyItems(items, map);
+        var model = this.model, dataModel = model.dataModel,
+            transformableModel = model.transformableModel,
+            copies = this.prototype.copyItems(items, map),
+            board = this.board;
 
         items.forEach(function(item) {
-          var copy = map.find(self.model.dataModel.getId(item));
-          // if (isState(copy)) {
-          //   var wp = self.renderer.getPosition(item);
-          //   copy.x = wp.x;
-          //   copy.y = wp.y;
-          // }
+          var copy = map.find(dataModel.getId(item));
+          var toGlobal = transformableModel.getToParent(item, board);
+          geometry.matMulPt(copy, toGlobal);
         });
         return copies;
       },
@@ -105,42 +104,52 @@ var shapes = (function() {
       },
 
       addItems: function(items) {
-        var model = this.model, board = this.board,
-            boardItems = board.items;
+        var self = this, selectionModel = this.model.selectionModel;
         items.forEach(function(item) {
-          boardItems.push(item);
-          model.selectionModel.add(item);
-          model.observableModel.onElementInserted(board, boardItems, boardItems.length - 1);
+          self.addItem(item, self.board);
+          selectionModel.add(item);
         });
       },
 
       doPaste: function() {
         this.getScrap().forEach(function(item) {
-          // if (isState(item)) {
-          //   item.x += 16;
-          //   item.y += 16;
-          // }
+          item.x += 16;
+          item.y += 16;
         });
         this.prototype.doPaste.call(this);
       },
 
-      addItem: function(item, oldParent, parent) {
-        var model = this.model;
-        if (oldParent === parent)
-          return;
-        var transformableModel = model.transformableModel;
-        if (oldParent) {          // if null, it's a new item.
-          geometry.matMulPt(item, transformableModel.getAbsolute(oldParent));
+      addItem: function(item, parent) {
+        var model = this.model, hierarchicalModel = model.hierarchicalModel,
+            oldParent = hierarchicalModel.getParent(item);
+        if (oldParent !== parent) {
+          var transformableModel = model.transformableModel,
+              toParent = transformableModel.getToParent(item, parent);
+          geometry.matMulPt(item, toParent);
           this.deleteItem(item);  // notifies observer
+          model.observableModel.insertElement(parent, 'items', parent.items.length, item);
         }
-
-        geometry.matMulPt(item, transformableModel.getInverseAbsolute(parent));
-
-        // if (item.type == 'bezier') {
-        //   autoRotateBezier(item);
-        // }
-        model.observableModel.insertElement(parent, 'items', parent.items.length, item);
       },
+
+      addPoint: function(point, edge) {
+        // var model = this.model;
+        // if (oldParent !== parent) {
+        //   var transformableModel = model.transformableModel;
+        //   if (oldParent) {          // if null, it's a new item.
+        //     geometry.matMulPt(item, transformableModel.getAbsolute(oldParent));
+        //     this.deleteItem(item);  // notifies observer
+        //   }
+
+        //   geometry.matMulPt(item, transformableModel.getInverseAbsolute(parent));
+        // }
+        // var x = point.x,
+        //     points = edge.items, length = points.length;
+        // for (var i = 0; i < length; i++) {
+        //   if (x < points[i].x)
+        //     break;
+        // }
+        // this.model.observableModel.insertElement(edge, 'items', i, point);
+      }
     }
 
     function extend(model) {
@@ -178,23 +187,36 @@ var shapes = (function() {
       highlightMode = 2,
       hotTrackMode = 4;
 
-  function Renderer(model, ctx, theme) {
-    this.model = model;
-    this.ctx = ctx;
-
+  function Renderer(theme) {
     this.knobbyRadius = 4;
 
     this.theme = theme || diagrams.theme.create();
   }
 
-  function drawKnobby(renderer, x, y) {
-    var r = renderer.knobbyRadius, d = 2 * r;
+  Renderer.prototype.beginDraw = function(model, ctx) {
+    this.model = model;
+    this.transformableModel = model.transformableModel;
+    this.ctx = ctx;
+    ctx.save();
+    ctx.font = this.theme.font;
+  }
+
+  Renderer.prototype.endDraw = function() {
+    this.ctx.restore();
+    this.model = null;
+    this.ctx = null;
+  }
+
+  function drawKnobby(renderer, r, x, y) {
+    var d = 2 * r;
     renderer.ctx.strokeRect(x - r, y - r, d, d);
   }
 
   Renderer.prototype.drawItem = function(item, mode) {
     var ctx = this.ctx, theme = this.theme,
-        knobbyRadius = this.knobbyRadius, knobbyDiameter = 2 * knobbyRadius,
+        transformableModel = this.transformableModel,
+        ooScale = 1.0 / transformableModel.getUniformScale(item),
+        knobbyRadius = this.knobbyRadius * ooScale,
         t = item._atransform;
     ctx.save();
     ctx.transform(t[0], t[2], t[1], t[3], t[4], t[5]); // local to world
@@ -202,13 +224,13 @@ var shapes = (function() {
     if (mode & normalMode) {
       ctx.fillStyle = theme.bgColor;
       ctx.strokeStyle = theme.strokeColor;
-      ctx.lineWidth = 0.25;
+      ctx.lineWidth = 0.25 * ooScale;
     } else if (mode & highlightMode) {
       ctx.strokeStyle = theme.highlightColor;
-      ctx.lineWidth = 2.0;
+      ctx.lineWidth = 2.0 * ooScale;
     } else if (mode & hotTrackMode) {
       ctx.strokeStyle = theme.hotTrackColor;
-      ctx.lineWidth = 2.0;
+      ctx.lineWidth = 2.0 * ooScale;
     }
 
     switch (item.type) {
@@ -221,53 +243,84 @@ var shapes = (function() {
           ctx.stroke();
           ctx.setLineDash([0]);
         }
-        drawKnobby(this, 0, 0);
+        drawKnobby(this, knobbyRadius, 0, 0);
         ctx.strokeRect(-knobbyRadius, -knobbyRadius, 2 * knobbyRadius, 2 * knobbyRadius);
-        drawKnobby(this, r, 0);
+        drawKnobby(this, knobbyRadius, r, 0);
         break;
-      case 'linear':
+      case 'point':
+        ctx.beginPath();
+        ctx.arc(0, 0, knobbyRadius, 0, 2 * Math.PI, false);
+        ctx.stroke();
+        break;
+      case 'edge':
+        var dx = item.dx, dy = item.dy,
+            points = item.items, length = points.length;
         ctx.lineWidth = 0.25;
+        if (mode & normalMode) {
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(1, 0);
+          ctx.setLineDash([4]);
+          ctx.stroke();
+          ctx.setLineDash([0]);
+        }
         ctx.beginPath();
+        ctx.lineWidth = 2;
         ctx.moveTo(0, 0);
-        ctx.lineTo(item.dx, item.dy);
-        ctx.setLineDash([4]);
-        ctx.stroke();
-        ctx.setLineDash([0]);
-        if (mode & highlightMode) {
-          var p1 = item._p1, p2 = item._p2;
-          if (p1 && p2) {
-            drawKnobby(this, p1.x, p1.y);
-            drawKnobby(this, p2.x, p2.y);
-          }
-          drawKnobby(this, 0, 0);
-          drawKnobby(this, item.dx, item.dy);
+        for (var i = 0; i < length; i++) {
+          var pi = points[i];
+          ctx.lineTo(pi.x, pi.y);
         }
+        ctx.lineTo(1, 0);
+        ctx.stroke();
+        if (mode & normalMode)
+          ctx.lineWidth = 0.25 * ooScale;
+        drawKnobby(this, knobbyRadius, 0, 0);
+        drawKnobby(this, knobbyRadius, 1, 0);
         break;
-      case 'bezier':
-        ctx.beginPath();
-        // Start at first point of first curve segment.
-        ctx.moveTo(item._curves[0][0].x, item._curves[0][0].y);
-        for (var i = 0; i < item._curves.length; i++) {
-          var seg = item._curves[i];
-          ctx.bezierCurveTo(seg[1].x, seg[1].y, seg[2].x, seg[2].y, seg[3].x, seg[3].y);
-        }
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(-item.halfLength, 0);
-        ctx.lineTo(item.halfLength, 0);
-        ctx.setLineDash([5]);
-        ctx.stroke();
-        ctx.setLineDash([0]);
-        if (mode & highlightMode) {
-          for (var i = 0; i < item.points.length; i++) {
-            var pi = item.points[i];
-            drawKnobby(this, pi.x, pi.y);
-          }
-          drawKnobby(this, -item.halfLength, 0);
-          drawKnobby(this, 0, 0);
-          drawKnobby(this, item.halfLength, 0);
-        }
-        break;
+      // case 'linear':
+      //   ctx.lineWidth = 0.25;
+      //   ctx.beginPath();
+      //   ctx.moveTo(0, 0);
+      //   ctx.lineTo(item.dx, item.dy);
+      //   ctx.setLineDash([4]);
+      //   ctx.stroke();
+      //   ctx.setLineDash([0]);
+      //   if (mode & highlightMode) {
+      //     var p1 = item._p1, p2 = item._p2;
+      //     if (p1 && p2) {
+      //       drawKnobby(this, p1.x, p1.y);
+      //       drawKnobby(this, p2.x, p2.y);
+      //     }
+      //     drawKnobby(this, 0, 0);
+      //     drawKnobby(this, item.dx, item.dy);
+      //   }
+      //   break;
+      // case 'bezier':
+      //   ctx.beginPath();
+      //   // Start at first point of first curve segment.
+      //   ctx.moveTo(item._curves[0][0].x, item._curves[0][0].y);
+      //   for (var i = 0; i < item._curves.length; i++) {
+      //     var seg = item._curves[i];
+      //     ctx.bezierCurveTo(seg[1].x, seg[1].y, seg[2].x, seg[2].y, seg[3].x, seg[3].y);
+      //   }
+      //   ctx.stroke();
+      //   ctx.beginPath();
+      //   ctx.moveTo(-item.halfLength, 0);
+      //   ctx.lineTo(item.halfLength, 0);
+      //   ctx.setLineDash([5]);
+      //   ctx.stroke();
+      //   ctx.setLineDash([0]);
+      //   if (mode & highlightMode) {
+      //     for (var i = 0; i < item.points.length; i++) {
+      //       var pi = item.points[i];
+      //       drawKnobby(this, pi.x, pi.y);
+      //     }
+      //     drawKnobby(this, -item.halfLength, 0);
+      //     drawKnobby(this, 0, 0);
+      //     drawKnobby(this, item.halfLength, 0);
+      //   }
+      //   break;
       case 'group':
         if (!item.op || !item._paths)
           break;
@@ -298,7 +351,7 @@ var shapes = (function() {
 
   Renderer.prototype.hitTest = function(item, p, tol, mode) {
     var knobbyRadius = this.knobbyRadius,
-        transformableModel = this.model.transformableModel,
+        transformableModel = this.transformableModel,
         inverseTransform = transformableModel.getInverseAbsolute(item),
         localP = geometry.matMulPtNew(p, inverseTransform),
         hitInfo, r, distSquared;
@@ -316,10 +369,35 @@ var shapes = (function() {
           }
         }
         break;
-      case 'linear':
-        hitInfo = diagrams.hitTestLine(
-            { x:0, y:0 }, { x: item.dx, y: item.dy }, localP, tol);
+      case 'point':
+        if (diagrams.hitPoint(0, 0, localP, tol))
+          hitInfo = { position: true };
         break;
+      case 'edge':
+        var points = item.items, length = points.length;
+        // First check the end points.
+        if (!hitInfo && diagrams.hitPoint(0, 0, localP, knobbyRadius))
+          hitInfo = { p1: true };
+        if (!hitInfo && diagrams.hitPoint(1, 0, localP, knobbyRadius))
+          hitInfo = { p2: true };
+        // Now check the edge segments.
+        if (!hitInfo) {
+          var lastP = { x: 0, y: 0 };
+          for (var i = 0; i < length; i++) {
+            var pi = points[i];
+            hitInfo = diagrams.hitTestLine(lastP, pi, localP, tol);
+            if (hitInfo)
+              break;
+            lastP = pi;
+          }
+          if (!hitInfo)
+            hitInfo = diagrams.hitTestLine(lastP, { x: 1, y: 0 }, localP, tol);
+        }
+        break;
+      // case 'linear':
+      //   hitInfo = diagrams.hitTestLine(
+      //       { x:0, y:0 }, { x: item.dx, y: item.dy }, localP, tol);
+      //   break;
       // case 'bezier':
       //   if (Math.abs(localP.x + item.halfLength) <= knobbyRadius + tol &&
       //       Math.abs(localP.y) <= knobbyRadius + tol)
@@ -388,31 +466,37 @@ var shapes = (function() {
         items: [
           {
             type: 'disk',
-            id : 1,
+            id: 1,
             x: 40,
             y: 40,
             radius: 16,
           },
           {
-            type: 'linear',
-            id : 2,
-            x: 16,
-            y: 72,
-            dx: 96,
-            dy: 0,
+            type: 'point',
+            id: 2,
+            x: 80,
+            y: 40,
           },
-          {
-            type: 'bezier',
-            id: 3,
-            x: 64,
-            y: 96,
-            halfLength: 48,
-            points: [
-              { x: -24, y: 15 },
-              { x: 0, y: 20 },
-              { x: 24, y: 15 }
-            ],
-          },
+          // {
+          //   type: 'linear',
+          //   id : 2,
+          //   x: 16,
+          //   y: 72,
+          //   dx: 96,
+          //   dy: 0,
+          // },
+          // {
+          //   type: 'bezier',
+          //   id: 3,
+          //   x: 64,
+          //   y: 96,
+          //   halfLength: 48,
+          //   points: [
+          //     { x: -24, y: 15 },
+          //     { x: 0, y: 20 },
+          //     { x: 24, y: 15 }
+          //   ],
+          // },
         ]
       }
     }
@@ -432,7 +516,7 @@ var shapes = (function() {
     this.canvas = canvasController.canvas;
     this.ctx = canvasController.ctx;
     if (!this.renderer)
-      this.renderer = new Renderer(this.model, this.ctx, canvasController.theme);
+      this.renderer = new Renderer(canvasController.theme);
   }
 
   Editor.prototype.isPaletteItem = function(item) {
@@ -453,16 +537,14 @@ var shapes = (function() {
   }
 
   Editor.prototype.draw = function() {
-    var renderer = this.renderer, ctx = this.ctx,
+    var renderer = this.renderer, model = this.model, ctx = this.ctx,
         palette = this.palette,
         canvasController = this.canvasController;
 
     this.updateGeometry();
 
-    ctx.save();
+    renderer.beginDraw(model, ctx);
     canvasController.applyTransform();
-    ctx.lineJoin = 'round'
-
     visit(this.board, function(item) {
       renderer.drawItem(item, normalMode);
     });
@@ -472,23 +554,23 @@ var shapes = (function() {
     });
     if (this.hotTrackInfo)
       renderer.drawItem(this.hotTrackInfo.item, hotTrackMode);
-    ctx.restore();
+    renderer.endDraw();
 
-    ctx.save();
+    renderer.beginDraw(palette, ctx);
     ctx.fillStyle = renderer.theme.altBgColor;
     ctx.fillRect(palette.root.x, palette.root.y, 160, 300);
     palette.root.items.forEach(function(item) {
       renderer.drawItem(item, normalMode);
     })
-    ctx.restore();
+    renderer.endDraw();
 
-    ctx.save();
+    renderer.beginDraw(model, ctx);
     var temporary = this.getTemporaryItem();
     if (temporary) {
       canvasController.applyTransform();
       renderer.drawItem(temporary, normalMode);
     }
-    ctx.restore();
+    renderer.endDraw();
   }
 
   Editor.prototype.hitTest = function(p) {
@@ -515,6 +597,15 @@ var shapes = (function() {
     return hitList;
   }
 
+  function isDraggable(hitInfo, model) {
+    return true;
+  }
+
+  function isUnselected(hitInfo, model) {
+    var item = hitInfo.item;
+    return !model.hierarchicalModel.isItemInSelection(item);
+  }
+
   Editor.prototype.getFirstHit = function(hitList, filterFn) {
     if (hitList) {
       var model = this.model, length = hitList.length;
@@ -527,14 +618,14 @@ var shapes = (function() {
     return null;
   }
 
-  function isDraggable(hitInfo, model) {
-    return true;
-  }
-
-  function isContainerTarget(hitInfo, model) {
-    var item = hitInfo.item;
-    return isContainer(item) &&
-           !model.hierarchicalModel.isItemInSelection(item);
+  Editor.prototype.getFirstUnselectedContainerHit = function(hitList, item) {
+    function filter(hitInfo, model) {
+      var hitItem = hitInfo.item,
+          compatible = (isEdgeItem(item) && isEdge(hitItem)) ||
+                       (isHullItem(item) && isHull(hitItem));
+      return compatible && isUnselected(hitInfo, model);
+    }
+    return this.getFirstHit(hitList, filter);
   }
 
   Editor.prototype.onClick = function(p) {
@@ -580,26 +671,40 @@ var shapes = (function() {
           else if (mouseHitInfo.center)
             drag = { type: 'moveSelection', name: 'Move selection' };
           break;
-        case 'linear':
-          if (mouseHitInfo.p1)
-            drag = { type: 'p1', name: 'Edit line' };
-          else if (mouseHitInfo.p2)
-            drag = { type: 'p2', name: 'Edit line' };
-          else
-            drag = { type: 'moveSelection', name: 'Move selection' }; // TODO edit position drag type
+        case 'point':
+          drag = { type: 'moveSelection', name: 'Move selection' };
           break;
-        case 'bezier':
-          if (mouseHitInfo.end0)
-            drag = { type: 'end0', name: 'Stretch curve' };
-          else if (mouseHitInfo.mid)
-            drag = { type: 'mid', name: 'Attach curve' };
-          else if (mouseHitInfo.end1)
-            drag = { type: 'end1', name: 'Stretch curve' };
-          else if (mouseHitInfo.point)
-            drag = { type: 'point', name: 'Move control point' };
+        case 'edge':
+          // if (mouseHitInfo.pi !== undefined)
+          //     drag = { type: 'pi', pi: mouseHitInfo.pi, name: 'Edit control point' };
+          //   else
+          if (mouseHitInfo.p1)
+            drag = { type: 'p1', name: 'Edit edge' };
+          else if (mouseHitInfo.p2)
+            drag = { type: 'p2', name: 'Edit edge' };
           else
             drag = { type: 'moveSelection', name: 'Move selection' };
           break;
+        // case 'linear':
+        //   if (mouseHitInfo.p1)
+        //     drag = { type: 'p1', name: 'Edit line' };
+        //   else if (mouseHitInfo.p2)
+        //     drag = { type: 'p2', name: 'Edit line' };
+        //   else
+        //     drag = { type: 'moveSelection', name: 'Move selection' }; // TODO edit position drag type
+        //   break;
+        // case 'bezier':
+        //   if (mouseHitInfo.end0)
+        //     drag = { type: 'end0', name: 'Stretch curve' };
+        //   else if (mouseHitInfo.mid)
+        //     drag = { type: 'mid', name: 'Attach curve' };
+        //   else if (mouseHitInfo.end1)
+        //     drag = { type: 'end1', name: 'Stretch curve' };
+        //   else if (mouseHitInfo.point)
+        //     drag = { type: 'point', name: 'Move control point' };
+        //   else
+        //     drag = { type: 'moveSelection', name: 'Move selection' };
+        //   break;
         case 'group':
           drag = { type: 'moveSelection', name: 'Move selection' };
           break;
@@ -653,6 +758,15 @@ var shapes = (function() {
     }
   }
 
+  // p is local to edge's coordinate system.
+  function projectToEdgePoint(edge, p) {
+    var dx = edge.dx, dy = edge.dy;
+    return {
+      t: geometry.projectPointToSegment({ x: 0, y: 0 }, { x: dx, y: dy }, p),
+      n: (-dy * p.x + dx * p.y) / (dx * dx + dy * dy),
+    }
+  }
+
   Editor.prototype.onDrag = function(p0, p) {
     var self = this,
         drag = this.drag,
@@ -669,19 +783,18 @@ var shapes = (function() {
         drags = this.calcDrags(dragItem, model, cp, cp0),
         hitList = this.hitTest(p), hitInfo,
         newLength;
+
     switch (drag.type) {
       case 'paletteItem':
-        if (isContainable(dragItem))
-          hitInfo = this.getFirstHit(hitList, isContainerTarget);
         var snapshot = transactionModel.getSnapshot(dragItem),
             drags = self.calcDrags(dragItem, model, cp, cp0),
             parentDrag = drags.parentDrag;
         model.observableModel.changeValue(dragItem, 'x', snapshot.x + parentDrag.x);
         model.observableModel.changeValue(dragItem, 'y', snapshot.y + parentDrag.y);
+        // Find container underneath item for hot tracking.
+        hitInfo = this.getFirstUnselectedContainerHit(hitList, dragItem);
         break;
       case 'moveSelection':
-        if (isContainable(dragItem))
-          hitInfo = this.getFirstHit(hitList, isContainerTarget);
         model.selectionModel.forEach(function(item) {
           var snapshot = transactionModel.getSnapshot(item),
               drags = self.calcDrags(item, model, cp, cp0),
@@ -689,6 +802,15 @@ var shapes = (function() {
           model.observableModel.changeValue(item, 'x', snapshot.x + parentDrag.x);
           model.observableModel.changeValue(item, 'y', snapshot.y + parentDrag.y);
         });
+        if (dragItem.type == 'point' && dragItem._parent.type === 'edge') {
+          var newPi = projectToEdgePoint(dragItem._parent, drags.localMouse);
+          var pi = dragItem.items[drag.pi];
+          model.observableModel.changeValue(pi, 't', newPi.t);
+          model.observableModel.changeValue(pi, 'n', newPi.n);
+        } else {
+          // Find container underneath item for hot tracking.
+          hitInfo = this.getFirstUnselectedContainerHit(hitList, dragItem);
+        }
         break;
 
       case 'resizeDisk':
@@ -705,22 +827,22 @@ var shapes = (function() {
         model.observableModel.changeValue(dragItem, 'y', snapshot.y + drags.parentDrag.y);
         model.observableModel.changeValue(dragItem, 'dx', snapshot.dx - drags.localDrag.x);
         model.observableModel.changeValue(dragItem, 'dy', snapshot.dy - drags.localDrag.y);
-        item._angle1 = this.projectToParentHull(dragItem, { x: 0, y: 0 });
+        // item._angle1 = this.projectToParentHull(dragItem, { x: 0, y: 0 });
         break;
 
       case 'p2':
         model.observableModel.changeValue(dragItem, 'dx', snapshot.dx + drags.localDrag.x);
         model.observableModel.changeValue(dragItem, 'dy', snapshot.dy + drags.localDrag.y);
-        dragItem._angle2 = this.projectToParentHull(dragItem, { x: dragItem.dx, y: dragItem.dy });
+        // dragItem._angle2 = this.projectToParentHull(dragItem, { x: dragItem.dx, y: dragItem.dy });
         break;
 
-      case 'end0':
-        model.observableModel.changeValue(dragItem, 'x', snapshot.x + drags.parentDrag.x / 2);
-        model.observableModel.changeValue(dragItem, 'y', snapshot.y + drags.parentDrag.y / 2);
-        newLength = geometry.lineLength(drags.parentMouse.x, drags.parentMouse.y, dragItem.x, dragItem.y);
-        model.observableModel.changeValue(dragItem, 'halfLength', newLength);
-        this.autoRotateBezier(dragItem);
-        break;
+      // case 'end0':
+      //   model.observableModel.changeValue(dragItem, 'x', snapshot.x + drags.parentDrag.x / 2);
+      //   model.observableModel.changeValue(dragItem, 'y', snapshot.y + drags.parentDrag.y / 2);
+      //   newLength = geometry.lineLength(drags.parentMouse.x, drags.parentMouse.y, dragItem.x, dragItem.y);
+      //   model.observableModel.changeValue(dragItem, 'halfLength', newLength);
+      //   this.autoRotateBezier(dragItem);
+      //   break;
 
       // case 'bezier':
       //   var newLength;
@@ -779,32 +901,57 @@ var shapes = (function() {
 
     if (drag.type == 'moveSelection' || newItem) {
       // Find group beneath mouse.
-      var hitList = this.hitTest(p),
-          hitInfo = this.getFirstHit(hitList, isContainerTarget),
+      var dragItem = newItem || drag.item,
+          hitList = this.hitTest(p),
+          hitInfo = this.getFirstUnselectedContainerHit(hitList, dragItem),
           parent = hitInfo ? hitInfo.item : board;
       if (newItem) {
+        var x = newItem.x, y = newItem.y;
         // Items that can't be added to the board without being wrapped in a group.
         if (parent === board && isHullItem(newItem)) {
           var group = {
             type: 'group',
             op: 'hull',
-            x: newItem.x,
-            y: newItem.y,
+            x: x,
+            y: y,
             items: [ newItem ],
           };
           model.dataModel.initialize(group);
           newItem.x = 0;
           newItem.y = 0;
           newItem = group;
+        } else if (!isEdge(parent) && isEdgeItem(newItem)) {
+          var edge = {
+            type: 'edge',
+            x: x - 32,
+            y: y - 32,
+            dx: 64,
+            dy: 64,
+            items: [
+              {
+                x: 0.5,
+                y: 0,
+              }
+            ],
+          }
+          model.dataModel.initialize(edge);
+          newItem = edge;
         }
-        editingModel.addItem(newItem, null, parent);
-        selectionModel.set([newItem]);
+        if (newItem && newItem.type === 'point') {
+          var transformableModel = model.transformableModel;
+          geometry.matMulPt(newItem, transformableModel.getInverseAbsolute(parent));
+          var pi = projectToEdgePoint(parent, newItem);
+          editingModel.addPoint(pi, parent);
+          selectionModel.set([pi]);
+        } else {
+          editingModel.addItem(newItem, parent);
+          selectionModel.set([newItem]);
+        }
       } else {
         // Reparent items if necessary.
         selectionModel.forEach(function(item) {
-          var oldParent = model.hierarchicalModel.getParent(item);
-          if (item.type != 'disk' && oldParent !== parent)
-            editingModel.addItem(item, oldParent, parent);
+          if (isHull(item))
+            editingModel.addItem(item, parent);
         });
       }
     }
@@ -816,19 +963,19 @@ var shapes = (function() {
     this.hotTrackInfo = null;
   }
 
-  // Calculate auto-rotation using parent hull.
-  Editor.prototype.autoRotateBezier = function(item) {
-    var model = this.model,
-        parent = model.hierarchicalModel.getParent(item),
-        p = { x: item.x, y: item.y };
-    if (parent.type == 'group' && parent.op == 'hull') {
-      var hull = parent._paths[0];
-      var i0 = findClosestPathSegment(hull, p);
-      var i1 = (i0 < hull.length - 1) ? i0 + 1 : 0;
-      var t = getTurn(hull[i0].x - hull[i1].x, hull[i0].y - hull[i1].y);
-      model.observableModel.changeValue(item, '_rotation', t * 2 * Math.PI);
-    }
-  }
+  // // Calculate auto-rotation using parent hull.
+  // Editor.prototype.autoRotateBezier = function(item) {
+  //   var model = this.model,
+  //       parent = model.hierarchicalModel.getParent(item),
+  //       p = { x: item.x, y: item.y };
+  //   if (parent.type == 'group' && parent.op == 'hull') {
+  //     var hull = parent._paths[0];
+  //     var i0 = findClosestPathSegment(hull, p);
+  //     var i1 = (i0 < hull.length - 1) ? i0 + 1 : 0;
+  //     var t = getTurn(hull[i0].x - hull[i1].x, hull[i0].y - hull[i1].y);
+  //     model.observableModel.changeValue(item, '_rotation', t * 2 * Math.PI);
+  //   }
+  // }
 
   function indices_adjacent(i1, i2, length, wraps) {
     var next = i1 + 1;
@@ -1025,23 +1172,23 @@ var shapes = (function() {
     }
 
     function updatePass3(item) {
-      if (item.type == 'linear') {
-        var parent = hierarchicalModel.getParent(item);
-        if (parent && parent.type == 'group' && parent.op == 'hull') {
-          if (!item._angle1)
-            item._angle1 = self.projectToParentHull(item, { x: 0, y: 0 });
-          if (!item._angle2)
-            item._angle2 = self.projectToParentHull(item, { x: item.dx, y: item.dy });
-          item._attached = true;
+      // if (item.type == 'linear') {
+      //   var parent = hierarchicalModel.getParent(item);
+      //   if (parent && parent.type == 'group' && parent.op == 'hull') {
+      //     if (!item._angle1)
+      //       item._angle1 = self.projectToParentHull(item, { x: 0, y: 0 });
+      //     if (!item._angle2)
+      //       item._angle2 = self.projectToParentHull(item, { x: item.dx, y: item.dy });
+      //     item._attached = true;
 
-          var centroid = parent._centroid, hull = parent._paths[0],
-              inverseLocal = transformableModel.getInverseLocal(item),
-              p1 = geometry.angleToConvexHull(hull, centroid, item._angle1),
-              p2 = geometry.angleToConvexHull(hull, centroid, item._angle2);
-          item._p1 = geometry.matMulPt(p1, inverseLocal),
-          item._p2 = geometry.matMulPt(p2, inverseLocal);
-        }
-      }
+      //     var centroid = parent._centroid, hull = parent._paths[0],
+      //         inverseLocal = transformableModel.getInverseLocal(item),
+      //         p1 = geometry.angleToConvexHull(hull, centroid, item._angle1),
+      //         p2 = geometry.angleToConvexHull(hull, centroid, item._angle2);
+      //     item._p1 = geometry.matMulPt(p1, inverseLocal),
+      //     item._p2 = geometry.matMulPt(p2, inverseLocal);
+      //   }
+      // }
 
     }
 
@@ -1387,14 +1534,6 @@ var shape_data = {
           "id": 237
         },
         {
-          "type": "linear",
-          "x": -22.588035237450015,
-          "y": -240.3823475599393,
-          "dx": 391.2692844261092,
-          "dy": 19.36648399312179,
-          "id": 238
-        },
-        {
           "type": "disk",
           "x": -177.62046231828322,
           "y": -43.74962683659891,
@@ -1459,49 +1598,3 @@ var shape_data = {
     }
   ]
 }
-// {
-//   "type": "group",
-//   "x": 0,
-//   "y": 0,
-//   "id": 153,
-//   "items": [
-//     {
-//       "type": "group",
-//       "op": "hull",
-//       "x": 281,
-//       "y": 373,
-//       "items": [
-//         {
-//           "type": "disk",
-//           "x": 0,
-//           "y": 0,
-//           "radius": 73.89606281239585,
-//           "id": 154
-//         },
-//         {
-//           "type": "linear",
-//           "x": -9,
-//           "y": -59,
-//           "dx": 17,
-//           "dy": 113,
-//           "id": 156
-//         },
-//         {
-//           "type": "disk",
-//           "x": 148,
-//           "y": -62,
-//           "radius": 30.01027146566027,
-//           "id": 157
-//         },
-//         {
-//           "type": "disk",
-//           "x": 193,
-//           "y": 15,
-//           "radius": 16,
-//           "id": 158
-//         }
-//       ],
-//       "id": 155
-//     }
-//   ]
-// }

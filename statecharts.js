@@ -136,16 +136,14 @@ var statecharts = (function() {
         var model = this.model, dataModel = model.dataModel,
             transformableModel = model.transformableModel,
             connected = this.getConnectedConnections(items, true),
-            copies = this.prototype.copyItems(items.concat(connected), map);
+            copies = this.prototype.copyItems(items.concat(connected), map),
+            statechart = this.statechart;
 
         items.forEach(function(item) {
           var copy = map.find(dataModel.getId(item));
           if (isContainable(copy)) {
-            var transform = transformableModel.getLocal(item);
-            if (transform) {
-              copy.x = transform[4];
-              copy.y = transform[5];
-            }
+            var toGlobal = transformableModel.getToParent(item, statechart);
+            geometry.matMulPt(copy, toGlobal);
           }
         });
         return copies;
@@ -173,6 +171,7 @@ var statecharts = (function() {
 
       doPaste: function() {
         this.getScrap().forEach(function(item) {
+          // Offset pastes so the user can see them.
           if (isState(item)) {
             item.x += 16;
             item.y += 16;
@@ -218,16 +217,14 @@ var statecharts = (function() {
         this.model.observableModel.changeValue(item, attr, value);
       },
 
-      addItem: function(item, oldParent, parent) {
-        var model = this.model, transformableModel = model.transformableModel;
-        if (oldParent !== parent && isContainable(item)) {
-          var transform = transformableModel.getAbsolute(item),
-              parentTransform = transformableModel.getAbsolute(parent),
-              x = transform[4] - parentTransform[4],
-              y = transform[5] - parentTransform[5];
-          this.setAttr(item, 'x', x);
-          this.setAttr(item, 'y', y);
-        }
+      addItem: function(item, parent) {
+        var model = this.model, hierarchicalModel = model.hierarchicalModel,
+            oldParent = hierarchicalModel.getParent(item);
+        if (oldParent === parent)
+          return;
+        var transformableModel = model.transformableModel,
+            toParent = transformableModel.getToParent(item, parent);
+        geometry.matMulPt(item, toParent);
         var itemToAdd = item;
         if (isTrueState(parent)) {
           if (!Array.isArray(parent.items))
@@ -388,10 +385,7 @@ var statecharts = (function() {
   var stateMinWidth = 100,
       stateMinHeight = 60;
 
-  function StatechartRenderer(model, ctx, theme) {
-    this.model = model;
-    this.transformableModel = this.model.transformableModel;
-    this.ctx = ctx;
+  function Renderer(theme) {
     this.theme = theme || diagrams.theme.create();
 
     this.radius = 8;
@@ -404,17 +398,21 @@ var statecharts = (function() {
     this.stateMinHeight = stateMinHeight;
   }
 
-  StatechartRenderer.prototype.beginDraw = function() {
-    var ctx = this.ctx;
+  Renderer.prototype.beginDraw = function(model, ctx) {
+    this.model = model;
+    this.transformableModel = model.transformableModel;
+    this.ctx = ctx;
     ctx.save();
     ctx.font = this.theme.font;
   }
 
-  StatechartRenderer.prototype.endDraw = function() {
+  Renderer.prototype.endDraw = function() {
     this.ctx.restore();
+    this.model = null;
+    this.ctx = null;
   }
 
-  StatechartRenderer.prototype.getItemRect = function(item) {
+  Renderer.prototype.getItemRect = function(item) {
     var transform = this.transformableModel.getAbsolute(item),
         x = transform[4], y = transform[5], w, h;
     switch (item.type) {
@@ -434,7 +432,7 @@ var statecharts = (function() {
     return { x: x, y: y, w: w, h: h };
   }
 
-  StatechartRenderer.prototype.statePointToParam = function(state, p) {
+  Renderer.prototype.statePointToParam = function(state, p) {
     var r = this.radius, rect = this.getItemRect(state);
     if (isTrueState(state))
       return diagrams.rectPointToParam(rect.x, rect.y, rect.w, rect.h, p);
@@ -442,7 +440,7 @@ var statecharts = (function() {
     return diagrams.circlePointToParam(rect.x + r, rect.y + r, p);
   }
 
-  StatechartRenderer.prototype.stateParamToPoint = function(state, t) {
+  Renderer.prototype.stateParamToPoint = function(state, t) {
     var r = this.radius, rect = this.getItemRect(state);
     if (isTrueState(state))
       return diagrams.roundRectParamToPoint(rect.x, rect.y, rect.w, rect.h, r, t);
@@ -450,7 +448,7 @@ var statecharts = (function() {
     return diagrams.circleParamToPoint(rect.x + r, rect.y + r, r, t);
   }
 
-  StatechartRenderer.prototype.pinToPoint = function(item, pin, input) {
+  Renderer.prototype.pinToPoint = function(item, pin, input) {
     if (isTransition(item)) {
       // pin === 0, input === true.
       var mid = item._mid;
@@ -478,7 +476,7 @@ var statecharts = (function() {
     }
   }
 
-  StatechartRenderer.prototype.getStateMinSize = function(state) {
+  Renderer.prototype.getStateMinSize = function(state) {
     var ctx = this.ctx, theme = this.theme, r = this.radius,
         width = this.stateMinWidth, height = this.stateMinHeight,
         metrics;
@@ -523,7 +521,7 @@ var statecharts = (function() {
     return diagrams.hitTestRect(x - r, y - r, d, d, p, tol);
   }
 
-  StatechartRenderer.prototype.drawState = function(state, mode) {
+  Renderer.prototype.drawState = function(state, mode) {
     var ctx = this.ctx, theme = this.theme, r = this.radius,
         rect = this.getItemRect(state),
         x = rect.x, y = rect.y, w = rect.w, h = rect.h,
@@ -577,7 +575,7 @@ var statecharts = (function() {
     drawArrow(this, x + w + this.arrowSize, lineBase);
   }
 
-  StatechartRenderer.prototype.hitTestState = function(state, p, tol, mode) {
+  Renderer.prototype.hitTestState = function(state, p, tol, mode) {
     var theme = this.theme, r = this.radius,
         rect = this.getItemRect(state),
         x = rect.x, y = rect.y, w = rect.w, h = rect.h;
@@ -590,7 +588,7 @@ var statecharts = (function() {
     return diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
   }
 
-  StatechartRenderer.prototype.drawPseudoState = function(state, mode) {
+  Renderer.prototype.drawPseudoState = function(state, mode) {
     var ctx = this.ctx, theme = this.theme, r = this.radius,
         rect = this.getItemRect(state),
         x = rect.x, y = rect.y;
@@ -617,7 +615,7 @@ var statecharts = (function() {
     drawArrow(this, x + 2 * r + this.arrowSize, y + r);
   }
 
-  StatechartRenderer.prototype.hitTestPseudoState = function(state, p, tol, mode) {
+  Renderer.prototype.hitTestPseudoState = function(state, p, tol, mode) {
     var r = this.radius,
         rect = this.getItemRect(state),
         x = rect.x, y = rect.y;
@@ -627,7 +625,7 @@ var statecharts = (function() {
     return diagrams.hitTestDisk(x + r, y + r, r, p, tol);
   }
 
-  StatechartRenderer.prototype.drawStatechart = function(statechart, mode) {
+  Renderer.prototype.drawStatechart = function(statechart, mode) {
     switch (mode) {
       case normalMode:
         break;
@@ -645,14 +643,14 @@ var statecharts = (function() {
     }
   }
 
-  StatechartRenderer.prototype.hitTestStatechart = function(statechart, p, tol, mode) {
+  Renderer.prototype.hitTestStatechart = function(statechart, p, tol, mode) {
     var r = this.radius,
         rect = this.getItemRect(statechart),
         x = rect.x, y = rect.y, w = rect.w, h = rect.h;
     return diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
   }
 
-  StatechartRenderer.prototype.layoutCircuitMaster = function(master) {
+  Renderer.prototype.layoutCircuitMaster = function(master) {
     var ctx = this.ctx, theme = this.theme,
         textSize = theme.fontSize, knobbyRadius = this.knobbyRadius,
         name = master.name, inputs = master.inputs, outputs = master.outputs,
@@ -675,7 +673,7 @@ var statecharts = (function() {
     master.height = 4 + height;
   }
 
-  StatechartRenderer.prototype.drawCircuit = function(circuit, mode) {
+  Renderer.prototype.drawCircuit = function(circuit, mode) {
     var self = this, ctx = this.ctx, theme = this.theme, r = this.radius,
         master = circuit._master,
         rect = this.getItemRect(circuit),
@@ -727,7 +725,7 @@ var statecharts = (function() {
     }
   }
 
-  StatechartRenderer.prototype.hitTestCircuit = function(circuit, p, tol, mode) {
+  Renderer.prototype.hitTestCircuit = function(circuit, p, tol, mode) {
     var rect = this.getItemRect(circuit),
         x = rect.x, y = rect.y, w = rect.w, h = rect.h,
         hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol);
@@ -755,7 +753,7 @@ var statecharts = (function() {
     return hitInfo;
   }
 
-  StatechartRenderer.prototype.layoutTransition = function(transition) {
+  Renderer.prototype.layoutTransition = function(transition) {
     var referencingModel = this.model.referencingModel,
         v1 = referencingModel.resolveReference(transition, 'srcId'),
         v2 = referencingModel.resolveReference(transition, 'dstId'),
@@ -770,7 +768,7 @@ var statecharts = (function() {
     transition._mid = EvaluateCurveSegment(transition._bezier, 0.5);
   }
 
-  StatechartRenderer.prototype.drawTransition = function(transition, mode) {
+  Renderer.prototype.drawTransition = function(transition, mode) {
     var ctx = this.ctx;
     diagrams.bezierEdgePath(transition._bezier, ctx, this.arrowSize);
     switch (mode) {
@@ -795,14 +793,14 @@ var statecharts = (function() {
     }
   }
 
-  StatechartRenderer.prototype.hitTestTransition = function(transition, p, tol, mode) {
+  Renderer.prototype.hitTestTransition = function(transition, p, tol, mode) {
     var mid = transition._mid;
     if (hitPin(this, mid.x, mid.y, p, tol))
       return { input: 0 };
     return diagrams.hitTestBezier(transition._bezier, p, tol);
   }
 
-  StatechartRenderer.prototype.layoutWire = function(wire) {
+  Renderer.prototype.layoutWire = function(wire) {
     var referencingModel = this.model.referencingModel,
         c1 = referencingModel.resolveReference(wire, 'srcId'),
         c2 = referencingModel.resolveReference(wire, 'dstId'),
@@ -815,7 +813,7 @@ var statecharts = (function() {
     wire._bezier = diagrams.getEdgeBezier(p1, p2);
   }
 
-  StatechartRenderer.prototype.drawWire = function(wire, mode) {
+  Renderer.prototype.drawWire = function(wire, mode) {
     var ctx = this.ctx;
     diagrams.bezierEdgePath(wire._bezier, ctx, 0);
     switch (mode) {
@@ -835,11 +833,11 @@ var statecharts = (function() {
     ctx.stroke();
   }
 
-  StatechartRenderer.prototype.hitTestWire = function(wire, p, tol, mode) {
+  Renderer.prototype.hitTestWire = function(wire, p, tol, mode) {
     return diagrams.hitTestBezier(wire._bezier, p, tol);
   }
 
-  StatechartRenderer.prototype.layout = function(item) {
+  Renderer.prototype.layout = function(item) {
     switch (item.type) {
       case 'transition':
         this.layoutTransition(item);
@@ -850,7 +848,7 @@ var statecharts = (function() {
     }
   }
 
-  StatechartRenderer.prototype.draw = function(item, mode) {
+  Renderer.prototype.draw = function(item, mode) {
     switch (item.type) {
       case 'state':
         this.drawState(item, mode);
@@ -873,7 +871,7 @@ var statecharts = (function() {
     }
   }
 
-  StatechartRenderer.prototype.hitTest = function(item, p, tol, mode) {
+  Renderer.prototype.hitTest = function(item, p, tol, mode) {
     var hitInfo;
     switch (item.type) {
       case 'state':
@@ -900,7 +898,7 @@ var statecharts = (function() {
     return hitInfo;
   }
 
-  StatechartRenderer.prototype.drawHoverText = function(item, p) {
+  Renderer.prototype.drawHoverText = function(item, p) {
     var self = this, theme = this.theme,
         props = [];
     this.model.dataModel.visitProperties(item, function(item, attr) {
@@ -1024,9 +1022,9 @@ var statecharts = (function() {
     this.ctx = canvasController.ctx;
 
     if (!this.renderer)
-      this.renderer = new StatechartRenderer(this.model, ctx, canvasController.theme);
-    var renderer = this.renderer;
-    renderer.beginDraw();
+      this.renderer = new Renderer(canvasController.theme);
+    var renderer = this.renderer, ctx = this.ctx;
+    renderer.beginDraw(this.palette, ctx);
     for (var master in this.circuitMasters)
       renderer.layoutCircuitMaster(this.circuitMasters[master]);
     renderer.endDraw();
@@ -1053,7 +1051,7 @@ var statecharts = (function() {
     var renderer = this.renderer, statechart = this.statechart,
         model = this.model, palette = this.palette,
         ctx = this.ctx, canvasController = this.canvasController;
-    renderer.beginDraw();
+    renderer.beginDraw(model, ctx);
     canvasController.applyTransform();
     visit(statechart, isConnection, function(item) {
       renderer.layout(item);
@@ -1073,7 +1071,7 @@ var statecharts = (function() {
       renderer.draw(this.hotTrackInfo.item, hotTrackMode);
     renderer.endDraw();
 
-    renderer.beginDraw();
+    renderer.beginDraw(palette, ctx);
     ctx.fillStyle = renderer.theme.altBgColor;
     ctx.fillRect(palette.root.x, palette.root.y, 128, 300);
     palette.root.items.forEach(function(item) {
@@ -1083,7 +1081,7 @@ var statecharts = (function() {
 
     var temporary = this.getTemporaryItem();
     if (temporary) {
-      renderer.beginDraw();
+      renderer.beginDraw(model, ctx);
       canvasController.applyTransform();
       if (isConnection(temporary))
         renderer.layout(temporary);
@@ -1093,7 +1091,7 @@ var statecharts = (function() {
 
     var hoverHitInfo = this.hoverHitInfo;
     if (hoverHitInfo) {
-      renderer.beginDraw();
+      renderer.beginDraw(model, ctx);
       renderer.drawHoverText(hoverHitInfo.item, hoverHitInfo.p);
       renderer.endDraw();
     }
@@ -1420,21 +1418,22 @@ var statecharts = (function() {
           parent = hitInfo ? hitInfo.item : statechart;
       // Add new items.
       if (newItem) {
-        editingModel.addItem(newItem, null, parent);
+        editingModel.addItem(newItem, parent);
         selectionModel.set([newItem]);
       } else {
         // Reparent existing items.
         selectionModel.forEach(function(item) {
           if (isContainable(item)) {
-            var oldParent = hierarchicalModel.getParent(item);
-            if (oldParent != parent)
-              editingModel.addItem(item, oldParent, parent);
+            editingModel.addItem(item, parent);
           }
         });
       }
     }
 
-    editingModel.layout(this.statechart, this.renderer);
+    var renderer = this.renderer;
+    renderer.beginDraw(model, this.ctx);
+    editingModel.layout(this.statechart, renderer);
+    renderer.endDraw();
 
     // If dragItem is a disconnected transition, delete it.
     if (isTransition(dragItem)) {
@@ -1544,7 +1543,8 @@ var statecharts = (function() {
     normalMode: normalMode,
     highlightMode: highlightMode,
     hotTrackMode: hotTrackMode,
-    StatechartRenderer: StatechartRenderer,
+
+    Renderer: Renderer,
 
     Editor: Editor,
   };
@@ -1557,7 +1557,7 @@ var statechart_data = {
   "x": 0,
   "y": 0,
   "width": 853,
-  "height": 430,
+  "height": 430.60454734008107,
   "name": "Example",
   "items": [
     {
@@ -1614,13 +1614,6 @@ var statechart_data = {
               "y": 119.02496888866085,
               "master": "or",
               "id": 1015
-            },
-            {
-              "type": "circuit",
-              "x": 92.36406771700172,
-              "y": 24.604547340081055,
-              "master": "event1",
-              "id": 1017
             }
           ]
         }
@@ -1683,83 +1676,13 @@ var statechart_data = {
       "id": 1019,
       "dstId": 1008,
       "dstPin": 0
+    },
+    {
+      "type": "circuit",
+      "x": 294.3640677170017,
+      "y": 362.60454734008107,
+      "master": "event1",
+      "id": 1017
     }
   ]
 }
-/*
-{
-  "type": "statechart",
-  "id": 1001,
-  "x": 0,
-  "y": 0,
-  "width": 853,
-  "height": 430,
-  "name": "Example",
-  "items": [
-    {
-      "type": "start",
-      "id": 1002,
-      "x": 165,
-      "y": 83
-    },
-    {
-      "type": "state",
-      "id": 1003,
-      "x": 207,
-      "y": 81,
-      "width": 300,
-      "height": 200,
-      "name": "State_1",
-      "items": [
-        {
-          "type": "statechart",
-          "id": 1004,
-          "x": 0,
-          "y": 0,
-          "width": 300,
-          "height": 200,
-          "items": [
-            {
-              "type": "state",
-              "id": 1005,
-              "x": 30,
-              "y": 45,
-              "width": 100,
-              "height": 60,
-              "name": "State_3",
-              "items": []
-            },
-            {
-              "type": "state",
-              "id": 1006,
-              "x": 150,
-              "y": 30,
-              "width": 100,
-              "height": 60,
-              "name": "State_4"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "state",
-      "id": 1007,
-      "x": 545,
-      "y": 222,
-      "width": 300,
-      "height": 200,
-      "name": "State_2",
-      "items": []
-    },
-    {
-      "type": "transition",
-      "id": 1008,
-      "srcId": 1003,
-      "t1": 1.4019607843137254,
-      "dstId": 1007,
-      "t2": 2.3
-    }
-  ]
-}
-*/

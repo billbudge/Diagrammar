@@ -109,7 +109,8 @@ var dataModel = (function () {
     var self = this;
     instance.visitSubtree(model.root, function (item) {
       var id = instance.getId(item);
-      maxId = Math.max(maxId, id);
+      if (id)
+        maxId = Math.max(maxId, id);
     });
     // Note that this dataModel will never assign an id of 0.
     instance.nextId = maxId + 1;
@@ -118,6 +119,8 @@ var dataModel = (function () {
     // Assign a unique id when items are created.
     instance.addInitializer(function(item) {
       // 0 is not a valid id in this model.
+      // TODO we should be able to exclude items from the id system, i.e. if
+      // they shouldn't be referenced by other items.
       if (!item.id)
         item.id = instance.nextId++;
     });
@@ -860,8 +863,12 @@ var editingModel = (function () {
 
     copyItems: function (items, map) {
       var model = this.model,
+          dataModel = model.dataModel,
           instancingModel = model.instancingModel;
       var copies = instancingModel.cloneGraph(items, map);
+      copies.forEach(function(item) {
+        dataModel.initialize(item);
+      });
       return copies;
     },
 
@@ -1006,6 +1013,9 @@ var hierarchicalModel = (function () {
             this.init(newValue, item);
           break;
         case 'remove':
+          var oldValue = change.oldValue;
+          if (dataModel.isItem(oldValue))
+            this.setParent(oldValue, null);
           break;
       }
     },
@@ -1045,12 +1055,32 @@ var hierarchicalModel = (function () {
 // transformableModel maintains transform matrices on a hierarchy of items.
 var transformableModel = (function () {
   var proto = {
+    // Default is if item has x and y.
     hasTransform: function (item) {
       return item.x !== undefined && item.y !== undefined;
     },
+    // Default is property 'x'.
+    getX: function(item) {
+      return item.x || 0;
+    },
+    // Default is property 'y'.
+    getY: function(item) {
+      return item.y || 0;
+    },
 
+    // Default is property 'sx'.
+    getSX: function(item) {
+      return item.sx || 1;
+    },
+
+    // Default is property 'sy'.
+    getSY: function(item) {
+      return item.sy || 1;
+    },
+
+    // Default is property 'rotation'.
     getRotation: function (item) {
-      return item.rotation || item._rotation || 0;
+      return item.rotation || 0;
     },
 
     getLocal: function (item) {
@@ -1069,17 +1099,38 @@ var transformableModel = (function () {
       return item._aitransform;
     },
 
+    getUniformScale: function(item) {
+      return item._scale;
+    },
+
+    // Gets the matrix to move an item from its current parent to newParent.
+    // Handles the cases where current parent or newParent are null.
+    getToParent: function (item, newParent) {
+      var oldParent = this.model.hierarchicalModel.getParent(item),
+          oldTransform = oldParent ? this.getAbsolute(oldParent) : null,
+          newInverse = newParent ? this.getInverseAbsolute(newParent) : null;
+      if (oldTransform && newInverse)
+        return geometry.matMulNew(oldTransform, newInverse);
+      return oldTransform || newInverse;
+    },
+
     updateLocal: function (item) {
-      var tx = item.x, ty = item.y,
+      var tx = this.getX(item), ty = this.getY(item),
+          sx = this.getSX(item), sy = this.getSY(item),
+          ooSx = 1.0 / sx, ooSy = 1.0 / sy,
           rot = this.getRotation(item),
           cos = Math.cos(rot), sin = Math.sin(rot),
-          tx = item.x, ty = item.y;
-      item._transform = [ cos, -sin,
-                          sin, cos,
+          ooSxCos = ooSx * cos, ooSySin = ooSy * sin,
+          ooSxSin = ooSx * -sin, ooSyCos = ooSy * cos;
+      // This uniform scale value can be used when drawing scale invariant items
+      // on a canvas.
+      item._scale = Math.max(sx, sy);
+      item._transform = [ sx * cos, sx * -sin,
+                          sy * sin, sy * cos,
                           tx, ty ];
-      item._itransform = [ cos, sin,
-                          -sin, cos,
-                          -tx * cos + ty * sin, -tx * sin - ty * cos ];
+      item._itransform = [ ooSxCos, ooSySin,
+                           -ooSxSin, ooSyCos,
+                           -tx * ooSxCos + ty * ooSxSin, -tx * ooSySin - ty * ooSyCos ];
     },
 
     updateTransforms: function (item) {
@@ -1217,8 +1268,8 @@ var transformableModel = (function () {
 
 // var myModel = (function () {
 //   var proto = {
-//     getParent: function (item) {
-//       return item._parent;
+//     foo: function (item) {
+//       return item;
 //     },
 //   }
 
