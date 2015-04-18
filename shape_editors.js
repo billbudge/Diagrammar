@@ -132,23 +132,23 @@ var shapes = (function() {
       },
 
       addPoint: function(point, edge) {
-        // var model = this.model;
-        // if (oldParent !== parent) {
-        //   var transformableModel = model.transformableModel;
-        //   if (oldParent) {          // if null, it's a new item.
-        //     geometry.matMulPt(item, transformableModel.getAbsolute(oldParent));
-        //     this.deleteItem(item);  // notifies observer
-        //   }
+        var model = this.model, hierarchicalModel = model.hierarchicalModel,
+            oldParent = hierarchicalModel.getParent(point);
+        if (oldParent !== parent) {
+          var transformableModel = model.transformableModel;
+          if (oldParent) {
+            geometry.matMulPt(item, transformableModel.getAbsolute(oldParent));
+          }
 
-        //   geometry.matMulPt(item, transformableModel.getInverseAbsolute(parent));
-        // }
-        // var x = point.x,
-        //     points = edge.items, length = points.length;
-        // for (var i = 0; i < length; i++) {
-        //   if (x < points[i].x)
-        //     break;
-        // }
-        // this.model.observableModel.insertElement(edge, 'items', i, point);
+          geometry.matMulPt(point, transformableModel.getInverseAbsolute(edge));
+        }
+        var x = point.x,
+            points = edge.items, length = points.length;
+        for (var i = 0; i < length; i++) {
+          if (x < points[i].x)
+            break;
+        }
+        this.model.observableModel.insertElement(edge, 'items', i, point);
       }
     }
 
@@ -217,9 +217,9 @@ var shapes = (function() {
         transformableModel = this.transformableModel,
         ooScale = 1.0 / transformableModel.getUniformScale(item),
         knobbyRadius = this.knobbyRadius * ooScale,
-        t = item._atransform;
+        t = transformableModel.getAbsolute(item);
     ctx.save();
-    ctx.transform(t[0], t[2], t[1], t[3], t[4], t[5]); // local to world
+    ctx.transform(t[0], t[1], t[2], t[3], t[4], t[5]); // local to world
 
     if (mode & normalMode) {
       ctx.fillStyle = theme.bgColor;
@@ -253,9 +253,8 @@ var shapes = (function() {
         ctx.stroke();
         break;
       case 'edge':
-        var dx = item.dx, dy = item.dy,
-            points = item.items, length = points.length;
-        ctx.lineWidth = 0.25;
+        var points = item.items, length = points.length;
+        ctx.lineWidth = 0.25 * ooScale;
         if (mode & normalMode) {
           ctx.beginPath();
           ctx.moveTo(0, 0);
@@ -265,7 +264,7 @@ var shapes = (function() {
           ctx.setLineDash([0]);
         }
         ctx.beginPath();
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2 * ooScale;
         ctx.moveTo(0, 0);
         for (var i = 0; i < length; i++) {
           var pi = points[i];
@@ -350,11 +349,13 @@ var shapes = (function() {
   }
 
   Renderer.prototype.hitTest = function(item, p, tol, mode) {
-    var knobbyRadius = this.knobbyRadius,
-        transformableModel = this.transformableModel,
+    var transformableModel = this.transformableModel,
         inverseTransform = transformableModel.getInverseAbsolute(item),
+        ooScale = 1.0 / transformableModel.getUniformScale(item),
         localP = geometry.matMulPtNew(p, inverseTransform),
+        knobbyRadius = this.knobbyRadius * ooScale,
         hitInfo, r, distSquared;
+    tol *= ooScale;
     switch (item.type) {
       case 'disk':
         r = item.radius;
@@ -376,9 +377,9 @@ var shapes = (function() {
       case 'edge':
         var points = item.items, length = points.length;
         // First check the end points.
-        if (!hitInfo && diagrams.hitPoint(0, 0, localP, knobbyRadius))
+        if (!hitInfo && diagrams.hitPoint(0, 0, localP, knobbyRadius + tol))
           hitInfo = { p1: true };
-        if (!hitInfo && diagrams.hitPoint(1, 0, localP, knobbyRadius))
+        if (!hitInfo && diagrams.hitPoint(1, 0, localP, knobbyRadius + tol))
           hitInfo = { p2: true };
         // Now check the edge segments.
         if (!hitInfo) {
@@ -802,12 +803,7 @@ var shapes = (function() {
           model.observableModel.changeValue(item, 'x', snapshot.x + parentDrag.x);
           model.observableModel.changeValue(item, 'y', snapshot.y + parentDrag.y);
         });
-        if (dragItem.type == 'point' && dragItem._parent.type === 'edge') {
-          var newPi = projectToEdgePoint(dragItem._parent, drags.localMouse);
-          var pi = dragItem.items[drag.pi];
-          model.observableModel.changeValue(pi, 't', newPi.t);
-          model.observableModel.changeValue(pi, 'n', newPi.n);
-        } else {
+        if (dragItem.type !== 'point') {
           // Find container underneath item for hot tracking.
           hitInfo = this.getFirstUnselectedContainerHit(hitList, dragItem);
         }
@@ -825,15 +821,16 @@ var shapes = (function() {
       case 'p1':
         model.observableModel.changeValue(dragItem, 'x', snapshot.x + drags.parentDrag.x);
         model.observableModel.changeValue(dragItem, 'y', snapshot.y + drags.parentDrag.y);
-        model.observableModel.changeValue(dragItem, 'dx', snapshot.dx - drags.localDrag.x);
-        model.observableModel.changeValue(dragItem, 'dy', snapshot.dy - drags.localDrag.y);
-        // item._angle1 = this.projectToParentHull(dragItem, { x: 0, y: 0 });
         break;
 
       case 'p2':
-        model.observableModel.changeValue(dragItem, 'dx', snapshot.dx + drags.localDrag.x);
-        model.observableModel.changeValue(dragItem, 'dy', snapshot.dy + drags.localDrag.y);
-        // dragItem._angle2 = this.projectToParentHull(dragItem, { x: dragItem.dx, y: dragItem.dy });
+        var mouse = drags.parentMouse,
+            dx = mouse.x - dragItem.x, dy = mouse.y - dragItem.y,
+            rotation = Math.atan2(-dy, dx),
+            scale = Math.sqrt(dx * dx + dy * dy);
+        model.observableModel.changeValue(dragItem, 'rotation', rotation);
+        model.observableModel.changeValue(dragItem, 'sx', scale);
+        model.observableModel.changeValue(dragItem, 'sy', scale);
         break;
 
       // case 'end0':
@@ -920,15 +917,17 @@ var shapes = (function() {
           newItem.x = 0;
           newItem.y = 0;
           newItem = group;
-        } else if (!isEdge(parent) && isEdgeItem(newItem)) {
+        } else if (isEdgeItem(newItem) && !isEdge(parent)) {
           var edge = {
             type: 'edge',
             x: x - 32,
             y: y - 32,
-            dx: 64,
-            dy: 64,
+            rotation: Math.cos(Math.PI * 0.25),
+            sx: 64,
+            sy: 64,
             items: [
               {
+                type: 'point',
                 x: 0.5,
                 y: 0,
               }
@@ -937,16 +936,12 @@ var shapes = (function() {
           model.dataModel.initialize(edge);
           newItem = edge;
         }
-        if (newItem && newItem.type === 'point') {
-          var transformableModel = model.transformableModel;
-          geometry.matMulPt(newItem, transformableModel.getInverseAbsolute(parent));
-          var pi = projectToEdgePoint(parent, newItem);
-          editingModel.addPoint(pi, parent);
-          selectionModel.set([pi]);
+        if (newItem.type === 'point') {
+          editingModel.addPoint(newItem, parent);
         } else {
           editingModel.addItem(newItem, parent);
-          selectionModel.set([newItem]);
         }
+        selectionModel.set([newItem]);
       } else {
         // Reparent items if necessary.
         selectionModel.forEach(function(item) {
@@ -1130,36 +1125,36 @@ var shapes = (function() {
           geometry.annotateConvexHull(hull, centroid);
           // geometry.insetConvexHull(hull, -16);
 
-          var subItems = item.items;
-          for (var i = 0; i < subItems.length; i++) {
-            var subItem = subItems[i];
-            if (subItem.type == 'bezier') {
-              var localTransform = transformableModel.getLocal(subItem);
-              var points = makeInterpolatingPoints(subItem);
-              var pointsLength = points.length;
-              for (var j = 0; j < pointsLength; j++) {
-                var pj = points[j];
-                // control point base into parent space.
-                var p0 = { x: pj.x, y: 0 };
-                geometry.matMulPt(p0, localTransform);
-                var seg0 = findClosestPathSegment(hull, p0);
-                var seg1 = seg0 + 1;
-                if (seg1 == hull.length)
-                  seg1 = 0;
-                var norm = { x: hull[seg1].y - hull[seg0].y, y: hull[seg0].x - hull[seg1].x };
-                geometry.vecNormalize(norm);
-                var height = pj.y;
-                norm.x *= height;
-                norm.y *= height;
-                var base = projectToPath(hull, seg0, p0);
-                points[j] = { x: base.x + norm.x, y: base.y + norm.y };
-                geometry.matMulPt(points[j], subItem._itransform);
-              }
-              subItem._curves = [];
-              subItem._curveLengths = [];
-              generateCurveSegments(points, subItem._curves, subItem._curveLengths);
-            }
-          }
+          // var subItems = item.items;
+          // for (var i = 0; i < subItems.length; i++) {
+          //   var subItem = subItems[i];
+          //   if (subItem.type == 'bezier') {
+          //     var localTransform = transformableModel.getLocal(subItem);
+          //     var points = makeInterpolatingPoints(subItem);
+          //     var pointsLength = points.length;
+          //     for (var j = 0; j < pointsLength; j++) {
+          //       var pj = points[j];
+          //       // control point base into parent space.
+          //       var p0 = { x: pj.x, y: 0 };
+          //       geometry.matMulPt(p0, localTransform);
+          //       var seg0 = findClosestPathSegment(hull, p0);
+          //       var seg1 = seg0 + 1;
+          //       if (seg1 == hull.length)
+          //         seg1 = 0;
+          //       var norm = { x: hull[seg1].y - hull[seg0].y, y: hull[seg0].x - hull[seg1].x };
+          //       geometry.vecNormalize(norm);
+          //       var height = pj.y;
+          //       norm.x *= height;
+          //       norm.y *= height;
+          //       var base = projectToPath(hull, seg0, p0);
+          //       points[j] = { x: base.x + norm.x, y: base.y + norm.y };
+          //       geometry.matMulPt(points[j], subItem._itransform);
+          //     }
+          //     subItem._curves = [];
+          //     subItem._curveLengths = [];
+          //     generateCurveSegments(points, subItem._curves, subItem._curveLengths);
+          //   }
+          // }
           item._centroid = centroid;
           item._paths = [ hull ];
         }
@@ -1315,6 +1310,7 @@ var shape_data = {
           "op": "hull",
           "x": 37.95365879771731,
           "y": 322.99615794203424,
+          "rotation": Math.cos(Math.PI * 0.25),
           "items": [
             {
               "type": "disk",

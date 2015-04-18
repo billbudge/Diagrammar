@@ -1121,7 +1121,7 @@ var transformableModel = (function () {
           rot = this.getRotation(item),
           cos = Math.cos(rot), sin = Math.sin(rot),
           ooSxCos = ooSx * cos, ooSySin = ooSy * sin,
-          ooSxSin = ooSx * -sin, ooSyCos = ooSy * cos;
+          ooSxSin = ooSx * sin, ooSyCos = ooSy * cos;
       // This uniform scale value can be used when drawing scale invariant items
       // on a canvas.
       item._scale = Math.max(sx, sy);
@@ -1145,6 +1145,7 @@ var transformableModel = (function () {
         parent = hierarchicalModel.getParent(parent);
 
       if (parent) {
+        item._scale *= parent._scale;
         item._atransform = geometry.matMulNew(item._transform, parent._atransform);
         item._aitransform = geometry.matMulNew(parent._aitransform, item._itransform);
       } else {
