@@ -212,11 +212,14 @@ var shapes = (function() {
     renderer.ctx.strokeRect(x - r, y - r, d, d);
   }
 
+  // TODO function hitKnobby, using diagrams.hitTestRect
+
   Renderer.prototype.drawItem = function(item, mode) {
     var ctx = this.ctx, theme = this.theme,
         transformableModel = this.transformableModel,
         ooScale = 1.0 / transformableModel.getUniformScale(item),
         knobbyRadius = this.knobbyRadius * ooScale,
+        lineDash = 4 * ooScale,
         t = transformableModel.getAbsolute(item);
     ctx.save();
     ctx.transform(t[0], t[1], t[2], t[3], t[4], t[5]); // local to world
@@ -239,7 +242,7 @@ var shapes = (function() {
         var r = item.radius;
         if (mode & normalMode) {
           ctx.arc(0, 0, r, 0, 2 * Math.PI, false);
-          ctx.setLineDash([4]);
+          ctx.setLineDash([lineDash]);
           ctx.stroke();
           ctx.setLineDash([0]);
         }
@@ -259,7 +262,7 @@ var shapes = (function() {
           ctx.beginPath();
           ctx.moveTo(0, 0);
           ctx.lineTo(1, 0);
-          ctx.setLineDash([4]);
+          ctx.setLineDash([lineDash]);
           ctx.stroke();
           ctx.setLineDash([0]);
         }
@@ -676,13 +679,14 @@ var shapes = (function() {
           drag = { type: 'moveSelection', name: 'Move selection' };
           break;
         case 'edge':
-          // if (mouseHitInfo.pi !== undefined)
-          //     drag = { type: 'pi', pi: mouseHitInfo.pi, name: 'Edit control point' };
-          //   else
+          var model = this.model, transformableModel = model.transformableModel,
+              transform = transformableModel.getLocal(dragItem),
+              vector = geometry.matMulVec({ x: 1, y: 0 }, transform);
+              console.log(vector);
           if (mouseHitInfo.p1)
-            drag = { type: 'p1', name: 'Edit edge' };
+            drag = { type: 'p1', name: 'Edit edge', vector: vector };
           else if (mouseHitInfo.p2)
-            drag = { type: 'p2', name: 'Edit edge' };
+            drag = { type: 'p2', name: 'Edit edge', vector: vector };
           else
             drag = { type: 'moveSelection', name: 'Move selection' };
           break;
@@ -759,15 +763,6 @@ var shapes = (function() {
     }
   }
 
-  // p is local to edge's coordinate system.
-  function projectToEdgePoint(edge, p) {
-    var dx = edge.dx, dy = edge.dy;
-    return {
-      t: geometry.projectPointToSegment({ x: 0, y: 0 }, { x: dx, y: dy }, p),
-      n: (-dy * p.x + dx * p.y) / (dx * dx + dy * dy),
-    }
-  }
-
   Editor.prototype.onDrag = function(p0, p) {
     var self = this,
         drag = this.drag,
@@ -819,13 +814,20 @@ var shapes = (function() {
         break;
 
       case 'p1':
-        model.observableModel.changeValue(dragItem, 'x', snapshot.x + drags.parentDrag.x);
-        model.observableModel.changeValue(dragItem, 'y', snapshot.y + drags.parentDrag.y);
+        var vector = drag.vector, parentDrag = drags.parentDrag,
+            dx = vector.x - parentDrag.x, dy = vector.y - parentDrag.y,
+            rotation = Math.atan2(-dy, dx),
+            scale = Math.sqrt(dx * dx + dy * dy);
+        model.observableModel.changeValue(dragItem, 'rotation', rotation);
+        model.observableModel.changeValue(dragItem, 'sx', scale);
+        model.observableModel.changeValue(dragItem, 'sy', scale);
+        model.observableModel.changeValue(dragItem, 'x', snapshot.x + parentDrag.x);
+        model.observableModel.changeValue(dragItem, 'y', snapshot.y + parentDrag.y);
         break;
 
       case 'p2':
-        var mouse = drags.parentMouse,
-            dx = mouse.x - dragItem.x, dy = mouse.y - dragItem.y,
+        var vector = drag.vector, parentDrag = drags.parentDrag,
+            dx = vector.x + parentDrag.x, dy = vector.y + parentDrag.y,
             rotation = Math.atan2(-dy, dx),
             scale = Math.sqrt(dx * dx + dy * dy);
         model.observableModel.changeValue(dragItem, 'rotation', rotation);
