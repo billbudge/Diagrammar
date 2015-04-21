@@ -237,7 +237,8 @@ var geometry = (function() {
   }
 
   function getExtents(points) {
-    var p0 = points[0],
+    var length = points.length,
+        p0 = points[0],
         xmin = p0.x, ymin = p0.y, xmax = p0.x, ymax = p0.y;
     for (var i = 0; i < length; i++) {
       var pi = points[i];

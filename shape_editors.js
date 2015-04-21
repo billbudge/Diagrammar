@@ -217,7 +217,7 @@ var shapes = (function() {
   Renderer.prototype.drawItem = function(item, mode) {
     var ctx = this.ctx, theme = this.theme,
         transformableModel = this.transformableModel,
-        ooScale = 1.0 / transformableModel.getUniformScale(item),
+        ooScale = transformableModel.getOOScale(item),
         knobbyRadius = this.knobbyRadius * ooScale,
         lineDash = 4 * ooScale,
         t = transformableModel.getAbsolute(item);
@@ -239,16 +239,14 @@ var shapes = (function() {
     switch (item.type) {
       case 'disk':
         ctx.beginPath();
-        var r = item.radius;
         if (mode & normalMode) {
-          ctx.arc(0, 0, r, 0, 2 * Math.PI, false);
+          ctx.arc(0, 0, 1, 0, 2 * Math.PI, false);
           ctx.setLineDash([lineDash]);
           ctx.stroke();
           ctx.setLineDash([0]);
         }
         drawKnobby(this, knobbyRadius, 0, 0);
-        ctx.strokeRect(-knobbyRadius, -knobbyRadius, 2 * knobbyRadius, 2 * knobbyRadius);
-        drawKnobby(this, knobbyRadius, r, 0);
+        drawKnobby(this, knobbyRadius, 1, 0);
         break;
       case 'point':
         ctx.beginPath();
@@ -346,7 +344,19 @@ var shapes = (function() {
             ctx.stroke();
           }
         }
-        break;
+        ctx.lineWidth = 0.25 * ooScale;
+        if (mode & normalMode) {
+          var c = item._centroid, extents = item._extents;
+          ctx.beginPath();
+          ctx.moveTo(c.x, c.y);
+          ctx.lineTo(extents.xmax, c.y);
+          ctx.setLineDash([lineDash]);
+          ctx.stroke();
+          ctx.setLineDash([0]);
+          // drawKnobby(this, knobbyRadius, c.x, c.y);
+          drawKnobby(this, knobbyRadius, extents.xmax, c.y);
+        }
+          break;
     }
     ctx.restore();
   }
@@ -354,19 +364,18 @@ var shapes = (function() {
   Renderer.prototype.hitTest = function(item, p, tol, mode) {
     var transformableModel = this.transformableModel,
         inverseTransform = transformableModel.getInverseAbsolute(item),
-        ooScale = 1.0 / transformableModel.getUniformScale(item),
+        ooScale = transformableModel.getOOScale(item),
         localP = geometry.matMulPtNew(p, inverseTransform),
         knobbyRadius = this.knobbyRadius * ooScale,
         hitInfo, r, distSquared;
     tol *= ooScale;
     switch (item.type) {
       case 'disk':
-        r = item.radius;
-        hitInfo = diagrams.hitTestDisk(0, 0, r, localP, tol);
+        hitInfo = diagrams.hitTestDisk(0, 0, 1, localP, tol);
         if (hitInfo) {
           if (diagrams.hitPoint(0, 0, localP, knobbyRadius)) {
             hitInfo.center = true;
-          } else if (diagrams.hitPoint(r, 0, localP, knobbyRadius)) {
+          } else if (diagrams.hitPoint(1, 0, localP, knobbyRadius)) {
             hitInfo.resizer = true;
           } else {
             return null;
@@ -431,20 +440,26 @@ var shapes = (function() {
       case 'group':
         if (!item.op || !item._paths)
           return;
-        for (var i = 0; i < item._paths.length; i++) {
-          var path = item._paths[i];
-          if (geometry.pointInConvexHull(path, localP)) {
-            hitInfo = { position: true };
+        var c = item._centroid, extents = item._extents;
+        if (diagrams.hitPoint(extents.xmax, c.y, localP, knobbyRadius)) {
+          hitInfo = { resizer: true };
+        } else {
+          for (var i = 0; i < item._paths.length; i++) {
+            var path = item._paths[i];
+            if (geometry.pointInConvexHull(path, localP)) {
+              hitInfo = { position: true };
+            }
+            break;
+            // ctx.beginPath();
+            // ctx.moveTo(path[0].x, path[0].y);
+            // for (var j = 1; j < path.length; j++)
+            //   ctx.lineTo(path[j].x, path[j].y);
+            // ctx.closePath();
+            // if (ctx.isPointInPath(localP.x, localP.y))
+            //   return { position: true };
           }
-          break;
-          // ctx.beginPath();
-          // ctx.moveTo(path[0].x, path[0].y);
-          // for (var j = 1; j < path.length; j++)
-          //   ctx.lineTo(path[j].x, path[j].y);
-          // ctx.closePath();
-          // if (ctx.isPointInPath(localP.x, localP.y))
-          //   return { position: true };
         }
+
         break;
     }
     if (hitInfo)
@@ -473,7 +488,8 @@ var shapes = (function() {
             id: 1,
             x: 40,
             y: 40,
-            radius: 16,
+            scale: 16,
+            rotation: 0,
           },
           {
             type: 'point',
@@ -655,7 +671,10 @@ var shapes = (function() {
       return;
     var mouseHitInfo = this.mouseHitInfo,
         dragItem = mouseHitInfo.item,
-        model = this.model,
+        model = this.model, transformableModel = model.transformableModel,
+        transform = transformableModel.getLocal(dragItem),
+        // Edge's direction/scale vector, in parent space.
+        vector = geometry.matMulVec({ x: 1, y: 0 }, transform),
         newItem, drag;
     if (this.isPaletteItem(dragItem)) {
       newItem = model.instancingModel.clone(dragItem);
@@ -671,7 +690,7 @@ var shapes = (function() {
       switch (dragItem.type) {
         case 'disk':
           if (mouseHitInfo.resizer)
-            drag = { type: 'resizeDisk', name: 'Resize disk' };
+            drag = { type: 'resizeDisk', name: 'Resize disk', vector: vector };
           else if (mouseHitInfo.center)
             drag = { type: 'moveSelection', name: 'Move selection' };
           break;
@@ -679,10 +698,6 @@ var shapes = (function() {
           drag = { type: 'moveSelection', name: 'Move selection' };
           break;
         case 'edge':
-          var model = this.model, transformableModel = model.transformableModel,
-              transform = transformableModel.getLocal(dragItem),
-              vector = geometry.matMulVec({ x: 1, y: 0 }, transform);
-              console.log(vector);
           if (mouseHitInfo.p1)
             drag = { type: 'p1', name: 'Edit edge', vector: vector };
           else if (mouseHitInfo.p2)
@@ -711,7 +726,10 @@ var shapes = (function() {
         //     drag = { type: 'moveSelection', name: 'Move selection' };
         //   break;
         case 'group':
-          drag = { type: 'moveSelection', name: 'Move selection' };
+          if (mouseHitInfo.resizer)
+            drag = { type: 'resizeGroup', name: 'Resize group', vector: vector };
+          else
+            drag = { type: 'moveSelection', name: 'Move selection' };
           break;
       }
     }
@@ -805,12 +823,21 @@ var shapes = (function() {
         break;
 
       case 'resizeDisk':
-        var localClick = drags.localClick,
-            localMouse = drags.localMouse,
-            dx1 = localClick.x, dy1 = localClick.y,
-            dx2 = localMouse.x, dy2 = localMouse.y;
-        model.observableModel.changeValue(dragItem, 'radius',
-            snapshot.radius * Math.sqrt((dx2 * dx2 + dy2 * dy2) / (dx1 * dx1 + dy1 * dy1)));
+        var vector = drag.vector, parentDrag = drags.parentDrag,
+            dx = vector.x + parentDrag.x, dy = vector.y + parentDrag.y,
+            rotation = Math.atan2(-dy, dx),
+            scale = Math.sqrt(dx * dx + dy * dy);
+        model.observableModel.changeValue(dragItem, 'rotation', rotation);
+        model.observableModel.changeValue(dragItem, 'scale', scale);
+        break;
+
+      case 'resizeGroup':
+        var vector = drag.vector, parentDrag = drags.parentDrag,
+            dx = vector.x + parentDrag.x, dy = vector.y + parentDrag.y,
+            rotation = Math.atan2(-dy, dx),
+            scale = Math.sqrt(dx * dx + dy * dy);
+        model.observableModel.changeValue(dragItem, 'rotation', rotation);
+        // model.observableModel.changeValue(dragItem, 'scale', scale);
         break;
 
       case 'p1':
@@ -819,8 +846,7 @@ var shapes = (function() {
             rotation = Math.atan2(-dy, dx),
             scale = Math.sqrt(dx * dx + dy * dy);
         model.observableModel.changeValue(dragItem, 'rotation', rotation);
-        model.observableModel.changeValue(dragItem, 'sx', scale);
-        model.observableModel.changeValue(dragItem, 'sy', scale);
+        model.observableModel.changeValue(dragItem, 'scale', scale);
         model.observableModel.changeValue(dragItem, 'x', snapshot.x + parentDrag.x);
         model.observableModel.changeValue(dragItem, 'y', snapshot.y + parentDrag.y);
         break;
@@ -831,8 +857,7 @@ var shapes = (function() {
             rotation = Math.atan2(-dy, dx),
             scale = Math.sqrt(dx * dx + dy * dy);
         model.observableModel.changeValue(dragItem, 'rotation', rotation);
-        model.observableModel.changeValue(dragItem, 'sx', scale);
-        model.observableModel.changeValue(dragItem, 'sy', scale);
+        model.observableModel.changeValue(dragItem, 'scale', scale);
         break;
 
       // case 'end0':
@@ -922,11 +947,10 @@ var shapes = (function() {
         } else if (isEdgeItem(newItem) && !isEdge(parent)) {
           var edge = {
             type: 'edge',
-            x: x - 32,
-            y: y - 32,
-            rotation: Math.cos(Math.PI * 0.25),
-            sx: 64,
-            sy: 64,
+            x: x,
+            y: y,
+            scale: 64,
+            rotation: Math.PI * -0.5,
             items: [
               {
                 type: 'point',
@@ -1018,11 +1042,10 @@ var shapes = (function() {
       var dx, dy, cx, cy;
       switch (item.type) {
         case 'disk':
-          var r = item.radius;
-          subdivisions = Math.sqrt(r) * 16;
+          subdivisions = Math.sqrt(item.scale) * 16;
           for (var i = 0; i < subdivisions; i++) {
-            x = r * Math.cos(2 * Math.PI * i / subdivisions);
-            y = r * Math.sin(2 * Math.PI * i / subdivisions);
+            x = Math.cos(2 * Math.PI * i / subdivisions);
+            y = Math.sin(2 * Math.PI * i / subdivisions);
             path.push({ x: x, y: y });
           }
           break;
@@ -1123,7 +1146,25 @@ var shapes = (function() {
           }
 
           var hull = geometry.getConvexHull(points, item),
-              centroid = geometry.getCentroid(hull);
+              extents = geometry.getExtents(hull),
+              centroid;
+          for (var i = 0; i < subItems.length; i++) {
+            var subItem = subItems[i];
+            if (subItem.type == 'disk') {
+              if (centroid) {
+                centroid.x += subItem.x;
+                centroid.y += subItem.y;
+              } else {
+                centroid = {
+                  x: subItem.x,
+                  y: subItem.y,
+                }
+              }
+            }
+          }
+          centroid.x /= subItems.length;
+          centroid.y /= subItems.length;
+
           geometry.annotateConvexHull(hull, centroid);
           // geometry.insetConvexHull(hull, -16);
 
@@ -1158,6 +1199,7 @@ var shapes = (function() {
           //   }
           // }
           item._centroid = centroid;
+          item._extents = extents;
           item._paths = [ hull ];
         }
       }
@@ -1276,63 +1318,63 @@ var shape_data = {
     {
       "type": "group",
       "op": "hull",
-      "x": 440.41165005344783,
-      "y": 272.24185446499,
+      "x": 456.41165005344783,
+      "y": 262.24185446499,
       "items": [
         {
           "type": "disk",
           "x": -95.13906402102225,
           "y": -117.9973685422255,
-          "radius": 139.92260819176386,
+          "scale": 139.92260819176386,
           "id": 181
         },
         {
           "type": "disk",
           "x": -133.47291806630716,
           "y": 640.7190082602278,
-          "radius": 16,
+          "scale": 16,
           "id": 183
         },
         {
           "type": "disk",
           "x": 367.6976551872644,
           "y": 644.1873674119423,
-          "radius": 16,
+          "scale": 16,
           "id": 184
         },
         {
           "type": "disk",
           "x": 414.81855352447116,
           "y": -165.79329996043995,
-          "radius": 66.90411048657579,
+          "scale": 66.90411048657579,
           "id": 185
         },
         {
           "type": "group",
           "op": "hull",
-          "x": 37.95365879771731,
-          "y": 322.99615794203424,
-          "rotation": Math.cos(Math.PI * 0.25),
+          "x": 56.95365879771731,
+          "y": 230.99615794203424,
+          "rotation": 0.7071067811865476,
           "items": [
             {
               "type": "disk",
               "x": 6,
               "y": -7,
-              "radius": 16,
+              "scale": 16,
               "id": 210
             },
             {
               "type": "disk",
               "x": -48,
               "y": -36,
-              "radius": 34.04715277226595,
+              "scale": 34.04715277226595,
               "id": 211
             },
             {
               "type": "disk",
               "x": -65,
               "y": -151,
-              "radius": 16,
+              "scale": 16,
               "id": 212
             }
           ],
@@ -1348,7 +1390,7 @@ var shape_data = {
               "type": "disk",
               "x": 216.7962951626671,
               "y": 5.37036130133734,
-              "radius": 39.505914005112075,
+              "scale": 39.505914005112075,
               "id": 224
             }
           ],
@@ -1364,7 +1406,7 @@ var shape_data = {
               "type": "disk",
               "x": -185.1219171549967,
               "y": -100.69520711250829,
-              "radius": 40.23684148848271,
+              "scale": 40.23684148848271,
               "id": 222
             }
           ],
@@ -1380,7 +1422,7 @@ var shape_data = {
               "type": "disk",
               "x": -292.6487668619987,
               "y": -20.73342644300908,
-              "radius": 40.23684148848271,
+              "scale": 40.23684148848271,
               "id": 220
             }
           ],
@@ -1396,7 +1438,7 @@ var shape_data = {
               "type": "disk",
               "x": -276.5578098740084,
               "y": -53.25205523000221,
-              "radius": 40.23684148848271,
+              "scale": 40.23684148848271,
               "id": 218
             }
           ],
@@ -1412,21 +1454,21 @@ var shape_data = {
               "type": "disk",
               "x": 73,
               "y": -118,
-              "radius": 18.161224791664853,
+              "scale": 18.161224791664853,
               "id": 214
             },
             {
               "type": "disk",
               "x": 138.6095294796001,
               "y": -137.39939716017415,
-              "radius": 25.475244635370935,
+              "scale": 25.475244635370935,
               "id": 215
             },
             {
               "type": "disk",
               "x": 184,
               "y": -92,
-              "radius": 16,
+              "scale": 16,
               "id": 216
             }
           ],
@@ -1442,21 +1484,21 @@ var shape_data = {
               "type": "disk",
               "x": -112,
               "y": 0,
-              "radius": 16,
+              "scale": 16,
               "id": 206
             },
             {
               "type": "disk",
               "x": -48,
               "y": -36,
-              "radius": 34.04715277226595,
+              "scale": 34.04715277226595,
               "id": 207
             },
             {
               "type": "disk",
               "x": -29.750868624734267,
               "y": -140.5005790831562,
-              "radius": 16,
+              "scale": 16,
               "id": 208
             }
           ],
@@ -1472,14 +1514,14 @@ var shape_data = {
               "type": "disk",
               "x": 2.4499156637059514,
               "y": 0.9799662654823464,
-              "radius": 9.929778600166998,
+              "scale": 9.929778600166998,
               "id": 226
             },
             {
               "type": "disk",
               "x": 2.407409674665587,
               "y": 81.85192893863245,
-              "radius": 10.333627809386586,
+              "scale": 10.333627809386586,
               "id": 228
             }
           ],
@@ -1495,14 +1537,14 @@ var shape_data = {
               "type": "disk",
               "x": 2.4499156637059514,
               "y": 0.9799662654823464,
-              "radius": 9.929778600166998,
+              "scale": 9.929778600166998,
               "id": 232
             },
             {
               "type": "disk",
               "x": 2.407409674665587,
               "y": 81.85192893863245,
-              "radius": 10.333627809386586,
+              "scale": 10.333627809386586,
               "id": 233
             }
           ],
@@ -1518,14 +1560,14 @@ var shape_data = {
               "type": "disk",
               "x": 2.4499156637059514,
               "y": 0.9799662654823464,
-              "radius": 9.929778600166998,
+              "scale": 9.929778600166998,
               "id": 235
             },
             {
               "type": "disk",
               "x": 2.407409674665587,
               "y": 81.85192893863245,
-              "radius": 10.333627809386586,
+              "scale": 10.333627809386586,
               "id": 236
             }
           ],
@@ -1535,7 +1577,7 @@ var shape_data = {
           "type": "disk",
           "x": -177.62046231828322,
           "y": -43.74962683659891,
-          "radius": 85.98177053809061,
+          "scale": 85.98177053809061,
           "id": 239
         },
         {
@@ -1548,14 +1590,14 @@ var shape_data = {
               "type": "disk",
               "x": 955.8344124036056,
               "y": -207.521920002481,
-              "radius": 7.317260635772668,
+              "scale": 7.317260635772668,
               "id": 247
             },
             {
               "type": "disk",
               "x": 900.3863586530567,
               "y": -231.64009517673122,
-              "radius": 16.638179481930923,
+              "scale": 16.638179481930923,
               "id": 250
             }
           ],
@@ -1571,14 +1613,14 @@ var shape_data = {
               "type": "disk",
               "x": 845.3844452872089,
               "y": -203.3652008099284,
-              "radius": 7.317260635772668,
+              "scale": 7.317260635772668,
               "id": 254
             },
             {
               "type": "disk",
               "x": 900.3863586530567,
               "y": -231.64009517673122,
-              "radius": 16.638179481930923,
+              "scale": 16.638179481930923,
               "id": 255
             }
           ],
@@ -1588,11 +1630,33 @@ var shape_data = {
           "type": "disk",
           "x": -70.03021975522722,
           "y": 680.3217284237408,
-          "radius": 16,
+          "scale": 16,
           "id": 257
         }
       ],
       "id": 182
+    },
+    {
+      "type": "edge",
+      "x": 854.4180002615208,
+      "y": 124.56966671025344,
+      "rotation": -1.6379638105221015,
+      "scale": 796.8724213631663,
+      "items": [
+        {
+          "type": "point",
+          "x": 0.07022731390742232,
+          "y": -0.03479198224779445,
+          "id": 263
+        },
+        {
+          "type": "point",
+          "x": 0.12683124080893915,
+          "y": -0.04557836666745174,
+          "id": 261
+        }
+      ],
+      "id": 260
     }
   ]
 }

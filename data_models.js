@@ -1055,34 +1055,29 @@ var hierarchicalModel = (function () {
 // transformableModel maintains transform matrices on a hierarchy of items.
 var transformableModel = (function () {
   var proto = {
-    // Default is if item has x and y.
+    // Getter functions which determine transform parameters. Override if these
+    // don't fit your model.
     hasTransform: function (item) {
       return item.x !== undefined && item.y !== undefined;
     },
-    // Default is property 'x'.
+
     getX: function(item) {
-      return item.x || 0;
+      return item.x || item._x || 0;
     },
-    // Default is property 'y'.
+
     getY: function(item) {
-      return item.y || 0;
+      return item.y || item._y || 0;
     },
 
-    // Default is property 'sx'.
-    getSX: function(item) {
-      return item.sx || 1;
+    getScale: function(item) {
+      return item.scale || item._scale || 1;
     },
 
-    // Default is property 'sy'.
-    getSY: function(item) {
-      return item.sy || 1;
-    },
-
-    // Default is property 'rotation'.
     getRotation: function (item) {
-      return item.rotation || 0;
+      return item.rotation || item._rotation || 0;
     },
 
+    // Getter functions for genereated transforms and related information.
     getLocal: function (item) {
       return item._transform;
     },
@@ -1099,8 +1094,8 @@ var transformableModel = (function () {
       return item._aitransform;
     },
 
-    getUniformScale: function(item) {
-      return item._scale;
+    getOOScale: function (item) {
+      return item._ooScale;
     },
 
     // Gets the matrix to move an item from its current parent to newParent.
@@ -1116,21 +1111,17 @@ var transformableModel = (function () {
 
     updateLocal: function (item) {
       var tx = this.getX(item), ty = this.getY(item),
-          sx = this.getSX(item), sy = this.getSY(item),
-          ooSx = 1.0 / sx, ooSy = 1.0 / sy,
+          scale = this.getScale(item), ooScale = 1.0 / scale,
           rot = this.getRotation(item),
           cos = Math.cos(rot), sin = Math.sin(rot),
-          ooSxCos = ooSx * cos, ooSySin = ooSy * sin,
-          ooSxSin = ooSx * sin, ooSyCos = ooSy * cos;
-      // This uniform scale value can be used when drawing scale invariant items
-      // on a canvas.
-      item._scale = Math.max(sx, sy);
-      item._transform = [ sx * cos, sx * -sin,
-                          sy * sin, sy * cos,
+          ooScaleCos = ooScale * cos, ooScaleSin = ooScale * sin;
+      item._ooScale = ooScale;
+      item._transform = [ scale * cos, scale * -sin,
+                          scale * sin, scale * cos,
                           tx, ty ];
-      item._itransform = [ ooSxCos, ooSySin,
-                           -ooSxSin, ooSyCos,
-                           -tx * ooSxCos + ty * ooSxSin, -tx * ooSySin - ty * ooSyCos ];
+      item._itransform = [ ooScaleCos, ooScaleSin,
+                           -ooScaleSin, ooScaleCos,
+                           -tx * ooScaleCos + ty * ooScaleSin, -tx * ooScaleSin - ty * ooScaleCos ];
     },
 
     updateTransforms: function (item) {
@@ -1145,7 +1136,7 @@ var transformableModel = (function () {
         parent = hierarchicalModel.getParent(parent);
 
       if (parent) {
-        item._scale *= parent._scale;
+        item._ooScale *= parent._ooScale;
         item._atransform = geometry.matMulNew(item._transform, parent._atransform);
         item._aitransform = geometry.matMulNew(parent._aitransform, item._itransform);
       } else {
