@@ -344,19 +344,19 @@ var shapes = (function() {
             ctx.stroke();
           }
         }
-        ctx.lineWidth = 0.25 * ooScale;
+        var extents = item._extents;
         if (mode & normalMode) {
-          var c = item._centroid, extents = item._extents;
+          ctx.lineWidth = 0.25 * ooScale;
           ctx.beginPath();
-          ctx.moveTo(c.x, c.y);
-          ctx.lineTo(extents.xmax, c.y);
+          ctx.moveTo(0, 0);
+          ctx.lineTo(extents.xmax, 0);
           ctx.setLineDash([lineDash]);
           ctx.stroke();
           ctx.setLineDash([0]);
-          // drawKnobby(this, knobbyRadius, c.x, c.y);
-          drawKnobby(this, knobbyRadius, extents.xmax, c.y);
         }
-          break;
+        drawKnobby(this, knobbyRadius, 0, 0);
+        drawKnobby(this, knobbyRadius, extents.xmax, 0);
+        break;
     }
     ctx.restore();
   }
@@ -441,7 +441,9 @@ var shapes = (function() {
         if (!item.op || !item._paths)
           return;
         var c = item._centroid, extents = item._extents;
-        if (diagrams.hitPoint(extents.xmax, c.y, localP, knobbyRadius)) {
+        if (diagrams.hitPoint(0, 0, localP, knobbyRadius)) {
+          hitInfo = { relocator: true };
+        } else if (diagrams.hitPoint(extents.xmax, 0, localP, knobbyRadius)) {
           hitInfo = { resizer: true };
         } else {
           for (var i = 0; i < item._paths.length; i++) {
@@ -673,8 +675,6 @@ var shapes = (function() {
         dragItem = mouseHitInfo.item,
         model = this.model, transformableModel = model.transformableModel,
         transform = transformableModel.getLocal(dragItem),
-        // Edge's direction/scale vector, in parent space.
-        vector = geometry.matMulVec({ x: 1, y: 0 }, transform),
         newItem, drag;
     if (this.isPaletteItem(dragItem)) {
       newItem = model.instancingModel.clone(dragItem);
@@ -689,6 +689,8 @@ var shapes = (function() {
     } else {
       switch (dragItem.type) {
         case 'disk':
+          // Direction/scale vector, in parent space.
+          var vector = geometry.matMulVec({ x: 1, y: 0 }, transform);
           if (mouseHitInfo.resizer)
             drag = { type: 'resizeDisk', name: 'Resize disk', vector: vector };
           else if (mouseHitInfo.center)
@@ -698,6 +700,8 @@ var shapes = (function() {
           drag = { type: 'moveSelection', name: 'Move selection' };
           break;
         case 'edge':
+          // Direction/scale vector, in parent space.
+          var vector = geometry.matMulVec({ x: 1, y: 0 }, transform);
           if (mouseHitInfo.p1)
             drag = { type: 'p1', name: 'Edit edge', vector: vector };
           else if (mouseHitInfo.p2)
@@ -726,8 +730,12 @@ var shapes = (function() {
         //     drag = { type: 'moveSelection', name: 'Move selection' };
         //   break;
         case 'group':
+          // Direction/scale vector, in parent space.
+          var vector = geometry.matMulVec({ x: dragItem._extents.xmax, y: 0 }, transform);
           if (mouseHitInfo.resizer)
             drag = { type: 'resizeGroup', name: 'Resize group', vector: vector };
+          else if (mouseHitInfo.relocator)
+            drag = { type: 'relocateGroup', name: 'Relocate group origin', vector: vector };
           else
             drag = { type: 'moveSelection', name: 'Move selection' };
           break;
@@ -781,15 +789,22 @@ var shapes = (function() {
     }
   }
 
+  Editor.prototype.moveItem = function(item, parentDrag) {
+    var model = this.model, observableModel = model.observableModel,
+        snapshot = model.transactionModel.getSnapshot(item);
+    observableModel.changeValue(item, 'x', snapshot.x + parentDrag.x);
+    observableModel.changeValue(item, 'y', snapshot.y + parentDrag.y);
+  }
+
   Editor.prototype.onDrag = function(p0, p) {
     var self = this,
         drag = this.drag,
         dragItem = drag.item,
         model = this.model,
+        observableModel = model.observableModel,
         transactionModel = model.transactionModel,
         renderer = this.renderer,
         mouseHitInfo = this.mouseHitInfo,
-        snapshot = transactionModel.getSnapshot(dragItem),
         canvasController = this.canvasController,
         cp0 = canvasController.viewToCanvas(p0),
         cp = canvasController.viewToCanvas(p),
@@ -800,21 +815,14 @@ var shapes = (function() {
 
     switch (drag.type) {
       case 'paletteItem':
-        var snapshot = transactionModel.getSnapshot(dragItem),
-            drags = self.calcDrags(dragItem, model, cp, cp0),
-            parentDrag = drags.parentDrag;
-        model.observableModel.changeValue(dragItem, 'x', snapshot.x + parentDrag.x);
-        model.observableModel.changeValue(dragItem, 'y', snapshot.y + parentDrag.y);
+        this.moveItem(dragItem, drags.parentDrag);
         // Find container underneath item for hot tracking.
         hitInfo = this.getFirstUnselectedContainerHit(hitList, dragItem);
         break;
       case 'moveSelection':
         model.selectionModel.forEach(function(item) {
-          var snapshot = transactionModel.getSnapshot(item),
-              drags = self.calcDrags(item, model, cp, cp0),
-              parentDrag = drags.parentDrag;
-          model.observableModel.changeValue(item, 'x', snapshot.x + parentDrag.x);
-          model.observableModel.changeValue(item, 'y', snapshot.y + parentDrag.y);
+          var drags = self.calcDrags(item, model, cp, cp0);
+          self.moveItem(item, drags.parentDrag);
         });
         if (dragItem.type !== 'point') {
           // Find container underneath item for hot tracking.
@@ -840,8 +848,21 @@ var shapes = (function() {
         // model.observableModel.changeValue(dragItem, 'scale', scale);
         break;
 
+      case 'relocateGroup':
+        var snapshot = transactionModel.getSnapshot(dragItem);
+        this.moveItem(dragItem, drags.parentDrag);
+        // Move contents by equal and opposite amount.
+        dragItem.items.forEach(function(item) {
+          var drags = self.calcDrags(item, model, cp, cp0),
+              parentDrag = drags.parentDrag,
+              inverse = { x: -parentDrag.x, y: -parentDrag.y };
+          self.moveItem(item, inverse);
+        });
+        break;
+
       case 'p1':
-        var vector = drag.vector, parentDrag = drags.parentDrag,
+        var snapshot = transactionModel.getSnapshot(dragItem),
+            vector = drag.vector, parentDrag = drags.parentDrag,
             dx = vector.x - parentDrag.x, dy = vector.y - parentDrag.y,
             rotation = Math.atan2(-dy, dx),
             scale = Math.sqrt(dx * dx + dy * dy);
@@ -971,7 +992,7 @@ var shapes = (function() {
       } else {
         // Reparent items if necessary.
         selectionModel.forEach(function(item) {
-          if (isHull(item))
+          if (isHullItem(item))
             editingModel.addItem(item, parent);
         });
       }
@@ -1318,43 +1339,43 @@ var shape_data = {
     {
       "type": "group",
       "op": "hull",
-      "x": 456.41165005344783,
-      "y": 262.24185446499,
+      "x": 576.5873714634024,
+      "y": 473.6352921258739,
       "items": [
         {
           "type": "disk",
-          "x": -95.13906402102225,
-          "y": -117.9973685422255,
+          "x": -215.31478543097683,
+          "y": -329.3908062031094,
           "scale": 139.92260819176386,
           "id": 181
         },
         {
           "type": "disk",
-          "x": -133.47291806630716,
-          "y": 640.7190082602278,
+          "x": -253.64863947626174,
+          "y": 429.32557059934396,
           "scale": 16,
           "id": 183
         },
         {
           "type": "disk",
-          "x": 367.6976551872644,
-          "y": 644.1873674119423,
+          "x": 247.5219337773098,
+          "y": 432.79392975105844,
           "scale": 16,
           "id": 184
         },
         {
           "type": "disk",
-          "x": 414.81855352447116,
-          "y": -165.79329996043995,
+          "x": 294.6428321145166,
+          "y": -377.1867376213238,
           "scale": 66.90411048657579,
           "id": 185
         },
         {
           "type": "group",
           "op": "hull",
-          "x": 56.95365879771731,
-          "y": 230.99615794203424,
-          "rotation": 0.7071067811865476,
+          "x": -82.04476596560363,
+          "y": 32.63382260271169,
+          "rotation": 0.5053386521302267,
           "items": [
             {
               "type": "disk",
@@ -1372,8 +1393,8 @@ var shape_data = {
             },
             {
               "type": "disk",
-              "x": -65,
-              "y": -151,
+              "x": 22.27723102448806,
+              "y": -80.38363918347522,
               "scale": 16,
               "id": 212
             }
@@ -1383,13 +1404,13 @@ var shape_data = {
         {
           "type": "group",
           "op": "hull",
-          "x": -65.03845921360232,
-          "y": -58.64494158800758,
+          "x": 30.522957811180788,
+          "y": -274.38208002274524,
           "items": [
             {
               "type": "disk",
-              "x": 216.7962951626671,
-              "y": 5.37036130133734,
+              "x": 1.0591567279294054,
+              "y": 9.714062075191123,
               "scale": 39.505914005112075,
               "id": 224
             }
@@ -1399,13 +1420,13 @@ var shape_data = {
         {
           "type": "group",
           "op": "hull",
-          "x": 447.9615407863978,
-          "y": 83.35505841199242,
+          "x": 145.35038687458473,
+          "y": -225.04769653162586,
           "items": [
             {
               "type": "disk",
-              "x": -185.1219171549967,
-              "y": -100.69520711250829,
+              "x": -2.6864846531382227,
+              "y": -3.6858898297738847,
               "scale": 40.23684148848271,
               "id": 222
             }
@@ -1415,29 +1436,30 @@ var shape_data = {
         {
           "type": "group",
           "op": "hull",
-          "x": 447.9615407863978,
-          "y": 83.35505841199242,
+          "x": 36.75786752824001,
+          "y": -126.59047899094017,
           "items": [
             {
               "type": "disk",
-              "x": -292.6487668619987,
-              "y": -20.73342644300908,
+              "x": 6.209026467187698,
+              "y": -12.464737708126393,
               "scale": 40.23684148848271,
               "id": 220
             }
           ],
-          "id": 221
+          "id": 221,
+          "rotation": -0.2890831021546629
         },
         {
           "type": "group",
           "op": "hull",
-          "x": 545.9615407863978,
-          "y": 151.35505841199242,
+          "x": 147.78896984980156,
+          "y": -100.57958647152671,
           "items": [
             {
               "type": "disk",
-              "x": -276.5578098740084,
-              "y": -53.25205523000221,
+              "x": 1.4390396526332552,
+              "y": -12.710848007366963,
               "scale": 40.23684148848271,
               "id": 218
             }
@@ -1447,27 +1469,27 @@ var shape_data = {
         {
           "type": "group",
           "op": "hull",
-          "x": -84.66303838092938,
-          "y": 542.4223620264428,
+          "x": -67.28823528551425,
+          "y": 212.3011032135555,
           "items": [
             {
               "type": "disk",
-              "x": 73,
-              "y": -118,
+              "x": -64.55052450536971,
+              "y": 0.7278211520033437,
               "scale": 18.161224791664853,
               "id": 214
             },
             {
               "type": "disk",
-              "x": 138.6095294796001,
-              "y": -137.39939716017415,
+              "x": 1.0590049742303904,
+              "y": -18.671576008170803,
               "scale": 25.475244635370935,
               "id": 215
             },
             {
               "type": "disk",
-              "x": 184,
-              "y": -92,
+              "x": 46.44947549463029,
+              "y": 26.727821152003344,
               "scale": 16,
               "id": 216
             }
@@ -1477,8 +1499,8 @@ var shape_data = {
         {
           "type": "group",
           "op": "hull",
-          "x": 283.88068826809933,
-          "y": 380.55431903307965,
+          "x": 163.70496685814476,
+          "y": 169.16088137219577,
           "items": [
             {
               "type": "disk",
@@ -1507,8 +1529,8 @@ var shape_data = {
         {
           "type": "group",
           "op": "hull",
-          "x": -115.77560606625855,
-          "y": -139.44031417303614,
+          "x": -235.95132747621312,
+          "y": -350.83375183392,
           "items": [
             {
               "type": "disk",
@@ -1530,8 +1552,8 @@ var shape_data = {
         {
           "type": "group",
           "op": "hull",
-          "x": -56.48764700457684,
-          "y": -160.0196057481653,
+          "x": -176.66336841453142,
+          "y": -371.4130434090492,
           "items": [
             {
               "type": "disk",
@@ -1553,8 +1575,8 @@ var shape_data = {
         {
           "type": "group",
           "op": "hull",
-          "x": 1.3303626588814268,
-          "y": -176.67903226136517,
+          "x": -118.84535875107315,
+          "y": -388.07246992224907,
           "items": [
             {
               "type": "disk",
@@ -1575,28 +1597,28 @@ var shape_data = {
         },
         {
           "type": "disk",
-          "x": -177.62046231828322,
-          "y": -43.74962683659891,
+          "x": -297.7961837282378,
+          "y": -255.14306449748278,
           "scale": 85.98177053809061,
           "id": 239
         },
         {
           "type": "group",
           "op": "hull",
-          "x": -892.8800168746304,
-          "y": 810.299112751308,
+          "x": -97.98277525938909,
+          "y": 374.481135107979,
           "items": [
             {
               "type": "disk",
-              "x": 955.8344124036056,
-              "y": -207.521920002481,
+              "x": 40.76144937840979,
+              "y": 16.902619979964015,
               "scale": 7.317260635772668,
               "id": 247
             },
             {
               "type": "disk",
-              "x": 900.3863586530567,
-              "y": -231.64009517673122,
+              "x": -14.686604372139072,
+              "y": -7.215555194286196,
               "scale": 16.638179481930923,
               "id": 250
             }
@@ -1606,20 +1628,20 @@ var shape_data = {
         {
           "type": "group",
           "op": "hull",
-          "x": -676.2068957780594,
-          "y": 808.7738596021206,
+          "x": 104.21134325766923,
+          "y": 365.71638066903546,
           "items": [
             {
               "type": "disk",
-              "x": 845.3844452872089,
-              "y": -203.3652008099284,
+              "x": -55.209515158474346,
+              "y": 28.298840462272892,
               "scale": 7.317260635772668,
               "id": 254
             },
             {
               "type": "disk",
-              "x": 900.3863586530567,
-              "y": -231.64009517673122,
+              "x": -0.20760179262651945,
+              "y": 0.02394609547008031,
               "scale": 16.638179481930923,
               "id": 255
             }
@@ -1628,8 +1650,8 @@ var shape_data = {
         },
         {
           "type": "disk",
-          "x": -70.03021975522722,
-          "y": 680.3217284237408,
+          "x": -190.2059411651818,
+          "y": 468.9282907628569,
           "scale": 16,
           "id": 257
         }
