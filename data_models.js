@@ -1052,7 +1052,9 @@ var hierarchicalModel = (function () {
 
 //------------------------------------------------------------------------------
 
-// transformableModel maintains transform matrices on a hierarchy of items.
+// transformableModel maintains transform matrices on a hierarchy of items. It
+// handles 2d transforms with rotation, uniform scaling, and translations. Non-
+// uniform scale transforms don't work well with canvas drawing in general.
 var transformableModel = (function () {
   var proto = {
     // Getter functions which determine transform parameters. Override if these
