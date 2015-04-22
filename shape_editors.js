@@ -373,6 +373,7 @@ var shapes = (function() {
       case 'disk':
         hitInfo = diagrams.hitTestDisk(0, 0, 1, localP, tol);
         if (hitInfo) {
+          //TODO use hitTestRect
           if (diagrams.hitPoint(0, 0, localP, knobbyRadius)) {
             hitInfo.center = true;
           } else if (diagrams.hitPoint(1, 0, localP, knobbyRadius)) {
@@ -448,9 +449,7 @@ var shapes = (function() {
         } else {
           for (var i = 0; i < item._paths.length; i++) {
             var path = item._paths[i];
-            if (geometry.pointInConvexHull(path, localP)) {
-              hitInfo = { position: true };
-            }
+            hitInfo = diagrams.hitTestConvexHull(path, localP, tol);
             break;
             // ctx.beginPath();
             // ctx.moveTo(path[0].x, path[0].y);

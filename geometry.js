@@ -59,7 +59,7 @@ var geometry = (function() {
     return Math.sqrt(dx * dx + dy * dy);
   }
 
-  function hitTestLine(p1, p2, p, tolerance) {
+  function pointOnSegment(p1, p2, p, tolerance) {
     return pointToSegmentDist(p1, p2, p) < tolerance;
   }
 
@@ -277,28 +277,34 @@ var geometry = (function() {
     return 0;
   }
 
-  function annotateConvexHull(hull, centroid) {
-    if (!centroid)
-      centroid = getCentroid(hull);
-    var cx = centroid.x, cy = centroid.y,
+  // Annotates the convex hull points with the following useful infomation:
+  // 1) angle: the angle between p[i] and center. 0 is the positive x-axis.
+  // 2) nx, ny: the normal of the edge from p[i] to p[(i + 1) % hull.length].
+  function annotateConvexHull(hull, center) {
+    var cx = center.x, cy = center.y,
         length = hull.length;
     for (var i = 0; i < length; i++) {
       var pi = hull[i], dx = pi.x - cx, dy = pi.y - cy;
       pi.angle = getAngle(dx, dy);
     }
     hull.sort(compareAngles);
+    var pLast = hull[length - 1];
+    for (var i = 0; i < length; i++) {
+      var pi = hull[i], dx = pi.x - pLast.x, dy = pi.y - pLast.y,
+          ooLength = 1.0 / Math.sqrt(dx * dx + dy * dy);
+      pi.nx = dy * ooLength;
+      pi.ny = -dx * ooLength;
+      pLast = pi;
+    }
   }
 
-  function pointInConvexHull(hull, p) {
+  // Determines if point is within tolerance of being inside the convex hull.
+  function pointInConvexHull(hull, p, tolerance) {
     var length = hull.length;
-    if (length < 3)
-      return false;
-    var lastP = hull[length - 1],
-        direction = turnDirection(lastP, hull[0], p);
-    length--;
     for (var i = 0; i < length; i++) {
-      lastP = hull[i];
-      if (direction * turnDirection(lastP, hull[i + 1], p) < 0)
+      var pi = hull[i], dx = p.x - pi.x, dy = p.y - pi.y,
+          offset = dx * pi.nx + dy * pi.ny;
+      if (offset < -tolerance)
         return false;
     }
     return true;
@@ -328,7 +334,7 @@ var geometry = (function() {
     };
   }
 
-  function angleToConvexHull(hull, centroid, angle) {
+  function angleToConvexHull(hull, center, angle) {
     var length = hull.length,
         value = { angle: angle },
         i0 = binarySearch(hull, value, compareAngles),
@@ -344,13 +350,13 @@ var geometry = (function() {
     var p1 = hull[i1],
         dx = Math.cos(angle),
         dy = Math.sin(angle),
-        intersection = geometry.lineIntersection(p0, p1, centroid,
-            { x: centroid.x + dx, y: centroid.y - dy });
+        intersection = geometry.lineIntersection(p0, p1, center,
+            { x: center.x + dx, y: center.y - dy });
     var nx = p1.y - p0.y,
         ny = p0.x - p1.x,
-        ooNLen = 1.0 / Math.sqrt(nx * nx + ny * ny);
-    intersection.nx = nx * ooNLen;
-    intersection.ny = ny * ooNLen;
+        ooLength = 1.0 / Math.sqrt(nx * nx + ny * ny);
+    intersection.nx = nx * ooLength;
+    intersection.ny = ny * ooLength;
 
     return intersection;
   }
@@ -387,7 +393,7 @@ var geometry = (function() {
     projectPointToSegment: projectPointToSegment,
     pointToLineDist: pointToLineDist,
     pointToSegmentDist: pointToSegmentDist,
-    hitTestLine: hitTestLine,
+    pointOnSegment: pointOnSegment,
     lineIntersection: lineIntersection,
     hitTestCurveSegment: hitTestCurveSegment,
     matMulNew: matMulNew,

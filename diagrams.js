@@ -238,7 +238,7 @@ function hitTestLine(p1, p2, p, tol) {
     return { p1: true };
   } else if (geometry.pointToPointDist(p2, p) < tol) {
     return { p2: true };
-  } else if (geometry.hitTestLine(p1, p2, p, tol)) {
+  } else if (geometry.pointOnSegment(p1, p2, p, tol)) {
     return { edge: true };
   }
 }
@@ -251,6 +251,13 @@ function hitTestBezier(bezier, p, tol) {
     return { p2: true };
   } else if (geometry.hitTestCurveSegment(bezier[0], bezier[1], bezier[2], bezier[3], p, tol)) {
     return { edge: true };
+  }
+}
+
+function hitTestConvexHull(hull, p, tol) {
+  if (geometry.pointInConvexHull(hull, p, tol)) {
+    var interior = geometry.pointInConvexHull(hull, p, -tol);
+      return { interior: interior, border: !interior };
   }
 }
 
@@ -479,7 +486,7 @@ function CanvasPanZoomLayer() {
   this.pan = { x: 0, y: 0 };
   this.zoom = 1.0;
   this.minZoom = 0.50;
-  this.maxZoom = 2.0;
+  this.maxZoom = 16.0;
 }
 
 CanvasPanZoomLayer.prototype.initialize = function(canvasController) {
@@ -615,6 +622,7 @@ return {
   hitTestDisk: hitTestDisk,
   hitTestLine: hitTestLine,
   hitTestBezier: hitTestBezier,
+  hitTestConvexHull: hitTestConvexHull,
   resizeCanvas: resizeCanvas,
   measureNameValuePairs: measureNameValuePairs,
 
