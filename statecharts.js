@@ -378,6 +378,7 @@ var statecharts = (function() {
 
 //------------------------------------------------------------------------------
 
+  //TODO convert to enum (not flags)
   var normalMode = 1,
       highlightMode = 2,
       hotTrackMode = 4;

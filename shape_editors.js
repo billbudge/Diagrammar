@@ -28,11 +28,11 @@ var shapes = (function() {
 
   function isHullItem(item) {
     return item.type === 'disk' || item.type === 'edge' ||
-           item.type === 'group';
+           item.type === 'hull';
   }
 
   function isHull(item) {
-    return item.type === 'group';
+    return item.type === 'hull';
   }
 
   function isEdgeItem(item) {
@@ -183,6 +183,7 @@ var shapes = (function() {
 
 //------------------------------------------------------------------------------
 
+  //TODO convert to enum (not flags)
   var normalMode = 1,
       highlightMode = 2,
       hotTrackMode = 4;
@@ -321,29 +322,19 @@ var shapes = (function() {
       //     drawKnobby(this, item.halfLength, 0);
       //   }
       //   break;
-      case 'group':
-        if (!item.op || !item._paths)
-          break;
-        for (var i = 0; i < item._paths.length; i++) {
-          var path = item._paths[i];
-          ctx.beginPath();
-          var p = path[path.length - 1];
-          ctx.moveTo(p.x, p.y);
-          for (var j = 0; j < path.length; j++) {
-            p = path[j];
-            ctx.lineTo(p.x, p.y);
-          }
-          ctx.lineWidth = 2;
-          if (item.diff) {
-            ctx.setLineDash([5]);
-            ctx.stroke();
-            ctx.setLineDash([0]);
-          } else {
-            if (mode & normalMode)
-              ctx.fill();
-            ctx.stroke();
-          }
+      case 'hull':
+        var path = item._path;
+        ctx.beginPath();
+        var p = path[path.length - 1];
+        ctx.moveTo(p.x, p.y);
+        for (var i = 0; i < path.length; i++) {
+          p = path[i];
+          ctx.lineTo(p.x, p.y);
         }
+        ctx.lineWidth = 2;
+        if (mode & normalMode)
+          ctx.fill();
+        ctx.stroke();
         var extents = item._extents;
         if (mode & normalMode) {
           ctx.lineWidth = 0.25 * ooScale;
@@ -438,27 +429,15 @@ var shapes = (function() {
       //       return { curve: true, index: i };
       //   }
       //   break;
-      case 'group':
-        if (!item.op || !item._paths)
-          return;
+      case 'hull':
         var c = item._centroid, extents = item._extents;
         if (diagrams.hitPoint(0, 0, localP, knobbyRadius)) {
           hitInfo = { relocator: true };
         } else if (diagrams.hitPoint(extents.xmax, 0, localP, knobbyRadius)) {
           hitInfo = { resizer: true };
         } else {
-          for (var i = 0; i < item._paths.length; i++) {
-            var path = item._paths[i];
-            hitInfo = diagrams.hitTestConvexHull(path, localP, tol);
-            break;
-            // ctx.beginPath();
-            // ctx.moveTo(path[0].x, path[0].y);
-            // for (var j = 1; j < path.length; j++)
-            //   ctx.lineTo(path[j].x, path[j].y);
-            // ctx.closePath();
-            // if (ctx.isPointInPath(localP.x, localP.y))
-            //   return { position: true };
-          }
+          var path = item._path;
+          hitInfo = diagrams.hitTestConvexHull(path, localP, tol);
         }
 
         break;
@@ -728,7 +707,7 @@ var shapes = (function() {
         //   else
         //     drag = { type: 'moveSelection', name: 'Move selection' };
         //   break;
-        case 'group':
+        case 'hull':
           // Direction/scale vector, in parent space.
           var vector = geometry.matMulVec({ x: dragItem._extents.xmax, y: 0 }, transform);
           if (mouseHitInfo.resizer)
@@ -777,8 +756,8 @@ var shapes = (function() {
   Editor.prototype.projectToParentHull = function(item, p) {
     var model = this.model,
         parent = model.hierarchicalModel.getParent(item);
-    if (parent && parent.type == 'group' && parent.op == 'hull') {
-      var centroid = parent._centroid, hull = parent._paths[0],
+    if (parent && parent.type == 'hull') {
+      var centroid = parent._centroid, hull = parent._path,
           transformableModel = model.transformableModel,
           local = transformableModel.getLocal(item),
           pParent = geometry.matMulPtNew(p, local),
@@ -951,20 +930,20 @@ var shapes = (function() {
           parent = hitInfo ? hitInfo.item : board;
       if (newItem) {
         var x = newItem.x, y = newItem.y;
-        // Items that can't be added to the board without being wrapped in a group.
-        if (parent === board && isHullItem(newItem)) {
-          var group = {
-            type: 'group',
-            op: 'hull',
+        if (isHullItem(newItem) && !isHull(parent)) {
+          // Items that can't be added without being wrapped in a hull.
+          var hull = {
+            type: 'hull',
             x: x,
             y: y,
             items: [ newItem ],
           };
-          model.dataModel.initialize(group);
+          model.dataModel.initialize(hull);
           newItem.x = 0;
           newItem.y = 0;
-          newItem = group;
+          newItem = hull;
         } else if (isEdgeItem(newItem) && !isEdge(parent)) {
+          // Items that can't be added without being wrapped in an edge.
           var edge = {
             type: 'edge',
             x: x,
@@ -1018,15 +997,15 @@ var shapes = (function() {
   //   }
   // }
 
-  function indices_adjacent(i1, i2, length, wraps) {
-    var next = i1 + 1;
-    if (wraps && next == length)
-      next = 0;
-    var prev = i1 - 1;
-    if (wraps && prev < 0)
-      prev = length - 1;
-    return i2 == next || i2 == prev;
-  }
+  // function indices_adjacent(i1, i2, length, wraps) {
+  //   var next = i1 + 1;
+  //   if (wraps && next == length)
+  //     next = 0;
+  //   var prev = i1 - 1;
+  //   if (wraps && prev < 0)
+  //     prev = length - 1;
+  //   return i2 == next || i2 == prev;
+  // }
 
   function makeInterpolatingPoints(bezier) {
     var points = [];
@@ -1047,37 +1026,32 @@ var shapes = (function() {
   Editor.prototype.updateGeometry = function(root) {
     var self = this, model = this.model,
         hierarchicalModel = model.hierarchicalModel,
-        transformableModel = model.transformableModel,
-        diffPathStack = [];
+        transformableModel = model.transformableModel;
     if (!root)
       root = this.board;
 
     function updatePass1(item) {
-      if (item.type == 'group')
-        diffPathStack.push(new ClipperLib.Paths());
-
-      // Create paths for primitives.
-      var path = [];
-      var subdivisions, step, x, y;
-      var dx, dy, cx, cy;
+      // Create paths for hull and group primitives.
       switch (item.type) {
         case 'disk':
-          subdivisions = Math.sqrt(item.scale) * 16;
+          var subdivisions = Math.sqrt(item.scale) * 16,
+              path = [];
           for (var i = 0; i < subdivisions; i++) {
-            x = Math.cos(2 * Math.PI * i / subdivisions);
-            y = Math.sin(2 * Math.PI * i / subdivisions);
-            path.push({ x: x, y: y });
+            path.push({
+              x: Math.cos(2 * Math.PI * i / subdivisions),
+              y: Math.sin(2 * Math.PI * i / subdivisions)
+            });
           }
           break;
-        case 'bezier':
-          // Generate local curve for unbound bezier items.
-          var parent = hierarchicalModel.getParent(item);
-          if (!parent || parent.type != 'group' || parent.op != 'hull') {
-            var points = makeInterpolatingPoints(item);
-            item._curves = [];
-            item._curveLengths = [];
-            generateCurveSegments(points, item._curves, item._curveLengths);
-          }
+        // case 'bezier':
+          // // Generate local curve for unbound bezier items.
+          // var parent = hierarchicalModel.getParent(item);
+          // if (!parent || parent.type != 'hull') {
+          //   var points = makeInterpolatingPoints(item);
+          //   item._curves = [];
+          //   item._curveLengths = [];
+          //   generateCurveSegments(points, item._curves, item._curveLengths);
+          // }
           // // Convert curves to points.
           // for (var i = 0; i < length + 1; i++) {
           //   subdivisions = item._curveLengths[i] / 4;
@@ -1097,163 +1071,92 @@ var shapes = (function() {
           // // add the last curve point.
           // path.push({ x: curve[3].x, y: curve[3].y });
           // path.push({ x: 0, y: 0 });
-          break;
+          // break;
       }
-
-      item._paths = [ path ];
-
-      // Add diff items to the parent item's clipper.
-      if (item.diff) {
-        diffPathStack[diffPathStack.length - 1].push(ToClipperPath(path, item));
-      }
+      if (path)
+        item._path = path;
     }
 
     function updatePass2(item) {
-      var points = [];
-      // Now that all child items are updated, build the paths for
-      // unions and hulls.
-      if (item.type == 'group') {
-        var diffPaths = diffPathStack.pop();
-        // If there are diff paths, adjust child groups.
-        // if (diffPaths.length) {
-        //   var clipper = new ClipperLib.Clipper();
-        //   clipper.AddPath(diffPaths, ClipperLib.PolyType.ptSubject, true);
-        //   clipper.AddPaths(diffPaths, ClipperLib.PolyType.ptClip, true);
-        //   var allDiffs = new ClipperLib.Paths();
-        //   clipper.Execute(ClipperLib.ClipType.ctXor, allDiffs);
+      if (item.type == 'hull') {
+        // Collect points from sub-items.
+        var points = [], subItems = item.items;
+        subItems.forEach(function(item) {
+          var path = item._path;
+          if (!path)
+            return;
+          var localTransform = transformableModel.getLocal(item);
+          path.forEach(function(p) {
+            points.push(geometry.matMulPtNew(p, localTransform));
+          });
+        });
 
-        //   for (var i = 0; i < item.items.length; i++) {
-        //     var subItem = item.items[i];
-        //     if (subItem.type == 'group') {
-        //       clipper.Clear();
-        //       for (var j = 0; j < subItem._paths.length; j++) {
-        //         var path = subItem._paths[j];
-        //         clipper.AddPath(ToClipperPath(path, subItem), ClipperLib.PolyType.ptSubject, true)
-        //       }
-        //       clipper.AddPaths(allDiffs, ClipperLib.PolyType.ptClip, true);
-        //       var solution = new ClipperLib.Path();
-        //       clipper.Execute(ClipperLib.ClipType.ctDifference, solution);
-        //       if (solution.length) {
-        //         subItem._paths = [];
-        //         for (var j = 0; j < solution.length; j++) {
-        //           var solutionPath = solution[j];
-        //           var path = FromClipperPath(solutionPath, subItem);
-
-
-        //           subItem._paths.push(path);
-        //         }
-        //       }
-        //     }
-        //   }
-        // }
-
-        if (item.op == 'hull') {
-          var subItems = item.items;
-          for (var i = 0; i < subItems.length; i++) {
-            var subItem = subItems[i];
-            if (!subItem.diff) {
-              var localTransform = transformableModel.getLocal(subItem);
-              for (var j = 0; j < subItem._paths.length; j++) {
-                var path = subItem._paths[j];
-                for (var k = 0; k < path.length; k++) {
-                  var p = path[k];
-                  p = { x: p.x, y: p.y, path: j, index: k, item: subItem };
-                  geometry.matMulPt(p, localTransform);
-                  points.push(p);
-                }
+        var hull = geometry.getConvexHull(points),
+            extents = geometry.getExtents(hull),
+            centroid;
+        subItems.forEach(function(item) {
+          if (item.type == 'disk') {
+            if (centroid) {
+              centroid.x += item.x;
+              centroid.y += item.y;
+            } else {
+              centroid = {
+                x: item.x,
+                y: item.y,
               }
             }
           }
-
-          var hull = geometry.getConvexHull(points, item),
-              extents = geometry.getExtents(hull),
-              centroid;
-          for (var i = 0; i < subItems.length; i++) {
-            var subItem = subItems[i];
-            if (subItem.type == 'disk') {
-              if (centroid) {
-                centroid.x += subItem.x;
-                centroid.y += subItem.y;
-              } else {
-                centroid = {
-                  x: subItem.x,
-                  y: subItem.y,
-                }
-              }
-            }
-          }
+        });
+        if (centroid) {
           centroid.x /= subItems.length;
           centroid.y /= subItems.length;
 
           geometry.annotateConvexHull(hull, centroid);
           // geometry.insetConvexHull(hull, -16);
-
-          // var subItems = item.items;
-          // for (var i = 0; i < subItems.length; i++) {
-          //   var subItem = subItems[i];
-          //   if (subItem.type == 'bezier') {
-          //     var localTransform = transformableModel.getLocal(subItem);
-          //     var points = makeInterpolatingPoints(subItem);
-          //     var pointsLength = points.length;
-          //     for (var j = 0; j < pointsLength; j++) {
-          //       var pj = points[j];
-          //       // control point base into parent space.
-          //       var p0 = { x: pj.x, y: 0 };
-          //       geometry.matMulPt(p0, localTransform);
-          //       var seg0 = findClosestPathSegment(hull, p0);
-          //       var seg1 = seg0 + 1;
-          //       if (seg1 == hull.length)
-          //         seg1 = 0;
-          //       var norm = { x: hull[seg1].y - hull[seg0].y, y: hull[seg0].x - hull[seg1].x };
-          //       geometry.vecNormalize(norm);
-          //       var height = pj.y;
-          //       norm.x *= height;
-          //       norm.y *= height;
-          //       var base = projectToPath(hull, seg0, p0);
-          //       points[j] = { x: base.x + norm.x, y: base.y + norm.y };
-          //       geometry.matMulPt(points[j], subItem._itransform);
-          //     }
-          //     subItem._curves = [];
-          //     subItem._curveLengths = [];
-          //     generateCurveSegments(points, subItem._curves, subItem._curveLengths);
-          //   }
-          // }
-          item._centroid = centroid;
-          item._extents = extents;
-          item._paths = [ hull ];
         }
+
+        // var subItems = item.items;
+        // for (var i = 0; i < subItems.length; i++) {
+        //   var subItem = subItems[i];
+        //   if (subItem.type == 'bezier') {
+        //     var localTransform = transformableModel.getLocal(subItem);
+        //     var points = makeInterpolatingPoints(subItem);
+        //     var pointsLength = points.length;
+        //     for (var j = 0; j < pointsLength; j++) {
+        //       var pj = points[j];
+        //       // control point base into parent space.
+        //       var p0 = { x: pj.x, y: 0 };
+        //       geometry.matMulPt(p0, localTransform);
+        //       var seg0 = findClosestPathSegment(hull, p0);
+        //       var seg1 = seg0 + 1;
+        //       if (seg1 == hull.length)
+        //         seg1 = 0;
+        //       var norm = { x: hull[seg1].y - hull[seg0].y, y: hull[seg0].x - hull[seg1].x };
+        //       geometry.vecNormalize(norm);
+        //       var height = pj.y;
+        //       norm.x *= height;
+        //       norm.y *= height;
+        //       var base = projectToPath(hull, seg0, p0);
+        //       points[j] = { x: base.x + norm.x, y: base.y + norm.y };
+        //       geometry.matMulPt(points[j], subItem._itransform);
+        //     }
+        //     subItem._curves = [];
+        //     subItem._curveLengths = [];
+        //     generateCurveSegments(points, subItem._curves, subItem._curveLengths);
+        //   }
+        // }
+        item._centroid = centroid;
+        item._extents = extents;
+        item._path = hull;
       }
 
       // Update local bounds.
-      item._bounds = {};
-      for (var i = 0; i < item._paths.length; i++)
-        Box2d.extendArray(item._bounds, item._paths[i]);
-    }
-
-    function updatePass3(item) {
-      // if (item.type == 'linear') {
-      //   var parent = hierarchicalModel.getParent(item);
-      //   if (parent && parent.type == 'group' && parent.op == 'hull') {
-      //     if (!item._angle1)
-      //       item._angle1 = self.projectToParentHull(item, { x: 0, y: 0 });
-      //     if (!item._angle2)
-      //       item._angle2 = self.projectToParentHull(item, { x: item.dx, y: item.dy });
-      //     item._attached = true;
-
-      //     var centroid = parent._centroid, hull = parent._paths[0],
-      //         inverseLocal = transformableModel.getInverseLocal(item),
-      //         p1 = geometry.angleToConvexHull(hull, centroid, item._angle1),
-      //         p2 = geometry.angleToConvexHull(hull, centroid, item._angle2);
-      //     item._p1 = geometry.matMulPt(p1, inverseLocal),
-      //     item._p2 = geometry.matMulPt(p2, inverseLocal);
-      //   }
-      // }
-
+      // item._bounds = {};
+      // Box2d.extendArray(item._bounds, item._path);
     }
 
     visit(root, updatePass1);
     visit(root, updatePass2);
-    visit(root, updatePass3);
   }
 
   Editor.prototype.onKeyDown = function(e) {
@@ -1330,14 +1233,13 @@ var shapes = (function() {
 
 
 var shape_data = {
-  "type": "group",
+  "type": "board",
   "x": 0,
   "y": 0,
   "id": 153,
   "items": [
     {
-      "type": "group",
-      "op": "hull",
+      "type": "hull",
       "x": 566.3106543077314,
       "y": 477.74597898814227,
       "items": [
@@ -1370,8 +1272,7 @@ var shape_data = {
           "id": 185
         },
         {
-          "type": "group",
-          "op": "hull",
+          "type": "hull",
           "x": -82.04476596560363,
           "y": 32.63382260271169,
           "rotation": 0.5053386521302267,
@@ -1401,8 +1302,7 @@ var shape_data = {
           "id": 213
         },
         {
-          "type": "group",
-          "op": "hull",
+          "type": "hull",
           "x": 30.522957811180788,
           "y": -274.38208002274524,
           "items": [
@@ -1417,8 +1317,7 @@ var shape_data = {
           "id": 225
         },
         {
-          "type": "group",
-          "op": "hull",
+          "type": "hull",
           "x": 145.35038687458473,
           "y": -225.04769653162586,
           "items": [
@@ -1433,8 +1332,7 @@ var shape_data = {
           "id": 223
         },
         {
-          "type": "group",
-          "op": "hull",
+          "type": "hull",
           "x": 36.75786752824001,
           "y": -126.59047899094017,
           "items": [
@@ -1450,8 +1348,7 @@ var shape_data = {
           "rotation": -0.2890831021546629
         },
         {
-          "type": "group",
-          "op": "hull",
+          "type": "hull",
           "x": 147.78896984980156,
           "y": -100.57958647152671,
           "items": [
@@ -1466,8 +1363,7 @@ var shape_data = {
           "id": 219
         },
         {
-          "type": "group",
-          "op": "hull",
+          "type": "hull",
           "x": -67.28823528551425,
           "y": 212.3011032135555,
           "items": [
@@ -1496,8 +1392,7 @@ var shape_data = {
           "id": 217
         },
         {
-          "type": "group",
-          "op": "hull",
+          "type": "hull",
           "x": 163.70496685814476,
           "y": 169.16088137219577,
           "items": [
@@ -1526,8 +1421,7 @@ var shape_data = {
           "id": 209
         },
         {
-          "type": "group",
-          "op": "hull",
+          "type": "hull",
           "x": -235.95132747621312,
           "y": -350.83375183392,
           "items": [
@@ -1549,8 +1443,7 @@ var shape_data = {
           "id": 227
         },
         {
-          "type": "group",
-          "op": "hull",
+          "type": "hull",
           "x": -176.66336841453142,
           "y": -371.4130434090492,
           "items": [
@@ -1572,8 +1465,7 @@ var shape_data = {
           "id": 234
         },
         {
-          "type": "group",
-          "op": "hull",
+          "type": "hull",
           "x": -118.84535875107315,
           "y": -388.07246992224907,
           "items": [
@@ -1602,8 +1494,7 @@ var shape_data = {
           "id": 239
         },
         {
-          "type": "group",
-          "op": "hull",
+          "type": "hull",
           "x": -97.98277525938909,
           "y": 374.481135107979,
           "items": [
@@ -1625,8 +1516,7 @@ var shape_data = {
           "id": 248
         },
         {
-          "type": "group",
-          "op": "hull",
+          "type": "hull",
           "x": 104.21134325766923,
           "y": 365.71638066903546,
           "items": [
