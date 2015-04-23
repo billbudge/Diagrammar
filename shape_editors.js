@@ -94,12 +94,7 @@ var shapes = (function() {
       },
 
       doCopy: function() {
-        var selectionModel = this.model.selectionModel;
         this.reduceSelection();
-        selectionModel.contents().forEach(function(item) {
-          // if (!isState(item))
-          //   selectionModel.remove(item);
-        });
         this.prototype.doCopy.call(this);
       },
 
@@ -149,7 +144,7 @@ var shapes = (function() {
             break;
         }
         this.model.observableModel.insertElement(edge, 'items', i, point);
-      }
+      },
     }
 
     function extend(model) {
@@ -265,15 +260,24 @@ var shapes = (function() {
           ctx.stroke();
           ctx.setLineDash([0]);
         }
-        ctx.beginPath();
+
         ctx.lineWidth = 2 * ooScale;
-        ctx.moveTo(0, 0);
-        for (var i = 0; i < length; i++) {
-          var pi = points[i];
-          ctx.lineTo(pi.x, pi.y);
+        ctx.beginPath();
+        ctx.moveTo(item._curves[0][0].x, item._curves[0][0].y);
+        for (var i = 0; i < item._curves.length; i++) {
+          var seg = item._curves[i];
+          ctx.bezierCurveTo(seg[1].x, seg[1].y, seg[2].x, seg[2].y, seg[3].x, seg[3].y);
         }
-        ctx.lineTo(1, 0);
         ctx.stroke();
+
+        // ctx.beginPath();
+        // ctx.moveTo(0, 0);
+        // for (var i = 0; i < length; i++) {
+        //   var pi = points[i];
+        //   ctx.lineTo(pi.x, pi.y);
+        // }
+        // ctx.lineTo(1, 0);
+        // ctx.stroke();
         if (mode & normalMode)
           ctx.lineWidth = 0.25 * ooScale;
         drawKnobby(this, knobbyRadius, 0, 0);
@@ -322,6 +326,8 @@ var shapes = (function() {
       //     drawKnobby(this, item.halfLength, 0);
       //   }
       //   break;
+      case 'group':
+        break;
       case 'hull':
         var path = item._path;
         ctx.beginPath();
@@ -1007,20 +1013,20 @@ var shapes = (function() {
   //   return i2 == next || i2 == prev;
   // }
 
-  function makeInterpolatingPoints(bezier) {
-    var points = [];
-    var length = bezier.points.length;
-    var halfLength = bezier.halfLength;
-    points.push({ x: -halfLength * 2, y: 0 });
-    points.push({ x: -halfLength, y: 0 });
-    for (var i = 0; i < length; i++) {
-      var pi = bezier.points[i];
-      points.push({ x: pi.x, y: pi.y });
-    }
-    points.push({ x: halfLength, y: 0 });
-    points.push({ x: halfLength * 2, y: 0 });
-    return points;
-  }
+  // function makeInterpolatingPoints(bezier) {
+  //   var points = [];
+  //   var length = bezier.points.length;
+  //   var halfLength = bezier.halfLength;
+  //   points.push({ x: -halfLength * 2, y: 0 });
+  //   points.push({ x: -halfLength, y: 0 });
+  //   for (var i = 0; i < length; i++) {
+  //     var pi = bezier.points[i];
+  //     points.push({ x: pi.x, y: pi.y });
+  //   }
+  //   points.push({ x: halfLength, y: 0 });
+  //   points.push({ x: halfLength * 2, y: 0 });
+  //   return points;
+  // }
 
   // Paths are computed in the local space of the item, translated when combining.
   Editor.prototype.updateGeometry = function(root) {
@@ -1043,6 +1049,15 @@ var shapes = (function() {
             });
           }
           break;
+        case 'edge':
+          var first = { x: 0, y: 0 }, last = { x: 1, y: 0 },
+              points = [ first, first ];
+          points = points.concat(item.items);
+          points.push(last);
+          points.push(last);
+          item._curves = geometry.generateInterpolatingBeziers(points);
+          break;
+
         // case 'bezier':
           // // Generate local curve for unbound bezier items.
           // var parent = hierarchicalModel.getParent(item);
@@ -1150,9 +1165,9 @@ var shapes = (function() {
         item._path = hull;
       }
 
-      // Update local bounds.
-      // item._bounds = {};
-      // Box2d.extendArray(item._bounds, item._path);
+      // Update local bounds if item has a path.
+      if (item._path)
+        item._bounds = geometry.getExtents(item._path);
     }
 
     visit(root, updatePass1);

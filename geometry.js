@@ -77,6 +77,64 @@ var geometry = (function() {
     // Parallel or collinear, return nothing.
   }
 
+  function makeInterpolatingBezier(p0, p1, p2, p3) {
+    var c1 = { x: (p0.x + p1.x) * 0.5, y: (p0.y + p1.y) * 0.5 };
+    var c2 = { x: (p1.x + p2.x) * 0.5, y: (p1.y + p2.y) * 0.5 };
+    var c3 = { x: (p2.x + p3.x) * 0.5, y: (p2.y + p3.y) * 0.5 };
+
+    var d1 = { x: p1.x - p0.x, y: p1.y - p0.y };
+    var d2 = { x: p2.x - p1.x, y: p2.y - p1.y };
+    var d3 = { x: p3.x - p2.x, y: p3.y - p2.y };
+
+    var len1 = Math.sqrt(d1.x * d1.x + d1.y * d1.y);
+    var len2 = Math.sqrt(d2.x * d2.x + d2.y * d2.y);
+    var len3 = Math.sqrt(d3.x * d3.x + d3.y * d3.y);
+
+    var k1 = len1 / (len1 + len2);
+    var k2 = len2 / (len2 + len3);
+
+    var m1 = { x: c1.x + (c2.x - c1.x) * k1, y: c1.y + (c2.y - c1.y) * k1 };
+    var m2 = { x: c2.x + (c3.x - c2.x) * k2, y: c2.y + (c3.y - c2.y) * k2 };
+
+    var newC1 = { x: m1.x + (c2.x - m1.x) * smoothValue + p1.x - m1.x,
+                  y: m1.y + (c2.y - m1.y) * smoothValue + p1.y - m1.y };
+    var newC2 = { x: m2.x + (c2.x - m2.x) * smoothValue + p2.x - m2.x,
+                  y: m2.y + (c2.y - m2.y) * smoothValue + p2.y - m2.y };
+
+    return [{ x: p1.x, y: p1.y }, newC1, newC2, { x: p2.x, y: p2.y }];
+  }
+
+  function evaluateBezier(segment, t) {
+    var tp = 1.0 - t;
+    var s11 = { x: segment[0].x * tp + segment[1].x * t,
+                y: segment[0].y * tp + segment[1].y * t },
+        s12 = { x: segment[1].x * tp + segment[2].x * t,
+                y: segment[1].y * tp + segment[2].y * t },
+        s13 = { x: segment[2].x * tp + segment[3].x * t,
+                y: segment[2].y * tp + segment[3].y * t },
+        s21 = { x: s11.x * tp + s12.x * t,
+                y: s11.y * tp + s12.y * t},
+        s22 = { x: s12.x * tp + s13.x * t,
+                y: s12.y * tp + s13.y * t},
+        s31 = { x: s21.x * tp + s22.x * t,
+                y: s21.y * tp + s22.y * t};
+    return s31;
+  }
+
+  function generateInterpolatingBeziers(points) {
+    var length = points.length,
+        p0 = points[0], p1 = points[1], p2 = points[2],
+        curves = [];
+    for (var i = 3; i < length; i++) {
+      var p3 = points[i];
+      curves.push(makeInterpolatingBezier(p0, p1, p2, p3));
+      p0 = p1;
+      p1 = p2;
+      p2 = p3;
+    }
+    return curves;
+  }
+
   function hitTestCurveSegment(p1, p2, p3, p4, p, tolerance) {
     var curves = new LinkedList();
     curves.pushFront([p1, p2, p3, p4]);
@@ -395,6 +453,9 @@ var geometry = (function() {
     pointToSegmentDist: pointToSegmentDist,
     pointOnSegment: pointOnSegment,
     lineIntersection: lineIntersection,
+    makeInterpolatingBezier: makeInterpolatingBezier,
+    evaluateBezier: evaluateBezier,
+    generateInterpolatingBeziers: generateInterpolatingBeziers,
     hitTestCurveSegment: hitTestCurveSegment,
     matMulNew: matMulNew,
     matMulVec: matMulVec,
@@ -418,66 +479,6 @@ var geometry = (function() {
 })();
 
 var smoothValue = 0.75;
-
-function GetCurveSegment(p0, p1, p2, p3) {
-  var c1 = { x: (p0.x + p1.x) * 0.5, y: (p0.y + p1.y) * 0.5 };
-  var c2 = { x: (p1.x + p2.x) * 0.5, y: (p1.y + p2.y) * 0.5 };
-  var c3 = { x: (p2.x + p3.x) * 0.5, y: (p2.y + p3.y) * 0.5 };
-
-  var d1 = { x: p1.x - p0.x, y: p1.y - p0.y };
-  var d2 = { x: p2.x - p1.x, y: p2.y - p1.y };
-  var d3 = { x: p3.x - p2.x, y: p3.y - p2.y };
-
-  var len1 = Math.sqrt(d1.x * d1.x + d1.y * d1.y);
-  var len2 = Math.sqrt(d2.x * d2.x + d2.y * d2.y);
-  var len3 = Math.sqrt(d3.x * d3.x + d3.y * d3.y);
-
-  var k1 = len1 / (len1 + len2);
-  var k2 = len2 / (len2 + len3);
-
-  var m1 = { x: c1.x + (c2.x - c1.x) * k1, y: c1.y + (c2.y - c1.y) * k1 };
-  var m2 = { x: c2.x + (c3.x - c2.x) * k2, y: c2.y + (c3.y - c2.y) * k2 };
-
-  var newC1 = { x: m1.x + (c2.x - m1.x) * smoothValue + p1.x - m1.x,
-                y: m1.y + (c2.y - m1.y) * smoothValue + p1.y - m1.y };
-  var newC2 = { x: m2.x + (c2.x - m2.x) * smoothValue + p2.x - m2.x,
-                y: m2.y + (c2.y - m2.y) * smoothValue + p2.y - m2.y };
-
-  return [{ x: p1.x, y: p1.y }, newC1, newC2, { x: p2.x, y: p2.y }];
-}
-
-function EvaluateCurveSegment(segment, t) {
-  var tp = 1.0 - t;
-  var s11 = { x: segment[0].x * tp + segment[1].x * t,
-              y: segment[0].y * tp + segment[1].y * t },
-      s12 = { x: segment[1].x * tp + segment[2].x * t,
-              y: segment[1].y * tp + segment[2].y * t },
-      s13 = { x: segment[2].x * tp + segment[3].x * t,
-              y: segment[2].y * tp + segment[3].y * t },
-      s21 = { x: s11.x * tp + s12.x * t,
-              y: s11.y * tp + s12.y * t},
-      s22 = { x: s12.x * tp + s13.x * t,
-              y: s12.y * tp + s13.y * t},
-      s31 = { x: s21.x * tp + s22.x * t,
-              y: s21.y * tp + s22.y * t};
-  return s31;
-}
-
-// Generate Bezier curve segments interpolating points.
-function generateCurveSegments(points, curves, curveLengths) {
-  var length = points.length;
-  var p0 = points[0], p1 = points[1], p2 = points[2];
-  for (var i = 3; i < length; i++) {
-    var p3 = points[i];
-    curves.push(GetCurveSegment(p0, p1, p2, p3));
-    curveLengths.push((geometry.pointToPointDist(p0, p1) +
-                       geometry.pointToPointDist(p1, p2) +
-                       geometry.pointToPointDist(p2, p3)) / 3);
-    p0 = p1;
-    p1 = p2;
-    p2 = p3;
-  }
-}
 
 
 function parameterizePath(path) {
