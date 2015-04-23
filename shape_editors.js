@@ -301,31 +301,6 @@ var shapes = (function() {
       //     drawKnobby(this, item.dx, item.dy);
       //   }
       //   break;
-      // case 'bezier':
-      //   ctx.beginPath();
-      //   // Start at first point of first curve segment.
-      //   ctx.moveTo(item._curves[0][0].x, item._curves[0][0].y);
-      //   for (var i = 0; i < item._curves.length; i++) {
-      //     var seg = item._curves[i];
-      //     ctx.bezierCurveTo(seg[1].x, seg[1].y, seg[2].x, seg[2].y, seg[3].x, seg[3].y);
-      //   }
-      //   ctx.stroke();
-      //   ctx.beginPath();
-      //   ctx.moveTo(-item.halfLength, 0);
-      //   ctx.lineTo(item.halfLength, 0);
-      //   ctx.setLineDash([5]);
-      //   ctx.stroke();
-      //   ctx.setLineDash([0]);
-      //   if (mode & highlightMode) {
-      //     for (var i = 0; i < item.points.length; i++) {
-      //       var pi = item.points[i];
-      //       drawKnobby(this, pi.x, pi.y);
-      //     }
-      //     drawKnobby(this, -item.halfLength, 0);
-      //     drawKnobby(this, 0, 0);
-      //     drawKnobby(this, item.halfLength, 0);
-      //   }
-      //   break;
       case 'group':
         break;
       case 'hull':
@@ -393,47 +368,19 @@ var shapes = (function() {
           hitInfo = { p2: true };
         // Now check the edge segments.
         if (!hitInfo) {
-          var lastP = { x: 0, y: 0 };
+          var curves = item._curves, length = curves.length;
           for (var i = 0; i < length; i++) {
-            var pi = points[i];
-            hitInfo = diagrams.hitTestLine(lastP, pi, localP, tol);
-            if (hitInfo)
+            var curve = curves[i];
+            if (geometry.hitTestCurveSegment(curve[0], curve[1], curve[2], curve[3], localP, tol)) {
+              hitInfo = { curve: true, index: i };
               break;
-            lastP = pi;
+            }
           }
-          if (!hitInfo)
-            hitInfo = diagrams.hitTestLine(lastP, { x: 1, y: 0 }, localP, tol);
         }
         break;
       // case 'linear':
       //   hitInfo = diagrams.hitTestLine(
       //       { x:0, y:0 }, { x: item.dx, y: item.dy }, localP, tol);
-      //   break;
-      // case 'bezier':
-      //   if (Math.abs(localP.x + item.halfLength) <= knobbyRadius + tol &&
-      //       Math.abs(localP.y) <= knobbyRadius + tol)
-      //     hitInfo = { end0: true };
-      //   else if (Math.abs(localP.x) <= knobbyRadius + tol &&
-      //            Math.abs(localP.y) <= knobbyRadius + tol)
-      //     hitInfo = { mid: true };
-      //   else if (Math.abs(localP.x - item.halfLength) <= knobbyRadius + tol &&
-      //            Math.abs(localP.y) <= knobbyRadius + tol)
-      //     hitInfo = { end1: true };
-      //   else {
-
-      //   }
-
-      //   for (var i = 0; i < item.points.length; i++) {
-      //     var pi = item.points[i];
-      //     if (Math.abs(localP.x - pi.x) <= knobbyRadius + tol &&
-      //         Math.abs(localP.y - pi.y) <= knobbyRadius + tol)
-      //       hitInfo = { point: true, index: i };
-      //   }
-      //   for (var i = 0; i < item._curves.length; i++) {
-      //     var curve = item._curves[i];
-      //     if (geometry.hitTestCurveSegment(curve[0], curve[1], curve[2], curve[3], localP, tol))
-      //       return { curve: true, index: i };
-      //   }
       //   break;
       case 'hull':
         var c = item._centroid, extents = item._extents;
@@ -445,7 +392,6 @@ var shapes = (function() {
           var path = item._path;
           hitInfo = diagrams.hitTestConvexHull(path, localP, tol);
         }
-
         break;
     }
     if (hitInfo)
@@ -490,18 +436,6 @@ var shapes = (function() {
           //   y: 72,
           //   dx: 96,
           //   dy: 0,
-          // },
-          // {
-          //   type: 'bezier',
-          //   id: 3,
-          //   x: 64,
-          //   y: 96,
-          //   halfLength: 48,
-          //   points: [
-          //     { x: -24, y: 15 },
-          //     { x: 0, y: 20 },
-          //     { x: 24, y: 15 }
-          //   ],
           // },
         ]
       }
@@ -701,18 +635,6 @@ var shapes = (function() {
         //   else
         //     drag = { type: 'moveSelection', name: 'Move selection' }; // TODO edit position drag type
         //   break;
-        // case 'bezier':
-        //   if (mouseHitInfo.end0)
-        //     drag = { type: 'end0', name: 'Stretch curve' };
-        //   else if (mouseHitInfo.mid)
-        //     drag = { type: 'mid', name: 'Attach curve' };
-        //   else if (mouseHitInfo.end1)
-        //     drag = { type: 'end1', name: 'Stretch curve' };
-        //   else if (mouseHitInfo.point)
-        //     drag = { type: 'point', name: 'Move control point' };
-        //   else
-        //     drag = { type: 'moveSelection', name: 'Move selection' };
-        //   break;
         case 'hull':
           // Direction/scale vector, in parent space.
           var vector = geometry.matMulVec({ x: dragItem._extents.xmax, y: 0 }, transform);
@@ -872,41 +794,6 @@ var shapes = (function() {
       //   model.observableModel.changeValue(dragItem, 'halfLength', newLength);
       //   this.autoRotateBezier(dragItem);
       //   break;
-
-      // case 'bezier':
-      //   var newLength;
-      //   if (mouseHitInfo.part == 'position') {
-      //     observableModel.changeValue(dragItem, 'x', snapshot.x + parent_drag.x);
-      //     observableModel.changeValue(dragItem, 'y', snapshot.y + parent_drag.y);
-      //     autoRotateBezier(dragItem);
-      //   } else if (mouseHitInfo.part == 'point') {
-      //     var pt = dragItem.points[mouseHitInfo.index];
-      //     var oldPt = dragItem._points[mouseHitInfo.index];
-      //     observableModel.changeValue(pt, 'x', oldPt.x + local_drag.x);
-      //     observableModel.changeValue(pt, 'y', oldPt.y + local_drag.y);
-      //   } else if (mouseHitInfo.part == 'end0') {
-      //   } else if (mouseHitInfo.part == 'end1') {
-      //     observableModel.changeValue(dragItem, 'x', snapshot.x + parent_drag.x / 2);
-      //     observableModel.changeValue(dragItem, 'y', snapshot.y + parent_drag.y / 2);
-      //     newLength = LineLength(parent_mouse.x, parent_mouse.y, dragItem.x, dragItem.y);
-      //     autoRotateBezier(dragItem);
-      //   } else if (mouseHitInfo.part == 'mid') {
-      //     observableModel.changeValue(dragItem, 'x', snapshot.x + parent_drag.x);
-      //     observableModel.changeValue(dragItem, 'y', snapshot.y + parent_drag.y);
-      //     autoRotateBezier(dragItem);
-      //   }
-      //   if (newLength) {
-      //     if (newLength > 0.00001) {
-      //       dragItem.halfLength = newLength;
-      //       var scale = newLength / snapshot.halfLength;
-      //       for (var i = 0; i < dragItem.points.length; i++) {
-      //         var pi = dragItem.points[i], oldPi = dragItem._points[i];
-      //         observableModel.changeValue(pi, 'x', scale * oldPi.x);
-      //         observableModel.changeValue(pi, 'y', scale * oldPi.y);
-      //       }
-      //     }
-      //   }
-      //   break;
     }
     this.hotTrackInfo = (hitInfo && hitInfo.item !== this.board) ? hitInfo : null;
   }
@@ -1057,36 +944,6 @@ var shapes = (function() {
           points.push(last);
           item._curves = geometry.generateInterpolatingBeziers(points);
           break;
-
-        // case 'bezier':
-          // // Generate local curve for unbound bezier items.
-          // var parent = hierarchicalModel.getParent(item);
-          // if (!parent || parent.type != 'hull') {
-          //   var points = makeInterpolatingPoints(item);
-          //   item._curves = [];
-          //   item._curveLengths = [];
-          //   generateCurveSegments(points, item._curves, item._curveLengths);
-          // }
-          // // Convert curves to points.
-          // for (var i = 0; i < length + 1; i++) {
-          //   subdivisions = item._curveLengths[i] / 4;
-          //   step = 1.0 / subdivisions;
-          //   var curve = item._curves[i];
-          //   for (var t = 0; t < 1; t += step) {
-          //     var t2 = t * t;
-          //     var t3 = t2 * t;
-          //     var c1 = 1 - 3 * t + 3 * t2 - t3;
-          //     var c2 = 3 * t - 6 * t2 + 3 * t3;
-          //     var c3 = 3 * t2 - 3 * t3;
-          //     var x = c1 * curve[0].x + c2 * curve[1].x + c3 * curve[2].x + t3 * curve[3].x;
-          //     var y = c1 * curve[0].y + c2 * curve[1].y + c3 * curve[2].y + t3 * curve[3].y;
-          //     path.push({ x: x, y: y });
-          //   }
-          // }
-          // // add the last curve point.
-          // path.push({ x: curve[3].x, y: curve[3].y });
-          // path.push({ x: 0, y: 0 });
-          // break;
       }
       if (path)
         item._path = path;
@@ -1130,36 +987,6 @@ var shapes = (function() {
           // geometry.insetConvexHull(hull, -16);
         }
 
-        // var subItems = item.items;
-        // for (var i = 0; i < subItems.length; i++) {
-        //   var subItem = subItems[i];
-        //   if (subItem.type == 'bezier') {
-        //     var localTransform = transformableModel.getLocal(subItem);
-        //     var points = makeInterpolatingPoints(subItem);
-        //     var pointsLength = points.length;
-        //     for (var j = 0; j < pointsLength; j++) {
-        //       var pj = points[j];
-        //       // control point base into parent space.
-        //       var p0 = { x: pj.x, y: 0 };
-        //       geometry.matMulPt(p0, localTransform);
-        //       var seg0 = findClosestPathSegment(hull, p0);
-        //       var seg1 = seg0 + 1;
-        //       if (seg1 == hull.length)
-        //         seg1 = 0;
-        //       var norm = { x: hull[seg1].y - hull[seg0].y, y: hull[seg0].x - hull[seg1].x };
-        //       geometry.vecNormalize(norm);
-        //       var height = pj.y;
-        //       norm.x *= height;
-        //       norm.y *= height;
-        //       var base = projectToPath(hull, seg0, p0);
-        //       points[j] = { x: base.x + norm.x, y: base.y + norm.y };
-        //       geometry.matMulPt(points[j], subItem._itransform);
-        //     }
-        //     subItem._curves = [];
-        //     subItem._curveLengths = [];
-        //     generateCurveSegments(points, subItem._curves, subItem._curveLengths);
-        //   }
-        // }
         item._centroid = centroid;
         item._extents = extents;
         item._path = hull;
