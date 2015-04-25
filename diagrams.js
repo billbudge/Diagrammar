@@ -197,6 +197,16 @@ function bezierEdgePath(bezier, ctx, arrowSize) {
     arrowPath(p2, ctx, arrowSize);
 }
 
+function closedPath(points, ctx) {
+  ctx.beginPath();
+  var length = points.length, pLast = points[length - 1];
+  ctx.moveTo(pLast.x, pLast.y);
+  for (var i = 0; i < length; i++) {
+    var pi = points[i];
+    ctx.lineTo(pi.x, pi.y);
+  }
+}
+
 // Check if p is within tolerance of (x, y). Useful for knobbies.
 function hitPoint(x, y, p, tol) {
   return Math.abs(x - p.x) <= tol && Math.abs(y - p.y) <= tol;
@@ -617,6 +627,7 @@ return {
   arrowPath: arrowPath,
   lineEdgePath: lineEdgePath,
   bezierEdgePath: bezierEdgePath,
+  closedPath: closedPath,
   hitPoint: hitPoint,
   hitTestRect: hitTestRect,
   hitTestDisk: hitTestDisk,

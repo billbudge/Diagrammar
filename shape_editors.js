@@ -43,6 +43,14 @@ var shapes = (function() {
     return item.type === 'edge';
   }
 
+  function isGroupItem(item) {
+    return item.type == 'hull' || item.type == 'group';
+  }
+
+  function isGroup(item) {
+    return item.type == 'group' || item.type == 'hull';
+  }
+
 //------------------------------------------------------------------------------
 
   var editingModel = (function() {
@@ -178,10 +186,10 @@ var shapes = (function() {
 
 //------------------------------------------------------------------------------
 
-  //TODO convert to enum (not flags)
   var normalMode = 1,
       highlightMode = 2,
-      hotTrackMode = 4;
+      hotTrackMode = 3,
+      paletteMode = 4;
 
   function Renderer(theme) {
     this.knobbyRadius = 4;
@@ -220,14 +228,14 @@ var shapes = (function() {
     ctx.save();
     ctx.transform(t[0], t[1], t[2], t[3], t[4], t[5]); // local to world
 
-    if (mode & normalMode) {
+    if (mode == normalMode) {
       ctx.fillStyle = theme.bgColor;
       ctx.strokeStyle = theme.strokeColor;
       ctx.lineWidth = 0.25 * ooScale;
-    } else if (mode & highlightMode) {
+    } else if (mode == highlightMode) {
       ctx.strokeStyle = theme.highlightColor;
       ctx.lineWidth = 2.0 * ooScale;
-    } else if (mode & hotTrackMode) {
+    } else if (mode == hotTrackMode) {
       ctx.strokeStyle = theme.hotTrackColor;
       ctx.lineWidth = 2.0 * ooScale;
     }
@@ -235,7 +243,7 @@ var shapes = (function() {
     switch (item.type) {
       case 'disk':
         ctx.beginPath();
-        if (mode & normalMode) {
+        if (mode == normalMode) {
           ctx.arc(0, 0, 1, 0, 2 * Math.PI, false);
           ctx.setLineDash([lineDash]);
           ctx.stroke();
@@ -252,7 +260,7 @@ var shapes = (function() {
       case 'edge':
         var points = item.items, length = points.length;
         ctx.lineWidth = 0.25 * ooScale;
-        if (mode & normalMode) {
+        if (mode == normalMode) {
           ctx.beginPath();
           ctx.moveTo(0, 0);
           ctx.lineTo(1, 0);
@@ -278,7 +286,7 @@ var shapes = (function() {
         // }
         // ctx.lineTo(1, 0);
         // ctx.stroke();
-        if (mode & normalMode)
+        if (mode == normalMode)
           ctx.lineWidth = 0.25 * ooScale;
         drawKnobby(this, knobbyRadius, 0, 0);
         drawKnobby(this, knobbyRadius, 1, 0);
@@ -291,7 +299,7 @@ var shapes = (function() {
       //   ctx.setLineDash([4]);
       //   ctx.stroke();
       //   ctx.setLineDash([0]);
-      //   if (mode & highlightMode) {
+      //   if (mode == highlightMode) {
       //     var p1 = item._p1, p2 = item._p2;
       //     if (p1 && p2) {
       //       drawKnobby(this, p1.x, p1.y);
@@ -302,35 +310,44 @@ var shapes = (function() {
       //   }
       //   break;
       case 'group':
+        var path = item._path;
+        ctx.setLineDash([lineDash]);
+        if (!path) {
+          ctx.beginPath();
+          ctx.arc(0, 0, 16, 0, 2 * Math.PI, false);
+          ctx.stroke();
+        } else {
+          diagrams.closedPath(path, ctx);
+          ctx.stroke();
+          var extents = item._extents;
+          if (mode == normalMode) {
+            ctx.lineWidth = 0.25 * ooScale;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(extents.xmax, 0);
+            ctx.stroke();
+          }
+          ctx.setLineDash([0]);
+          drawKnobby(this, knobbyRadius, 0, 0);
+          drawKnobby(this, knobbyRadius, extents.xmax, 0);
+        }
+        ctx.setLineDash([0]);
         break;
       case 'hull':
         var path = item._path;
-        ctx.beginPath();
-        var p = path[path.length - 1];
-        ctx.moveTo(p.x, p.y);
-        for (var i = 0; i < path.length; i++) {
-          p = path[i];
-          ctx.lineTo(p.x, p.y);
-        }
+        diagrams.closedPath(path, ctx);
         ctx.lineWidth = 2;
-        if (mode & normalMode)
+        if (mode == normalMode)
           ctx.fill();
         ctx.stroke();
-        var extents = item._extents;
-        if (mode & normalMode) {
-          ctx.lineWidth = 0.25 * ooScale;
-          ctx.beginPath();
-          ctx.moveTo(0, 0);
-          ctx.lineTo(extents.xmax, 0);
-          ctx.setLineDash([lineDash]);
-          ctx.stroke();
-          ctx.setLineDash([0]);
-        }
-        drawKnobby(this, knobbyRadius, 0, 0);
-        drawKnobby(this, knobbyRadius, extents.xmax, 0);
         break;
     }
     ctx.restore();
+  }
+
+  function hitKnobby(x, y, r, p) {
+    var d = 2 * r;
+    return diagrams.hitTestRect(x - r, y - r, d, d, p, 0);
   }
 
   Renderer.prototype.hitTest = function(item, p, tol, mode) {
@@ -341,14 +358,14 @@ var shapes = (function() {
         knobbyRadius = this.knobbyRadius * ooScale,
         hitInfo, r, distSquared;
     tol *= ooScale;
+    knobbyRadius += tol;
     switch (item.type) {
       case 'disk':
         hitInfo = diagrams.hitTestDisk(0, 0, 1, localP, tol);
         if (hitInfo) {
-          //TODO use hitTestRect
-          if (diagrams.hitPoint(0, 0, localP, knobbyRadius)) {
+          if (hitKnobby(0, 0, knobbyRadius, localP)) {
             hitInfo.center = true;
-          } else if (diagrams.hitPoint(1, 0, localP, knobbyRadius)) {
+          } else if (hitKnobby(1, 0, knobbyRadius, localP)) {
             hitInfo.resizer = true;
           } else {
             return null;
@@ -356,15 +373,15 @@ var shapes = (function() {
         }
         break;
       case 'point':
-        if (diagrams.hitPoint(0, 0, localP, tol))
+        if (diagrams.hitPoint(0, 0, localP, knobbyRadius))
           hitInfo = { position: true };
         break;
       case 'edge':
         var points = item.items, length = points.length;
         // First check the end points.
-        if (!hitInfo && diagrams.hitPoint(0, 0, localP, knobbyRadius + tol))
+        if (!hitInfo && hitKnobby(0, 0, knobbyRadius, localP))
           hitInfo = { p1: true };
-        if (!hitInfo && diagrams.hitPoint(1, 0, localP, knobbyRadius + tol))
+        if (!hitInfo && hitKnobby(1, 0, knobbyRadius, localP))
           hitInfo = { p2: true };
         // Now check the edge segments.
         if (!hitInfo) {
@@ -382,13 +399,23 @@ var shapes = (function() {
       //   hitInfo = diagrams.hitTestLine(
       //       { x:0, y:0 }, { x: item.dx, y: item.dy }, localP, tol);
       //   break;
-      case 'hull':
-        var c = item._centroid, extents = item._extents;
-        if (diagrams.hitPoint(0, 0, localP, knobbyRadius)) {
-          hitInfo = { relocator: true };
-        } else if (diagrams.hitPoint(extents.xmax, 0, localP, knobbyRadius)) {
-          hitInfo = { resizer: true };
+      case 'group':
+        var path = item._path;
+        if (!path) {
+          hitInfo = diagrams.hitTestDisk(0, 0, 16, localP, tol);
         } else {
+          var extents = item._extents;
+          if (hitKnobby(0, 0, knobbyRadius, localP)) {
+            hitInfo = { relocator: true };
+          } else if (hitKnobby(extents.xmax, 0, knobbyRadius, localP)) {
+            hitInfo = { resizer: true };
+          } else if (mode == normalMode) {
+            hitInfo = diagrams.hitTestConvexHull(path, localP, tol);
+          }
+        }
+        break;
+      case 'hull':
+        if (mode == normalMode) {
           var path = item._path;
           hitInfo = diagrams.hitTestConvexHull(path, localP, tol);
         }
@@ -428,6 +455,15 @@ var shapes = (function() {
             id: 2,
             x: 80,
             y: 40,
+          },
+          {
+            type: 'group',
+            id: 3,
+            x: 40,
+            y: 100,
+            scale: 1,
+            rotation: 0,
+            items: [],
           },
           // {
           //   type: 'linear',
@@ -501,7 +537,7 @@ var shapes = (function() {
     ctx.fillRect(palette.root.x, palette.root.y, 160, 300);
     palette.root.items.forEach(function(item) {
       renderer.drawItem(item, normalMode);
-    })
+    });
     renderer.endDraw();
 
     renderer.beginDraw(model, ctx);
@@ -530,7 +566,10 @@ var shapes = (function() {
       pushInfo(renderer.hitTest(item, p, tol, normalMode));
     });
 
-    // TODO hit test selection first, in selectionMode, first.
+    this.model.selectionModel.forEach(function(item) {
+      pushInfo(renderer.hitTest(item, cp, tol, highlightMode));
+    });
+
     reverseVisit(this.board, function(item) {
       pushInfo(renderer.hitTest(item, cp, cTol, normalMode));
     });
@@ -562,7 +601,8 @@ var shapes = (function() {
     function filter(hitInfo, model) {
       var hitItem = hitInfo.item,
           compatible = (isEdgeItem(item) && isEdge(hitItem)) ||
-                       (isHullItem(item) && isHull(hitItem));
+                       (isHullItem(item) && isHull(hitItem)) ||
+                       (isGroupItem(item) && isGroup(hitItem));
       return compatible && isUnselected(hitInfo, model);
     }
     return this.getFirstHit(hitList, filter);
@@ -635,7 +675,7 @@ var shapes = (function() {
         //   else
         //     drag = { type: 'moveSelection', name: 'Move selection' }; // TODO edit position drag type
         //   break;
-        case 'hull':
+        case 'group':
           // Direction/scale vector, in parent space.
           var vector = geometry.matMulVec({ x: dragItem._extents.xmax, y: 0 }, transform);
           if (mouseHitInfo.resizer)
@@ -644,6 +684,9 @@ var shapes = (function() {
             drag = { type: 'relocateGroup', name: 'Relocate group origin', vector: vector };
           else
             drag = { type: 'moveSelection', name: 'Move selection' };
+          break;
+        case 'hull':
+          drag = { type: 'moveSelection', name: 'Move selection' };
           break;
       }
     }
@@ -950,7 +993,7 @@ var shapes = (function() {
     }
 
     function updatePass2(item) {
-      if (item.type == 'hull') {
+      if (item.type == 'hull' || item.type == 'group') {
         // Collect points from sub-items.
         var points = [], subItems = item.items;
         subItems.forEach(function(item) {
@@ -963,32 +1006,35 @@ var shapes = (function() {
           });
         });
 
-        var hull = geometry.getConvexHull(points),
-            extents = geometry.getExtents(hull),
-            centroid;
-        subItems.forEach(function(item) {
-          if (item.type == 'disk') {
-            if (centroid) {
-              centroid.x += item.x;
-              centroid.y += item.y;
-            } else {
-              centroid = {
-                x: item.x,
-                y: item.y,
+        if (points.length) {
+          var hull = geometry.getConvexHull(points),
+              centroid;
+          subItems.forEach(function(item) {
+            var c = item._centroid;
+            if (!c && item.type == 'disk')
+              c = item;
+            if (c) {
+              if (centroid) {
+                centroid.x += c.x;
+                centroid.y += c.y;
+              } else {
+                centroid = {
+                  x: c.x,
+                  y: c.y,
+                }
               }
             }
+          });
+          if (centroid) {
+            centroid.x /= subItems.length;
+            centroid.y /= subItems.length;
+            geometry.annotateConvexHull(hull, centroid);
+            if (item.type == 'group')
+              geometry.insetConvexHull(hull, -16);
           }
-        });
-        if (centroid) {
-          centroid.x /= subItems.length;
-          centroid.y /= subItems.length;
-
-          geometry.annotateConvexHull(hull, centroid);
-          // geometry.insetConvexHull(hull, -16);
         }
-
         item._centroid = centroid;
-        item._extents = extents;
+        item._extents = hull ? geometry.getExtents(hull) : null;
         item._path = hull;
       }
 

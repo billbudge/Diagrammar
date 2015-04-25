@@ -378,10 +378,9 @@ var statecharts = (function() {
 
 //------------------------------------------------------------------------------
 
-  //TODO convert to enum (not flags)
   var normalMode = 1,
       highlightMode = 2,
-      hotTrackMode = 4;
+      hotTrackMode = 3;
 
   var stateMinWidth = 100,
       stateMinHeight = 60;
@@ -765,8 +764,8 @@ var statecharts = (function() {
     if (v2)
       p2 = this.stateParamToPoint(v2, transition.t2);
 
-    transition._bezier = diagrams.getEdgeBezier(p1, p2);
-    transition._mid = EvaluateCurveSegment(transition._bezier, 0.5);
+    var bezier = transition._bezier = diagrams.getEdgeBezier(p1, p2);
+    transition._mid = geometry.evaluateBezier(bezier, 0.5);
   }
 
   Renderer.prototype.drawTransition = function(transition, mode) {
@@ -1114,7 +1113,7 @@ var statecharts = (function() {
     reverseVisit(this.palette.root, null, function(item) {
       pushInfo(renderer.hitTest(item, p, tol, normalMode));
     });
-    // TODO hit test selection first, in selectionMode, first.
+    // TODO hit test selection first, in highlight, first.
     reverseVisit(statechart, isConnection, function(transition) {
       pushInfo(renderer.hitTest(transition, cp, cTol, normalMode));
     });
