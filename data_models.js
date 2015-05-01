@@ -14,6 +14,11 @@ var dataModel = (function () {
       return item.id;
     },
 
+    assignId: function (item) {
+      // 0 is not a valid id in this model.
+      item.id = this.nextId++;
+    },
+
     isItem: function (value) {
       return value && typeof value == 'object';
     },
@@ -116,14 +121,6 @@ var dataModel = (function () {
     instance.nextId = maxId + 1;
 
     instance.initializers = [];
-    // Assign a unique id when items are created.
-    instance.addInitializer(function(item) {
-      // 0 is not a valid id in this model.
-      // TODO we should be able to exclude items from the id system, i.e. if
-      // they shouldn't be referenced by other items.
-      if (!item.id)
-        item.id = instance.nextId++;
-    });
 
     model.dataModel = instance;
     return instance;
@@ -322,7 +319,8 @@ var transactionModel = (function () {
     },
 
     // Notifies observers that a transaction is ending. Observers should now
-    // do any adjustments to make data valid, or cancel the transaction.
+    // do any adjustments to make data valid, or cancel the transaction if
+    // the data is in an invalid state.
     endTransaction: function () {
       var transaction = this.transaction;
       this.onEndTransaction(transaction);
@@ -792,15 +790,16 @@ var instancingModel = (function () {
         return item;
 
       var copy = item.constructor();
-      var self = this;
-      this.model.dataModel.visitProperties(item, function (item, attr) {
+      var self = this, dataModel = this.model.dataModel;
+      dataModel.visitProperties(item, function (item, attr) {
         copy[attr] = self.clone(item[attr], map);
       });
       // Assign unique id after cloning all properties.
       if (!Array.isArray(copy)) {
-        this.model.dataModel.initialize(copy);
+        dataModel.assignId(copy);
+        dataModel.initialize(copy);
         if (map) {
-          var id = this.model.dataModel.getId(item);
+          var id = dataModel.getId(item);
           map.add(id, copy);
         }
       }
@@ -1156,19 +1155,19 @@ var transformableModel = (function () {
     },
 
     onChanged_: function (change) {
-      var hierarchicalModel = this.model.hierarchicalModel,
+      var dataModel = this.model.dataModel,
           item = change.item, attr = change.attr;
       switch (change.type) {
         case 'change':
           var newValue = item[attr];
-          if (this.model.dataModel.isItem(newValue))
+          if (dataModel.isItem(newValue))
             this.update(newValue);
           else
             this.update(item);
           break;
         case 'insert':
           var newValue = item[attr][change.index];
-          if (this.model.dataModel.isItem(newValue))
+          if (dataModel.isItem(newValue))
             this.update(newValue);
           break;
         case 'remove':
@@ -1195,7 +1194,7 @@ var transformableModel = (function () {
     }
 
     // Make sure new objects have transforms.
-    instance.model.dataModel.addInitializer(function(item) {
+    model.dataModel.addInitializer(function(item) {
       instance.updateTransforms(item);
     });
 
@@ -1207,56 +1206,6 @@ var transformableModel = (function () {
     extend: extend,
   };
 })();
-
-//------------------------------------------------------------------------------
-
-// var viewableModel = (function () {
-//   var proto = {
-//     getItemRect: function(item) {
-//       var x = item.x, y = item.y, w = item.width, h = item.height;
-//       if (x && y && w && h)
-//         return { x: x, y: y, width: w, height: h };
-//     },
-
-//     getSelectionRect: function() {
-//       var selectionModel = this.model.selectionModel;
-//       if (selectionModel) {
-//         var xMin = Number.MAX_VALUE, yMin = Number.MAX_VALUE,
-//             xMax = Number.MIN_VALUE, yMax = Number.MIN_VALUE,
-//             exists,
-//             self = this;
-//         selectionModel.forEach(function(item) {
-//           var rect = self.getItemRect(item);
-//           if (rect) {
-//             var x = rect.x, y = rect.y;
-//             xMin = Math.min(xMin, x);
-//             yMin = Math.min(yMin, y);
-//             xMax = Math.max(xMax, x + rect.width);
-//             yMax = Math.max(yMax, y + rect.height);
-//             exists = true;
-//           }
-//         });
-//       }
-//       if (exists)
-//         return { x: xMin, y: yMin, width: xMax - xMin, height: yMax - yMin };
-//     }
-//   }
-
-//   function extend(model) {
-//     if (model.viewableModel)
-//       return model.viewableModel;
-
-//     var instance = Object.create(proto);
-//     instance.model = model;
-
-//     model.viewableModel = instance;
-//     return instance;
-//   }
-
-//   return {
-//     extend: extend,
-//   };
-// })();
 
 //------------------------------------------------------------------------------
 

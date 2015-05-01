@@ -104,20 +104,15 @@ var geometry = (function() {
     return [{ x: p1.x, y: p1.y }, newC1, newC2, { x: p2.x, y: p2.y }];
   }
 
-  function evaluateBezier(segment, t) {
+  // Evaluate bezier segment by deCastlejau algorithm.
+  function evaluateBezier(b, t) {
     var tp = 1.0 - t;
-    var s11 = { x: segment[0].x * tp + segment[1].x * t,
-                y: segment[0].y * tp + segment[1].y * t },
-        s12 = { x: segment[1].x * tp + segment[2].x * t,
-                y: segment[1].y * tp + segment[2].y * t },
-        s13 = { x: segment[2].x * tp + segment[3].x * t,
-                y: segment[2].y * tp + segment[3].y * t },
-        s21 = { x: s11.x * tp + s12.x * t,
-                y: s11.y * tp + s12.y * t},
-        s22 = { x: s12.x * tp + s13.x * t,
-                y: s12.y * tp + s13.y * t},
-        s31 = { x: s21.x * tp + s22.x * t,
-                y: s21.y * tp + s22.y * t};
+    var s11 = { x: b[0].x * tp + b[1].x * t, y: b[0].y * tp + b[1].y * t },
+        s12 = { x: b[1].x * tp + b[2].x * t, y: b[1].y * tp + b[2].y * t },
+        s13 = { x: b[2].x * tp + b[3].x * t, y: b[2].y * tp + b[3].y * t },
+        s21 = { x: s11.x * tp + s12.x * t, y: s11.y * tp + s12.y * t},
+        s22 = { x: s12.x * tp + s13.x * t, y: s12.y * tp + s13.y * t},
+        s31 = { x: s21.x * tp + s22.x * t, y: s21.y * tp + s22.y * t};
     return s31;
   }
 
@@ -136,21 +131,22 @@ var geometry = (function() {
   }
 
   function hitTestCurveSegment(p1, p2, p3, p4, p, tolerance) {
-    var curves = new LinkedList();
-    curves.pushFront([p1, p2, p3, p4]);
+    var beziers = new LinkedList();
+    beziers.pushFront([p1, p2, p3, p4]);
     var dMin = Number.MAX_VALUE;
     var closestX, closestY;
-    while (curves.length > 0) {
-      var curve = curves.popBack().value;
+    while (beziers.length > 0) {
+      var b = beziers.popBack().value,
+          b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3];
       // Get control point distances from the segment defined by the curve endpoints.
-      var d1 = pointToLineDist(curve[0], curve[3], curve[1]);
-      var d2 = pointToLineDist(curve[0], curve[3], curve[2]);
+      var d1 = pointToLineDist(b0, b3, b1);
+      var d2 = pointToLineDist(b0, b3, b2);
       var curvature = Math.max(d1, d2);
       // Get p distance from the segment.
-      var t = projectPointToLine(curve[0], curve[3], p);
+      var t = projectPointToLine(b0, b3, p);
       t = Math.min(1, Math.max(0, t));
-      var projX = curve[0].x + t * (curve[3].x - curve[0].x),
-          projY = curve[0].y + t * (curve[3].y - curve[0].y);
+      var projX = b0.x + t * (b3.x - b0.x),
+          projY = b0.y + t * (b3.y - b0.y);
       var dx = p.x - projX, dy = p.y - projY;
       var d = Math.sqrt(dx * dx + dy * dy);
       if (d - curvature > tolerance)
@@ -163,17 +159,17 @@ var geometry = (function() {
         }
       } else {
         // Subdivide into two curves at t = 0.5.
-        var s11 = { x: (curve[0].x + curve[1].x) * 0.5, y: (curve[0].y + curve[1].y) * 0.5 };
-        var s12 = { x: (curve[1].x + curve[2].x) * 0.5, y: (curve[1].y + curve[2].y) * 0.5 };
-        var s13 = { x: (curve[2].x + curve[3].x) * 0.5, y: (curve[2].y + curve[3].y) * 0.5 };
+        var s11 = { x: (b0.x + b1.x) * 0.5, y: (b0.y + b1.y) * 0.5 };
+        var s12 = { x: (b1.x + b2.x) * 0.5, y: (b1.y + b2.y) * 0.5 };
+        var s13 = { x: (b2.x + b3.x) * 0.5, y: (b2.y + b3.y) * 0.5 };
 
         var s21 = { x: (s11.x + s12.x) * 0.5, y: (s11.y + s12.y) * 0.5 };
         var s22 = { x: (s12.x + s13.x) * 0.5, y: (s12.y + s13.y) * 0.5 };
 
         var s31 = { x: (s21.x + s22.x) * 0.5, y: (s21.y + s22.y) * 0.5 };
 
-        curves.pushFront([ curve[0], s11, s21, s31 ]);
-        curves.pushFront([ s31, s22, s13, curve[3] ]);
+        beziers.pushFront([ b0, s11, s21, s31 ]);
+        beziers.pushFront([ s31, s22, s13, b3 ]);
       }
     }
     if (dMin < tolerance)

@@ -128,6 +128,7 @@ var shapes = (function() {
         if (oldParent !== parent) {
           var transformableModel = model.transformableModel,
               toParent = transformableModel.getToParent(item, parent);
+          // TODO we need to adjust scale and rotation, not just position.
           geometry.matMulPt(item, toParent);
           this.deleteItem(item);  // notifies observer
           model.observableModel.insertElement(parent, 'items', parent.items.length, item);
@@ -271,21 +272,13 @@ var shapes = (function() {
 
         ctx.lineWidth = 2 * ooScale;
         ctx.beginPath();
-        ctx.moveTo(item._curves[0][0].x, item._curves[0][0].y);
-        for (var i = 0; i < item._curves.length; i++) {
-          var seg = item._curves[i];
+        ctx.moveTo(item._beziers[0][0].x, item._beziers[0][0].y);
+        for (var i = 0; i < item._beziers.length; i++) {
+          var seg = item._beziers[i];
           ctx.bezierCurveTo(seg[1].x, seg[1].y, seg[2].x, seg[2].y, seg[3].x, seg[3].y);
         }
         ctx.stroke();
 
-        // ctx.beginPath();
-        // ctx.moveTo(0, 0);
-        // for (var i = 0; i < length; i++) {
-        //   var pi = points[i];
-        //   ctx.lineTo(pi.x, pi.y);
-        // }
-        // ctx.lineTo(1, 0);
-        // ctx.stroke();
         if (mode == normalMode)
           ctx.lineWidth = 0.25 * ooScale;
         drawKnobby(this, knobbyRadius, 0, 0);
@@ -385,10 +378,10 @@ var shapes = (function() {
           hitInfo = { p2: true };
         // Now check the edge segments.
         if (!hitInfo) {
-          var curves = item._curves, length = curves.length;
+          var beziers = item._beziers, length = beziers.length;
           for (var i = 0; i < length; i++) {
-            var curve = curves[i];
-            if (geometry.hitTestCurveSegment(curve[0], curve[1], curve[2], curve[3], localP, tol)) {
+            var b = beziers[i];
+            if (geometry.hitTestCurveSegment(b[0], b[1], b[2], b[3], localP, tol)) {
               hitInfo = { curve: true, index: i };
               break;
             }
@@ -476,6 +469,7 @@ var shapes = (function() {
         ]
       }
     }
+
     dataModels.observableModel.extend(palette);
     dataModels.hierarchicalModel.extend(palette);
     dataModels.transformableModel.extend(palette);
@@ -566,9 +560,9 @@ var shapes = (function() {
       pushInfo(renderer.hitTest(item, p, tol, normalMode));
     });
 
-    this.model.selectionModel.forEach(function(item) {
-      pushInfo(renderer.hitTest(item, cp, tol, highlightMode));
-    });
+    // this.model.selectionModel.forEach(function(item) {
+    //   pushInfo(renderer.hitTest(item, cp, tol, highlightMode));
+    // });
 
     reverseVisit(this.board, function(item) {
       pushInfo(renderer.hitTest(item, cp, cTol, normalMode));
@@ -659,11 +653,10 @@ var shapes = (function() {
           break;
         case 'edge':
           // Direction/scale vector, in parent space.
-          var vector = geometry.matMulVec({ x: 1, y: 0 }, transform);
           if (mouseHitInfo.p1)
-            drag = { type: 'p1', name: 'Edit edge', vector: vector };
+            drag = { type: 'p1', name: 'Edit edge' };
           else if (mouseHitInfo.p2)
-            drag = { type: 'p2', name: 'Edit edge', vector: vector };
+            drag = { type: 'p2', name: 'Edit edge' };
           else
             drag = { type: 'moveSelection', name: 'Move selection' };
           break;
@@ -811,23 +804,20 @@ var shapes = (function() {
 
       case 'p1':
         var snapshot = transactionModel.getSnapshot(dragItem),
-            vector = drag.vector, parentDrag = drags.parentDrag,
-            dx = vector.x - parentDrag.x, dy = vector.y - parentDrag.y,
-            rotation = Math.atan2(-dy, dx),
-            scale = Math.sqrt(dx * dx + dy * dy);
-        model.observableModel.changeValue(dragItem, 'rotation', rotation);
-        model.observableModel.changeValue(dragItem, 'scale', scale);
+            parentDrag = drags.parentDrag,
+            dx = snapshot.dx - parentDrag.x, dy = snapshot.dy - parentDrag.y;
+        model.observableModel.changeValue(dragItem, 'dx', dx);
+        model.observableModel.changeValue(dragItem, 'dy', dy);
         model.observableModel.changeValue(dragItem, 'x', snapshot.x + parentDrag.x);
         model.observableModel.changeValue(dragItem, 'y', snapshot.y + parentDrag.y);
         break;
 
       case 'p2':
-        var vector = drag.vector, parentDrag = drags.parentDrag,
-            dx = vector.x + parentDrag.x, dy = vector.y + parentDrag.y,
-            rotation = Math.atan2(-dy, dx),
-            scale = Math.sqrt(dx * dx + dy * dy);
-        model.observableModel.changeValue(dragItem, 'rotation', rotation);
-        model.observableModel.changeValue(dragItem, 'scale', scale);
+        var snapshot = transactionModel.getSnapshot(dragItem),
+            parentDrag = drags.parentDrag,
+            dx = snapshot.dx + parentDrag.x, dy = snapshot.dy + parentDrag.y;
+        model.observableModel.changeValue(dragItem, 'dx', dx);
+        model.observableModel.changeValue(dragItem, 'dy', dy);
         break;
 
       // case 'end0':
@@ -845,10 +835,13 @@ var shapes = (function() {
     var drag = this.drag,
         model = this.model,
         board = this.board,
+        dataModel = model.dataModel,
+        observableModel = model.observableModel,
+        transactionModel = model.transactionModel,
         selectionModel = model.selectionModel,
         editingModel = model.editingModel,
-        transactionModel = model.transactionModel,
-        newItem = this.removeTemporaryItem();
+        newItem = this.removeTemporaryItem()
+        self = this;
     if (newItem) {
       // Clone the new item, since we're about to roll back the transaction. We
       // do this to collapse all of the edits into a single insert operation.
@@ -884,8 +877,8 @@ var shapes = (function() {
             type: 'edge',
             x: x,
             y: y,
-            scale: 64,
-            rotation: Math.PI * -0.5,
+            dx: 64,
+            dy: 64,
             items: [
               {
                 type: 'point',
@@ -906,8 +899,16 @@ var shapes = (function() {
       } else {
         // Reparent items if necessary.
         selectionModel.forEach(function(item) {
-          if (isHullItem(item))
+          if (isHullItem(item) && isHull(parent)) {
+            if (hitInfo && hitInfo.border && isEdge(item)) {
+              var a1 = self.projectToParentHull(item, { x: 0, y: 0 }),
+                  a2 = self.projectToParentHull(item, { x: 1, y: 0 });
+              observableModel.changeValue(item, 'a1', a1);
+              observableModel.changeValue(item, 'a2', a2);
+            }
             editingModel.addItem(item, parent);
+            console.log(a0, a1);
+          }
         });
       }
     }
@@ -962,9 +963,38 @@ var shapes = (function() {
   Editor.prototype.updateGeometry = function(root) {
     var self = this, model = this.model,
         hierarchicalModel = model.hierarchicalModel,
-        transformableModel = model.transformableModel;
+        transformableModel = model.transformableModel,
+        referencingModel = model.referencingModel;
     if (!root)
       root = this.board;
+
+    function sampleBeziers(beziers, error) {
+      var points = [];
+      beziers.forEach(function(b) {
+        var b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3],
+            approxLength = geometry.pointToPointDist(b0, b1) +
+                           geometry.pointToPointDist(b1, b2) +
+                           geometry.pointToPointDist(b2, b3),
+            subdivisions = approxLength / error;
+        points.push({ x: b0.x, y: b0.y });
+        if (subdivisions > 1) {
+          var dt = 1.0 / subdivisions;
+          for (var t = dt / 2; t < 1.0; t += dt) {
+            points.push(geometry.evaluateBezier(b, t));
+          }
+        }
+      });
+      // Add end point of last bezier.
+      var pLast = beziers[beziers.length - 1][3];
+      points.push({ x: pLast.x, y: pLast.y });
+      return points;
+    }
+
+    function setEdgeTransform(edge) {
+      var dx = edge.dx, dy = edge.dy;
+      edge._rotation = Math.atan2(-dy, dx);
+      edge._scale = Math.sqrt(dx * dx + dy * dy);
+    }
 
     function updatePass1(item) {
       // Create paths for hull and group primitives.
@@ -975,21 +1005,37 @@ var shapes = (function() {
           for (var i = 0; i < subdivisions; i++) {
             path.push({
               x: Math.cos(2 * Math.PI * i / subdivisions),
-              y: Math.sin(2 * Math.PI * i / subdivisions)
+              y: Math.sin(2 * Math.PI * i / subdivisions),
+              _item: item,
+              _index: i,
             });
           }
+          item._path = path;
           break;
         case 'edge':
-          var first = { x: 0, y: 0 }, last = { x: 1, y: 0 },
+          var items = item.items,
+              first = { x: 0, y: 0, _item: item, index: 0 },
+              second = items[0],
+              nextToLast = items[items.length - 1],
+              last = { x: 1, y: 0, _item: item, index: 1 },
               points = [ first, first ];
           points = points.concat(item.items);
           points.push(last);
           points.push(last);
-          item._curves = geometry.generateInterpolatingBeziers(points);
+          // points.sort(function(a, b) { return a.x - b.x });
+          var beziers = geometry.generateInterpolatingBeziers(points);
+          item._beziers =  beziers;
+          var path = sampleBeziers(beziers, 4 / item.scale);
+          path.forEach(function(p, i) {
+            p._item = item;
+            p._index = i;
+          });
+          item._path = path;
+          // Update transform based on dx, dy.
+          setEdgeTransform(item);
+          transformableModel.update(item);
           break;
       }
-      if (path)
-        item._path = path;
     }
 
     function updatePass2(item) {
@@ -1002,13 +1048,42 @@ var shapes = (function() {
             return;
           var localTransform = transformableModel.getLocal(item);
           path.forEach(function(p) {
-            points.push(geometry.matMulPtNew(p, localTransform));
+            points.push(geometry.matMulPt(p, localTransform));
           });
         });
 
         if (points.length) {
           var hull = geometry.getConvexHull(points),
               centroid;
+          // Splice in extra points.
+          var length = hull.length, lastP = hull[length - 1],
+              path = [];
+          for (var i = 0; i < length; i++) {
+            var pi = hull[i];
+            if (pi._item === lastP._item) {
+              var piItem = pi._item;
+              switch (piItem.type) {
+                case 'edge':
+                  var points = piItem._path,
+                      start = lastP._index, end = pi._index;
+                  if (start < end) {
+                    for (var j = start; j < end; j++) {
+                      var pii = points[j];
+                      path.push( { x: pii.x, y: pii.y });
+                    }
+                  } else {
+                    for (var j = start; j >= end; j--) {
+                      var pii = points[j];
+                      path.push( { x: pii.x, y: pii.y });
+                    }
+                  }
+                  break;
+              }
+            }
+            path.push(pi);
+            lastP = pi;
+          }
+          // Calculate centroid from items.
           subItems.forEach(function(item) {
             var c = item._centroid;
             if (!c && item.type == 'disk')
@@ -1035,7 +1110,7 @@ var shapes = (function() {
         }
         item._centroid = centroid;
         item._extents = hull ? geometry.getExtents(hull) : null;
-        item._path = hull;
+        item._path = path;
       }
 
       // Update local bounds if item has a path.
@@ -1431,47 +1506,23 @@ var shape_data = {
           "y": 468.9282907628569,
           "scale": 16,
           "id": 257
-        },
-        {
-          "type": "edge",
-          "x": 277.83062879811837,
-          "y": -345.06562541562045,
-          "rotation": -1.6379638105221015,
-          "scale": 796.8724213631663,
-          "items": [
-            {
-              "type": "point",
-              "x": 0.07022731390742232,
-              "y": -0.03479198224779445,
-              "id": 263
-            },
-            {
-              "type": "point",
-              "x": 0.12683124080893915,
-              "y": -0.04557836666745174,
-              "id": 261
-            }
-          ],
-          "id": 260
-        },
-        {
-          "type": "edge",
-          "x": -269.21275952831894,
-          "y": -131.01258987724668,
-          "scale": 134.54659338719412,
-          "rotation": -1.670254686006385,
-          "items": [
-            {
-              "type": "point",
-              "x": 0.46503221145714413,
-              "y": 0.06459438934870887,
-              "id": 267
-            }
-          ],
-          "id": 266
         }
       ],
       "id": 182
+    },
+    {
+      "type": "edge",
+      "x": 92,
+      "y": 539,
+      "dx": 64,
+      "dy": 64,
+      "items": [
+        {
+          "type": "point",
+          "x": 0.5,
+          "y": 0
+        }
+      ]
     }
   ]
 }
