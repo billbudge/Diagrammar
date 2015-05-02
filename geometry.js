@@ -341,7 +341,7 @@ var geometry = (function() {
       var pi = hull[i], dx = pi.x - cx, dy = pi.y - cy;
       pi.angle = getAngle(dx, dy);
     }
-    // hull.sort(compareAngles);
+    hull.sort(compareAngles);
     var pLast = hull[length - 1];
     for (var i = 0; i < length; i++) {
       var pi = hull[i], dx = pi.x - pLast.x, dy = pi.y - pLast.y,

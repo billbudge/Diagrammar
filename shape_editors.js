@@ -722,10 +722,7 @@ var shapes = (function() {
         parent = model.hierarchicalModel.getParent(item);
     if (parent && parent.type == 'hull') {
       var centroid = parent._centroid, hull = parent._path,
-          transformableModel = model.transformableModel,
-          local = transformableModel.getLocal(item),
-          pParent = geometry.matMulPtNew(p, local),
-          pProj = geometry.projectPointToConvexHull(hull, pParent),
+          pProj = geometry.projectPointToConvexHull(hull, p),
           angle = geometry.getAngle(pProj.x - centroid.x, pProj.y - centroid.y);
       return angle;
     }
@@ -803,21 +800,31 @@ var shapes = (function() {
         break;
 
       case 'p1':
-        var snapshot = transactionModel.getSnapshot(dragItem),
-            parentDrag = drags.parentDrag,
-            dx = snapshot.dx - parentDrag.x, dy = snapshot.dy - parentDrag.y;
-        model.observableModel.changeValue(dragItem, 'dx', dx);
-        model.observableModel.changeValue(dragItem, 'dy', dy);
-        model.observableModel.changeValue(dragItem, 'x', snapshot.x + parentDrag.x);
-        model.observableModel.changeValue(dragItem, 'y', snapshot.y + parentDrag.y);
+        if (dragItem.attached) {
+          var a1 = self.projectToParentHull(dragItem, drags.parentMouse);
+          observableModel.changeValue(dragItem, 'a1', a1);
+        } else {
+          var snapshot = transactionModel.getSnapshot(dragItem),
+              parentDrag = drags.parentDrag,
+              dx = snapshot.dx - parentDrag.x, dy = snapshot.dy - parentDrag.y;
+          model.observableModel.changeValue(dragItem, 'dx', dx);
+          model.observableModel.changeValue(dragItem, 'dy', dy);
+          model.observableModel.changeValue(dragItem, 'x', snapshot.x + parentDrag.x);
+          model.observableModel.changeValue(dragItem, 'y', snapshot.y + parentDrag.y);
+        }
         break;
 
       case 'p2':
-        var snapshot = transactionModel.getSnapshot(dragItem),
-            parentDrag = drags.parentDrag,
-            dx = snapshot.dx + parentDrag.x, dy = snapshot.dy + parentDrag.y;
-        model.observableModel.changeValue(dragItem, 'dx', dx);
-        model.observableModel.changeValue(dragItem, 'dy', dy);
+        if (dragItem.attached) {
+          var a2 = self.projectToParentHull(dragItem, drags.parentMouse);
+          observableModel.changeValue(dragItem, 'a2', a2);
+        } else {
+          var snapshot = transactionModel.getSnapshot(dragItem),
+              parentDrag = drags.parentDrag,
+              dx = snapshot.dx + parentDrag.x, dy = snapshot.dy + parentDrag.y;
+          model.observableModel.changeValue(dragItem, 'dx', dx);
+          model.observableModel.changeValue(dragItem, 'dy', dy);
+        }
         break;
 
       // case 'end0':
@@ -904,9 +911,8 @@ var shapes = (function() {
             if (hitInfo && hitInfo.border && isEdge(item)) {
               // Attach edge and initialize the angular locations of its ends.
               observableModel.changeValue(item, 'attached', true);
-              var a1 = self.projectToParentHull(item, { x: 0, y: 0 }),
-                  a2 = self.projectToParentHull(item, { x: 1, y: 0 });
-              console.log(a1, a1);
+              var a1 = self.projectToParentHull(item, item),
+                  a2 = self.projectToParentHull(item, { x: item.x + item.dx, y: item.y + item.dy });
               observableModel.changeValue(item, 'a1', a1);
               observableModel.changeValue(item, 'a2', a2);
             }
