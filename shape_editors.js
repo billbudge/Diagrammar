@@ -900,14 +900,16 @@ var shapes = (function() {
         // Reparent items if necessary.
         selectionModel.forEach(function(item) {
           if (isHullItem(item) && isHull(parent)) {
+            editingModel.addItem(item, parent);
             if (hitInfo && hitInfo.border && isEdge(item)) {
+              // Attach edge and initialize the angular locations of its ends.
+              observableModel.changeValue(item, 'attached', true);
               var a1 = self.projectToParentHull(item, { x: 0, y: 0 }),
                   a2 = self.projectToParentHull(item, { x: 1, y: 0 });
+              console.log(a1, a1);
               observableModel.changeValue(item, 'a1', a1);
               observableModel.changeValue(item, 'a2', a2);
             }
-            editingModel.addItem(item, parent);
-            console.log(a0, a1);
           }
         });
       }
@@ -1031,6 +1033,18 @@ var shapes = (function() {
             p._index = i;
           });
           item._path = path;
+
+          if (item.attached) {
+            // Update x, y, dx, and dy.
+            var parent = hierarchicalModel.getParent(item),
+                hull = parent._path, center = parent._centroid,
+                p0 = geometry.angleToConvexHull(hull, center, item.a1),
+                p1 = geometry.angleToConvexHull(hull, center, item.a2);
+            item.x = p0.x;
+            item.y = p0.y;
+            item.dx = p1.x - p0.x;
+            item.dy = p1.y - p0.y;
+          }
           // Update transform based on dx, dy.
           setEdgeTransform(item);
           transformableModel.update(item);
@@ -1044,7 +1058,7 @@ var shapes = (function() {
         var points = [], subItems = item.items;
         subItems.forEach(function(item) {
           var path = item._path;
-          if (!path)
+          if (!path || item.type == 'edge')  // HACK
             return;
           var localTransform = transformableModel.getLocal(item);
           path.forEach(function(p) {
