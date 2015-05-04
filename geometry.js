@@ -65,16 +65,16 @@ var geometry = (function() {
 
   function lineIntersection(p0, p1, p2, p3)
   {
-    var s1 = { x: p1.x - p0.x, y: p1.y - p0.y };
-    var s2 = { x: p3.x - p2.x, y: p3.y - p2.y };
-
-    var d = (-s2.x * s1.y + s1.x * s2.y);
-    if (Math.abs(d) > 0.00001) {
-      var s = (-s1.y * (p0.x - p2.x) + s1.x * (p0.y - p2.y)) / d,
-          t = ( s2.x * (p0.y - p2.y) - s2.y * (p0.x - p2.x)) / d;
-      return { s: s, t: t, x: p0.x + t * s1.x, y: p0.y + t * s1.y };
+    var p0x = p0.x, p0y = p0.y, p1x = p1.x, p1y = p1.y,
+        p2x = p2.x, p2y = p2.y, p3x = p3.x, p3y = p3.y,
+        s1x = p1x - p0x, s1y = p1y - p0y, s2x = p3x - p2x, s2y = p3y - p2y,
+        d = (-s2x * s1y + s1x * s2y);
+    if (Math.abs(d) > 0.000001) {
+      var s = (-s1y * (p0x - p2x) + s1x * (p0y - p2y)) / d,
+          t = (s2x * (p0y - p2y) - s2y * (p0x - p2x)) / d;
+      return { s: s, t: t, x: p0x + t * s1x, y: p0y + t * s1y };
     }
-    // Parallel or collinear, return nothing.
+    // Parallel or coincident.
   }
 
   function makeInterpolatingBezier(p0, p1, p2, p3) {
@@ -324,16 +324,13 @@ var geometry = (function() {
   }
 
   function compareAngles(a, b) {
-    if (a.angle < b.angle)
-      return -1;
-    else if (a.angle > b.angle)
-      return 1;
-    return 0;
+    return a.angle - b.angle;
   }
 
   // Annotates the convex hull points with the following useful infomation:
   // 1) angle: the angle between p[i] and center. 0 is the positive x-axis.
   // 2) nx, ny: the normal of the edge from p[i] to p[(i + 1) % hull.length].
+  // Sorts the hull by angle to speed up angle-to-hull calculations.
   function annotateConvexHull(hull, center) {
     var cx = center.x, cy = center.y,
         length = hull.length;

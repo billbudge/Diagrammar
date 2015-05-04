@@ -51,6 +51,16 @@ var shapes = (function() {
     return item.type == 'group' || item.type == 'hull';
   }
 
+  // function indices_adjacent(i1, i2, length, wraps) {
+  //   var next = i1 + 1;
+  //   if (wraps && next == length)
+  //     next = 0;
+  //   var prev = i1 - 1;
+  //   if (wraps && prev < 0)
+  //     prev = length - 1;
+  //   return i2 == next || i2 == prev;
+  // }
+
 //------------------------------------------------------------------------------
 
   var editingModel = (function() {
@@ -94,6 +104,7 @@ var shapes = (function() {
             board = this.board;
 
         items.forEach(function(item) {
+          // TODO detach copy
           var copy = map.find(dataModel.getId(item));
           var toGlobal = transformableModel.getToParent(item, board);
           geometry.matMulPt(copy, toGlobal);
@@ -270,38 +281,22 @@ var shapes = (function() {
           ctx.setLineDash([0]);
         }
 
-        ctx.lineWidth = 2 * ooScale;
-        ctx.beginPath();
-        ctx.moveTo(item._beziers[0][0].x, item._beziers[0][0].y);
-        for (var i = 0; i < item._beziers.length; i++) {
-          var seg = item._beziers[i];
-          ctx.bezierCurveTo(seg[1].x, seg[1].y, seg[2].x, seg[2].y, seg[3].x, seg[3].y);
+        if (true) {//!item.attached) {
+          ctx.lineWidth = 2 * ooScale;
+          ctx.beginPath();
+          ctx.moveTo(item._beziers[0][0].x, item._beziers[0][0].y);
+          for (var i = 0; i < item._beziers.length; i++) {
+            var seg = item._beziers[i];
+            ctx.bezierCurveTo(seg[1].x, seg[1].y, seg[2].x, seg[2].y, seg[3].x, seg[3].y);
+          }
+          ctx.stroke();
         }
-        ctx.stroke();
 
         if (mode == normalMode)
           ctx.lineWidth = 0.25 * ooScale;
         drawKnobby(this, knobbyRadius, 0, 0);
         drawKnobby(this, knobbyRadius, 1, 0);
         break;
-      // case 'linear':
-      //   ctx.lineWidth = 0.25;
-      //   ctx.beginPath();
-      //   ctx.moveTo(0, 0);
-      //   ctx.lineTo(item.dx, item.dy);
-      //   ctx.setLineDash([4]);
-      //   ctx.stroke();
-      //   ctx.setLineDash([0]);
-      //   if (mode == highlightMode) {
-      //     var p1 = item._p1, p2 = item._p2;
-      //     if (p1 && p2) {
-      //       drawKnobby(this, p1.x, p1.y);
-      //       drawKnobby(this, p2.x, p2.y);
-      //     }
-      //     drawKnobby(this, 0, 0);
-      //     drawKnobby(this, item.dx, item.dy);
-      //   }
-      //   break;
       case 'group':
         var path = item._path;
         ctx.setLineDash([lineDash]);
@@ -826,14 +821,6 @@ var shapes = (function() {
           model.observableModel.changeValue(dragItem, 'dy', dy);
         }
         break;
-
-      // case 'end0':
-      //   model.observableModel.changeValue(dragItem, 'x', snapshot.x + drags.parentDrag.x / 2);
-      //   model.observableModel.changeValue(dragItem, 'y', snapshot.y + drags.parentDrag.y / 2);
-      //   newLength = geometry.lineLength(drags.parentMouse.x, drags.parentMouse.y, dragItem.x, dragItem.y);
-      //   model.observableModel.changeValue(dragItem, 'halfLength', newLength);
-      //   this.autoRotateBezier(dragItem);
-      //   break;
     }
     this.hotTrackInfo = (hitInfo && hitInfo.item !== this.board) ? hitInfo : null;
   }
@@ -942,31 +929,6 @@ var shapes = (function() {
   //   }
   // }
 
-  // function indices_adjacent(i1, i2, length, wraps) {
-  //   var next = i1 + 1;
-  //   if (wraps && next == length)
-  //     next = 0;
-  //   var prev = i1 - 1;
-  //   if (wraps && prev < 0)
-  //     prev = length - 1;
-  //   return i2 == next || i2 == prev;
-  // }
-
-  // function makeInterpolatingPoints(bezier) {
-  //   var points = [];
-  //   var length = bezier.points.length;
-  //   var halfLength = bezier.halfLength;
-  //   points.push({ x: -halfLength * 2, y: 0 });
-  //   points.push({ x: -halfLength, y: 0 });
-  //   for (var i = 0; i < length; i++) {
-  //     var pi = bezier.points[i];
-  //     points.push({ x: pi.x, y: pi.y });
-  //   }
-  //   points.push({ x: halfLength, y: 0 });
-  //   points.push({ x: halfLength * 2, y: 0 });
-  //   return points;
-  // }
-
   // Paths are computed in the local space of the item, translated when combining.
   Editor.prototype.updateGeometry = function(root) {
     var self = this, model = this.model,
@@ -998,147 +960,134 @@ var shapes = (function() {
       return points;
     }
 
-    function setEdgeTransform(edge) {
+    function setEdgeScaleAndRotation(edge) {
       var dx = edge.dx, dy = edge.dy;
       edge._rotation = Math.atan2(-dy, dx);
       edge._scale = Math.sqrt(dx * dx + dy * dy);
     }
 
+    function getCentroid(item) {
+      var subItems = item.items, count = 0,
+          centroid;
+      // Calculate centroid from items.
+      subItems.forEach(function(item) {
+        var c = item._centroid;
+        if (!c && item.type == 'disk')
+          c = item;
+        if (c) {
+          count++;
+          if (centroid) {
+            centroid.x += c.x;
+            centroid.y += c.y;
+          } else {
+            centroid = {
+              x: c.x,
+              y: c.y,
+            }
+          }
+        }
+      });
+      if (centroid) {
+        centroid.x /= count;
+        centroid.y /= count;
+      }
+      return centroid;
+    }
+
     function updatePass1(item) {
-      // Create paths for hull and group primitives.
+      // Create paths for primitives and form hulls
+      var path;
       switch (item.type) {
         case 'disk':
           var subdivisions = Math.sqrt(item.scale) * 16,
-              path = [];
+              points = [];
           for (var i = 0; i < subdivisions; i++) {
-            path.push({
+            points.push({
               x: Math.cos(2 * Math.PI * i / subdivisions),
               y: Math.sin(2 * Math.PI * i / subdivisions),
-              _item: item,
-              _index: i,
             });
           }
-          item._path = path;
+          path = points;
           break;
+
+        case 'hull':
+        case 'group':
+          // Transform points from subItems into parent space.
+          var points = [], subItems = item.items;
+          subItems.forEach(function(subItem) {
+            var path = subItem._path;
+            if (!path || subItem.type == 'edge')  // HACK
+              return;
+            var localTransform = transformableModel.getLocal(subItem);
+            path.forEach(function(p) {
+              points.push(geometry.matMulPtNew(p, localTransform));
+            });
+          });
+          if (points.length > 0) {
+            var hull = geometry.getConvexHull(points),
+                centroid = getCentroid(item);
+            if (centroid) {
+              geometry.annotateConvexHull(hull, centroid);
+              if (item.type == 'group')
+                geometry.insetConvexHull(hull, -16);
+            }
+          }
+          item._centroid = centroid;
+          item._extents = hull ? geometry.getExtents(hull) : null;
+          path = hull;
+          break;
+      }
+      // Update local bounds if item has a path.
+      if (path) {
+        item._path = path;
+        item._bounds = geometry.getExtents(path);
+      }
+    }
+
+    function updatePass2(item) {
+      switch (item.type) {
         case 'edge':
+          var first, last;
+          if (item.attached) {
+            // Update x, y, dx, and dy.
+            var parent = hierarchicalModel.getParent(item),
+                hull = parent._path, center = parent._centroid,
+                p1 = geometry.angleToConvexHull(hull, center, item.a1),
+                p2 = geometry.angleToConvexHull(hull, center, item.a2);
+            item.x = p1.x;
+            item.y = p1.y;
+            item.dx = p2.x - p1.x;
+            item.dy = p2.y - p1.y;
+            setEdgeScaleAndRotation(item);
+            transformableModel.update(item);
+            var inverseLocal = transformableModel.getInverseLocal(item);
+            var f = 1024;
+            var n1 = geometry.matMulPt({ x: p1.x + p1.ny * f, y: p1.y - p1.nx * f }, inverseLocal),
+                n2 = geometry.matMulPt({ x: p2.x - p2.ny * f, y: p2.y + p2.nx * f }, inverseLocal);
+            first = n1;
+            last = n2;
+          } else {
+          setEdgeScaleAndRotation(item);
+          transformableModel.update(item);
+            first = { x: 0, y: 0 };
+            last = { x: 1, y: 0 };
+          }
           var items = item.items,
-              first = { x: 0, y: 0, _item: item, index: 0 },
-              second = items[0],
-              nextToLast = items[items.length - 1],
-              last = { x: 1, y: 0, _item: item, index: 1 },
-              points = [ first, first ];
+              points = [ first, { x: 0, y: 0 } ];
           points = points.concat(item.items);
-          points.push(last);
+          points.push({ x: 1, y: 0 });
           points.push(last);
           // points.sort(function(a, b) { return a.x - b.x });
           var beziers = geometry.generateInterpolatingBeziers(points);
           item._beziers =  beziers;
           var path = sampleBeziers(beziers, 4 / item.scale);
-          path.forEach(function(p, i) {
-            p._item = item;
-            p._index = i;
-          });
           item._path = path;
-
-          if (item.attached) {
-            // Update x, y, dx, and dy.
-            var parent = hierarchicalModel.getParent(item),
-                hull = parent._path, center = parent._centroid,
-                p0 = geometry.angleToConvexHull(hull, center, item.a1),
-                p1 = geometry.angleToConvexHull(hull, center, item.a2);
-            item.x = p0.x;
-            item.y = p0.y;
-            item.dx = p1.x - p0.x;
-            item.dy = p1.y - p0.y;
-          }
-          // Update transform based on dx, dy.
-          setEdgeTransform(item);
-          transformableModel.update(item);
+          item._bounds = geometry.getExtents(item._path);
           break;
       }
     }
 
-    function updatePass2(item) {
-      if (item.type == 'hull' || item.type == 'group') {
-        // Collect points from sub-items.
-        var points = [], subItems = item.items;
-        subItems.forEach(function(item) {
-          var path = item._path;
-          if (!path || item.type == 'edge')  // HACK
-            return;
-          var localTransform = transformableModel.getLocal(item);
-          path.forEach(function(p) {
-            points.push(geometry.matMulPt(p, localTransform));
-          });
-        });
-
-        if (points.length) {
-          var hull = geometry.getConvexHull(points),
-              centroid;
-          // Splice in extra points.
-          var length = hull.length, lastP = hull[length - 1],
-              path = [];
-          for (var i = 0; i < length; i++) {
-            var pi = hull[i];
-            if (pi._item === lastP._item) {
-              var piItem = pi._item;
-              switch (piItem.type) {
-                case 'edge':
-                  var points = piItem._path,
-                      start = lastP._index, end = pi._index;
-                  if (start < end) {
-                    for (var j = start; j < end; j++) {
-                      var pii = points[j];
-                      path.push( { x: pii.x, y: pii.y });
-                    }
-                  } else {
-                    for (var j = start; j >= end; j--) {
-                      var pii = points[j];
-                      path.push( { x: pii.x, y: pii.y });
-                    }
-                  }
-                  break;
-              }
-            }
-            path.push(pi);
-            lastP = pi;
-          }
-          // Calculate centroid from items.
-          subItems.forEach(function(item) {
-            var c = item._centroid;
-            if (!c && item.type == 'disk')
-              c = item;
-            if (c) {
-              if (centroid) {
-                centroid.x += c.x;
-                centroid.y += c.y;
-              } else {
-                centroid = {
-                  x: c.x,
-                  y: c.y,
-                }
-              }
-            }
-          });
-          if (centroid) {
-            centroid.x /= subItems.length;
-            centroid.y /= subItems.length;
-            geometry.annotateConvexHull(hull, centroid);
-            if (item.type == 'group')
-              geometry.insetConvexHull(hull, -16);
-          }
-        }
-        item._centroid = centroid;
-        item._extents = hull ? geometry.getExtents(hull) : null;
-        item._path = path;
-      }
-
-      // Update local bounds if item has a path.
-      if (item._path)
-        item._bounds = geometry.getExtents(item._path);
-    }
-
-    visit(root, updatePass1);
+    reverseVisit(root, updatePass1);
     visit(root, updatePass2);
   }
 

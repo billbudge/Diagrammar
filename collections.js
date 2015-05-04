@@ -323,7 +323,7 @@ SelectionSet.prototype = {
 
   contains: function(element) {
     var key = this.getKeyFn(element);
-    return this.hash_map_.contains(key);
+    return key && this.hash_map_.contains(key);
   },
 
   lastSelected: function() {
