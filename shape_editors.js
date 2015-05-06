@@ -200,8 +200,7 @@ var shapes = (function() {
 
   var normalMode = 1,
       highlightMode = 2,
-      hotTrackMode = 3,
-      paletteMode = 4;
+      hotTrackMode = 3;
 
   function Renderer(theme) {
     this.knobbyRadius = 4;
@@ -227,8 +226,6 @@ var shapes = (function() {
     var d = 2 * r;
     renderer.ctx.strokeRect(x - r, y - r, d, d);
   }
-
-  // TODO function hitKnobby, using diagrams.hitTestRect
 
   Renderer.prototype.drawItem = function(item, mode) {
     var ctx = this.ctx, theme = this.theme,
@@ -323,7 +320,17 @@ var shapes = (function() {
         break;
       case 'hull':
         var path = item._path;
-        diagrams.closedPath(path, ctx);
+        ctx.beginPath();
+        var length = path.length, pLast = path[length - 1];
+        ctx.moveTo(pLast.x, pLast.y);
+        for (var i = 0; i < length; i++) {
+          var pi = path[i];
+          if (!pi.marked && !pLast.marked)
+            ctx.lineTo(pi.x, pi.y);
+          else
+            ctx.moveTo(pi.x, pi.y);
+          pLast = pi;
+        }
         ctx.lineWidth = 2;
         if (mode == normalMode)
           ctx.fill();
@@ -383,10 +390,6 @@ var shapes = (function() {
           }
         }
         break;
-      // case 'linear':
-      //   hitInfo = diagrams.hitTestLine(
-      //       { x:0, y:0 }, { x: item.dx, y: item.dy }, localP, tol);
-      //   break;
       case 'group':
         var path = item._path;
         if (!path) {
@@ -453,14 +456,6 @@ var shapes = (function() {
             rotation: 0,
             items: [],
           },
-          // {
-          //   type: 'linear',
-          //   id : 2,
-          //   x: 16,
-          //   y: 72,
-          //   dx: 96,
-          //   dy: 0,
-          // },
         ]
       }
     }
@@ -555,6 +550,7 @@ var shapes = (function() {
       pushInfo(renderer.hitTest(item, p, tol, normalMode));
     });
 
+    // TODO figure this out
     // this.model.selectionModel.forEach(function(item) {
     //   pushInfo(renderer.hitTest(item, cp, tol, highlightMode));
     // });
@@ -655,14 +651,6 @@ var shapes = (function() {
           else
             drag = { type: 'moveSelection', name: 'Move selection' };
           break;
-        // case 'linear':
-        //   if (mouseHitInfo.p1)
-        //     drag = { type: 'p1', name: 'Edit line' };
-        //   else if (mouseHitInfo.p2)
-        //     drag = { type: 'p2', name: 'Edit line' };
-        //   else
-        //     drag = { type: 'moveSelection', name: 'Move selection' }; // TODO edit position drag type
-        //   break;
         case 'group':
           // Direction/scale vector, in parent space.
           var vector = geometry.matMulVec({ x: dragItem._extents.xmax, y: 0 }, transform);
@@ -728,6 +716,17 @@ var shapes = (function() {
         snapshot = model.transactionModel.getSnapshot(item);
     observableModel.changeValue(item, 'x', snapshot.x + parentDrag.x);
     observableModel.changeValue(item, 'y', snapshot.y + parentDrag.y);
+  }
+
+  // Updates edge based on dx and dy.
+  Editor.prototype.updateEdge = function(edge) {
+    var transformableModel = this.model.transformableModel,
+        dx = edge.dx, dy = edge.dy,
+        da = edge.a2 - edge.a1;
+    edge._rotation = Math.atan2(-dy, dx);
+    edge._scale = Math.sqrt(dx * dx + dy * dy);
+    edge._flipped = (da > 0 && da < Math.PI) || (da < 0 && da < -Math.PI);
+    transformableModel.update(edge);
   }
 
   Editor.prototype.onDrag = function(p0, p) {
@@ -840,7 +839,7 @@ var shapes = (function() {
       // Clone the new item, since we're about to roll back the transaction. We
       // do this to collapse all of the edits into a single insert operation.
       newItem = model.instancingModel.clone(newItem);
-      model.dataModel.initialize(newItem);
+      dataModel.initialize(newItem);
       transactionModel.cancelTransaction();
       transactionModel.beginTransaction(drag.name);
     }
@@ -861,7 +860,8 @@ var shapes = (function() {
             y: y,
             items: [ newItem ],
           };
-          model.dataModel.initialize(hull);
+          dataModel.assignId(hull);
+          dataModel.initialize(hull);
           newItem.x = 0;
           newItem.y = 0;
           newItem = hull;
@@ -876,12 +876,13 @@ var shapes = (function() {
             items: [
               {
                 type: 'point',
-                x: 0.5,
+                x: 0.25,
                 y: 0,
               }
             ],
           }
-          model.dataModel.initialize(edge);
+          dataModel.assignId(edge);
+          dataModel.initialize(edge);
           newItem = edge;
         }
         if (newItem.type === 'point') {
@@ -893,7 +894,7 @@ var shapes = (function() {
       } else {
         // Reparent items if necessary.
         selectionModel.forEach(function(item) {
-          if (isHullItem(item) && isHull(parent)) {
+          if (isHullItem(item) && (isHull(parent) || parent.type === 'board')) {
             editingModel.addItem(item, parent);
             if (hitInfo && hitInfo.border && isEdge(item)) {
               // Attach edge and initialize the angular locations of its ends.
@@ -960,12 +961,6 @@ var shapes = (function() {
       return points;
     }
 
-    function setEdgeScaleAndRotation(edge) {
-      var dx = edge.dx, dy = edge.dy;
-      edge._rotation = Math.atan2(-dy, dx);
-      edge._scale = Math.sqrt(dx * dx + dy * dy);
-    }
-
     function getCentroid(item) {
       var subItems = item.items, count = 0,
           centroid;
@@ -994,8 +989,8 @@ var shapes = (function() {
       return centroid;
     }
 
-    function updatePass1(item) {
-      // Create paths for primitives and form hulls
+    // Update paths for primitive hull items and form hulls
+    function pass1(item) {
       var path;
       switch (item.type) {
         case 'disk':
@@ -1015,9 +1010,10 @@ var shapes = (function() {
           // Transform points from subItems into parent space.
           var points = [], subItems = item.items;
           subItems.forEach(function(subItem) {
-            var path = subItem._path;
-            if (!path || subItem.type == 'edge')  // HACK
+            // HACK for now, only disks contribute to hull.
+            if (subItem.type !== 'disk')
               return;
+            var path = subItem._path;
             var localTransform = transformableModel.getLocal(subItem);
             path.forEach(function(p) {
               points.push(geometry.matMulPtNew(p, localTransform));
@@ -1044,7 +1040,19 @@ var shapes = (function() {
       }
     }
 
-    function updatePass2(item) {
+    function markHull(hull, i0, t0, i1, t1) {
+      var length = hull.length;
+      var i = i0;
+      while (i != i1) {
+        hull[i].marked = true;
+        i++;
+        if (i == length)
+          i = 0;
+      }
+    }
+
+    // Update paths for primitive edge items, and update hulls.
+    function pass2(item) {
       switch (item.type) {
         case 'edge':
           var first, last;
@@ -1058,26 +1066,30 @@ var shapes = (function() {
             item.y = p1.y;
             item.dx = p2.x - p1.x;
             item.dy = p2.y - p1.y;
-            setEdgeScaleAndRotation(item);
-            transformableModel.update(item);
-            var inverseLocal = transformableModel.getInverseLocal(item);
-            var f = 1024;
-            var n1 = geometry.matMulPt({ x: p1.x + p1.ny * f, y: p1.y - p1.nx * f }, inverseLocal),
+            self.updateEdge(item);
+            var inverseLocal = transformableModel.getInverseLocal(item),
+                flipped = item._flipped,
+                f = flipped ? 1024 : -1024,
+                n1 = geometry.matMulPt({ x: p1.x + p1.ny * f, y: p1.y - p1.nx * f }, inverseLocal),
                 n2 = geometry.matMulPt({ x: p2.x - p2.ny * f, y: p2.y + p2.nx * f }, inverseLocal);
             first = n1;
             last = n2;
+            if (!flipped)
+              markHull(hull, p2.i0, p2.t, p1.i0, p1.t);
+            else
+              markHull(hull, p1.i0, p1.t, p2.i0, p2.t);
           } else {
-          setEdgeScaleAndRotation(item);
-          transformableModel.update(item);
+            self.updateEdge(item);
             first = { x: 0, y: 0 };
             last = { x: 1, y: 0 };
           }
           var items = item.items,
-              points = [ first, { x: 0, y: 0 } ];
-          points = points.concat(item.items);
+              points = [].concat(item.items);
+          // points.sort(function(a, b) { return a.x - b.x });
+          points.unshift({ x: 0, y: 0 });
+          points.unshift(first);
           points.push({ x: 1, y: 0 });
           points.push(last);
-          // points.sort(function(a, b) { return a.x - b.x });
           var beziers = geometry.generateInterpolatingBeziers(points);
           item._beziers =  beziers;
           var path = sampleBeziers(beziers, 4 / item.scale);
@@ -1087,8 +1099,8 @@ var shapes = (function() {
       }
     }
 
-    reverseVisit(root, updatePass1);
-    visit(root, updatePass2);
+    reverseVisit(root, pass1);
+    visit(root, pass2);
   }
 
   Editor.prototype.onKeyDown = function(e) {
@@ -1172,13 +1184,13 @@ var shape_data = {
   "items": [
     {
       "type": "hull",
-      "x": 566.3106543077314,
-      "y": 477.74597898814227,
+      "x": 480.2124748491592,
+      "y": 441.31822494301855,
       "items": [
         {
           "type": "disk",
-          "x": -215.31478543097683,
-          "y": -329.3908062031094,
+          "x": -156.31478543097683,
+          "y": -286.3908062031094,
           "scale": 139.92260819176386,
           "id": 181
         },
@@ -1198,15 +1210,15 @@ var shape_data = {
         },
         {
           "type": "disk",
-          "x": 294.6428321145166,
-          "y": -377.1867376213238,
+          "x": 203.64283211451658,
+          "y": -313.1867376213238,
           "scale": 66.90411048657579,
           "id": 185
         },
         {
           "type": "hull",
-          "x": -82.04476596560363,
-          "y": 32.63382260271169,
+          "x": -58.01131188742505,
+          "y": 13.825032454571897,
           "rotation": 0.5053386521302267,
           "items": [
             {
@@ -1354,8 +1366,8 @@ var shape_data = {
         },
         {
           "type": "hull",
-          "x": -235.95132747621312,
-          "y": -350.83375183392,
+          "x": -182.95132747621312,
+          "y": -300.83375183392,
           "items": [
             {
               "type": "disk",
@@ -1376,8 +1388,8 @@ var shape_data = {
         },
         {
           "type": "hull",
-          "x": -176.66336841453142,
-          "y": -371.4130434090492,
+          "x": -123.66336841453142,
+          "y": -321.4130434090492,
           "items": [
             {
               "type": "disk",
@@ -1398,8 +1410,8 @@ var shape_data = {
         },
         {
           "type": "hull",
-          "x": -118.84535875107315,
-          "y": -388.07246992224907,
+          "x": -65.84535875107315,
+          "y": -338.07246992224907,
           "items": [
             {
               "type": "disk",
@@ -1420,8 +1432,8 @@ var shape_data = {
         },
         {
           "type": "disk",
-          "x": -297.7961837282378,
-          "y": -255.14306449748278,
+          "x": -228.7961837282378,
+          "y": -144.14306449748278,
           "scale": 85.98177053809061,
           "id": 239
         },
@@ -1475,23 +1487,80 @@ var shape_data = {
           "y": 468.9282907628569,
           "scale": 16,
           "id": 257
+        },
+        {
+          "type": "edge",
+          "x": -265.61852241251705,
+          "y": -373.739584676665,
+          "dx": -44.13540775678291,
+          "dy": 296.43224823320054,
+          "items": [
+            {
+              "type": "point",
+              "x": 0.7360075600735081,
+              "y": -0.19009103337667266
+            }
+          ],
+          "attached": true,
+          "a1": 2.1033102491779037,
+          "a2": 2.7682492410764343
+        },
+        {
+          "type": "edge",
+          "x": -308.1496203241887,
+          "y": -57.01702337199282,
+          "dx": 29.224085113227318,
+          "dy": 369.6080517000016,
+          "items": [
+            {
+              "type": "point",
+              "x": 0.2153189624859957,
+              "y": -0.11924854388815925
+            }
+          ],
+          "id": 265,
+          "attached": true,
+          "a1": 2.829885403585282,
+          "a2": 3.9735472003644925
+        },
+        {
+          "type": "edge",
+          "x": 177.6893456922686,
+          "y": 14.25402101185773,
+          "dx": -117,
+          "dy": 210,
+          "items": [
+            {
+              "type": "point",
+              "x": 0.6258185336548361,
+              "y": -0.2993705141268176
+            }
+          ],
+          "id": 268
+        },
+        {
+          "type": "edge",
+          "x": 187.77126595249013,
+          "y": -298.2086279348582,
+          "dx": 28,
+          "dy": 750,
+          "items": [
+            {
+              "type": "point",
+              "x": 0.03608149637667418,
+              "y": -0.02439579618317711,
+              "id": 262
+            },
+            {
+              "type": "point",
+              "x": 0.10719113215820592,
+              "y": -0.04351068776204081
+            }
+          ],
+          "id": 260
         }
       ],
       "id": 182
-    },
-    {
-      "type": "edge",
-      "x": 92,
-      "y": 539,
-      "dx": 64,
-      "dy": 64,
-      "items": [
-        {
-          "type": "point",
-          "x": 0.5,
-          "y": 0
-        }
-      ]
     }
   ]
 }

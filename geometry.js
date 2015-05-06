@@ -408,6 +408,9 @@ var geometry = (function() {
         ooLength = 1.0 / Math.sqrt(nx * nx + ny * ny);
     intersection.nx = nx * ooLength;
     intersection.ny = ny * ooLength;
+    intersection.i0 = i0;
+    intersection.i1 = i1;
+    intersection.t = intersection.s;
 
     return intersection;
   }
