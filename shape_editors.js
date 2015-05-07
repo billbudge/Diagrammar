@@ -637,10 +637,10 @@ var shapes = (function() {
           if (mouseHitInfo.resizer)
             drag = { type: 'resizeDisk', name: 'Resize disk', vector: vector };
           else if (mouseHitInfo.center)
-            drag = { type: 'moveSelection', name: 'Move selection' };
+            drag = { type: 'moveSelection', name: 'Move items' };
           break;
         case 'point':
-          drag = { type: 'moveSelection', name: 'Move selection' };
+          drag = { type: 'moveSelection', name: 'Move items' };
           break;
         case 'edge':
           // Direction/scale vector, in parent space.
@@ -648,8 +648,10 @@ var shapes = (function() {
             drag = { type: 'p1', name: 'Edit edge' };
           else if (mouseHitInfo.p2)
             drag = { type: 'p2', name: 'Edit edge' };
+          else if (dragItem.attached)
+            drag = { type: 'dragEdge', name: 'Edit edge' };
           else
-            drag = { type: 'moveSelection', name: 'Move selection' };
+            drag = { type: 'moveSelection', name: 'Move items' };
           break;
         case 'group':
           // Direction/scale vector, in parent space.
@@ -659,10 +661,10 @@ var shapes = (function() {
           else if (mouseHitInfo.relocator)
             drag = { type: 'relocateGroup', name: 'Relocate group origin', vector: vector };
           else
-            drag = { type: 'moveSelection', name: 'Move selection' };
+            drag = { type: 'moveSelection', name: 'Move items' };
           break;
         case 'hull':
-          drag = { type: 'moveSelection', name: 'Move selection' };
+          drag = { type: 'moveSelection', name: 'Move items' };
           break;
       }
     }
@@ -729,6 +731,15 @@ var shapes = (function() {
     transformableModel.update(edge);
   }
 
+  function adjustAngle(angle) {
+    var twoPi = Math.PI * 2;
+    while (angle < 0)
+      angle += twoPi;
+    while (angle > twoPi)
+      angle -= twoPi;
+    return angle;
+  }
+
   Editor.prototype.onDrag = function(p0, p) {
     var self = this,
         drag = this.drag,
@@ -768,8 +779,8 @@ var shapes = (function() {
             dx = vector.x + parentDrag.x, dy = vector.y + parentDrag.y,
             rotation = Math.atan2(-dy, dx),
             scale = Math.sqrt(dx * dx + dy * dy);
-        model.observableModel.changeValue(dragItem, 'rotation', rotation);
-        model.observableModel.changeValue(dragItem, 'scale', scale);
+        observableModel.changeValue(dragItem, 'rotation', rotation);
+        observableModel.changeValue(dragItem, 'scale', scale);
         break;
 
       case 'resizeGroup':
@@ -777,7 +788,7 @@ var shapes = (function() {
             dx = vector.x + parentDrag.x, dy = vector.y + parentDrag.y,
             rotation = Math.atan2(-dy, dx),
             scale = Math.sqrt(dx * dx + dy * dy);
-        model.observableModel.changeValue(dragItem, 'rotation', rotation);
+        observableModel.changeValue(dragItem, 'rotation', rotation);
         // model.observableModel.changeValue(dragItem, 'scale', scale);
         break;
 
@@ -801,10 +812,10 @@ var shapes = (function() {
           var snapshot = transactionModel.getSnapshot(dragItem),
               parentDrag = drags.parentDrag,
               dx = snapshot.dx - parentDrag.x, dy = snapshot.dy - parentDrag.y;
-          model.observableModel.changeValue(dragItem, 'dx', dx);
-          model.observableModel.changeValue(dragItem, 'dy', dy);
-          model.observableModel.changeValue(dragItem, 'x', snapshot.x + parentDrag.x);
-          model.observableModel.changeValue(dragItem, 'y', snapshot.y + parentDrag.y);
+          observableModel.changeValue(dragItem, 'dx', dx);
+          observableModel.changeValue(dragItem, 'dy', dy);
+          observableModel.changeValue(dragItem, 'x', snapshot.x + parentDrag.x);
+          observableModel.changeValue(dragItem, 'y', snapshot.y + parentDrag.y);
         }
         break;
 
@@ -816,9 +827,23 @@ var shapes = (function() {
           var snapshot = transactionModel.getSnapshot(dragItem),
               parentDrag = drags.parentDrag,
               dx = snapshot.dx + parentDrag.x, dy = snapshot.dy + parentDrag.y;
-          model.observableModel.changeValue(dragItem, 'dx', dx);
-          model.observableModel.changeValue(dragItem, 'dy', dy);
+          observableModel.changeValue(dragItem, 'dx', dx);
+          observableModel.changeValue(dragItem, 'dy', dy);
         }
+        break;
+
+      case 'dragEdge':
+        var parentClick = drags.parentClick, parentMouse = drags.parentMouse,
+            hull = model.hierarchicalModel.getParent(dragItem),
+            centroid = hull._centroid,
+            angle0 = geometry.getAngle(parentClick.x - centroid.x, parentClick.y - centroid.y),
+            angle = geometry.getAngle(parentMouse.x - centroid.x, parentMouse.y - centroid.y),
+            da = angle - angle0,
+            snapshot = transactionModel.getSnapshot(dragItem),
+            a1 = adjustAngle(snapshot.a1 + da),
+            a2 = adjustAngle(snapshot.a2 + da);
+        observableModel.changeValue(dragItem, 'a1', a1);
+        observableModel.changeValue(dragItem, 'a2', a2);
         break;
     }
     this.hotTrackInfo = (hitInfo && hitInfo.item !== this.board) ? hitInfo : null;

@@ -365,9 +365,22 @@ CanvasController.prototype.viewToCanvas = function(p) {
   return geometry.matMulPtNew(p, this.inverseTransform);
 }
 
+// TODO make controller less mouse-centric.
+function getPointerPosition(e) {
+  if (e.offsetX !== undefined && e.offsetY !== undefined) {
+    return { x: e.offsetX, y: e.offsetY };
+  } else {
+    var touches = e.touches;
+    if (touches && touches.length) {
+      var touch = touches[0];
+      return { x: touch.clientX, y: touch.clientY };
+    }
+  }
+}
+
 CanvasController.prototype.onMouseDown = function(e) {
   var self = this,
-      mouse = this.mouse = this.click = { x: e.offsetX, y: e.offsetY },
+      mouse = this.mouse = this.click = getPointerPosition(e),
       alt = (e.button !== 0);
   this.layers.some(function(layer) {
     if (!layer.onClick || !layer.onClick(mouse, alt))
@@ -378,10 +391,11 @@ CanvasController.prototype.onMouseDown = function(e) {
   });
   this.cancelHover_();
   this.draw();
+  return this.clickOwner;
 }
 
 CanvasController.prototype.onMouseMove = function(e) {
-  var mouse = this.mouse = { x: e.offsetX, y: e.offsetY },
+  var mouse = this.mouse = getPointerPosition(e),
       click = this.click;
   if (this.clickOwner) {
     var dx = mouse.x - click.x,
@@ -401,10 +415,11 @@ CanvasController.prototype.onMouseMove = function(e) {
   }
   if (!click)
     this.startHover_();
+  return this.clickOwner;
 }
 
 CanvasController.prototype.onMouseUp = function(e) {
-  var mouse = this.mouse = { x: e.offsetX, y: e.offsetY };
+  var mouse = this.mouse = getPointerPosition(e) || this.mouse;
   if (this.isDragging) {
     this.isDragging = false;
     this.clickOwner.onEndDrag(mouse);
@@ -412,6 +427,7 @@ CanvasController.prototype.onMouseUp = function(e) {
   }
   this.click = null;
   this.clickOwner = null;
+  return false;
 }
 
 CanvasController.prototype.onMouseOut = function(e) {
@@ -432,6 +448,7 @@ CanvasController.prototype.onKeyDown = function(e) {
     return true;
   });
   this.cancelHover_();
+  return this.keyOwner;
 }
 
 CanvasController.prototype.onKeyUp = function(e) {
@@ -441,6 +458,7 @@ CanvasController.prototype.onKeyUp = function(e) {
     if (keyOwner.onKeyUp)
       keyOwner.onKeyUp(e);
     this.keyOwner = null;
+    return false;
   }
 }
 

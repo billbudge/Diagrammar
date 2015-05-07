@@ -59,17 +59,30 @@ resizeCanvas();
 
 window.onresize = resizeCanvas;
 
-canvas.addEventListener('mousedown', function(e) {
+function onMouseDown(e) {
+  e.preventDefault();
   canvasController.onMouseDown(e);
-});
+}
 
-canvas.addEventListener('mousemove', function(e) {
+function onMouseMove(e) {
+  e.preventDefault();
   canvasController.onMouseMove(e);
-});
+}
 
-canvas.addEventListener('mouseup', function(e) {
+function onMouseUp(e) {
+  e.preventDefault();
   canvasController.onMouseUp(e);
-});
+}
+
+canvas.addEventListener('mousedown', onMouseDown);
+canvas.addEventListener('mousemove', onMouseMove);
+canvas.addEventListener('mouseup', onMouseUp);
+
+canvas.addEventListener("touchstart", onMouseDown);
+canvas.addEventListener("touchend", onMouseUp);
+// canvas.addEventListener("touchcancel", handleCancel, false);
+// canvas.addEventListener("touchleave", handleEnd, false);
+canvas.addEventListener("touchmove", onMouseMove);
 
 canvas.addEventListener('dblclick', function(e) {
   editorName = (editorName == 'statecharts' ? 'shapes' : 'statecharts');
