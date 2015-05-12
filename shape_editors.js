@@ -48,7 +48,13 @@ var shapes = (function() {
   }
 
   function isGroup(item) {
-    return item.type == 'group' || item.type == 'hull';
+    return item.type == 'group';
+  }
+
+  function canAddItem(item, parent) {
+    return (isGroup(parent) && isGroupItem(item)) ||
+           (isHull(parent) && isHullItem(item)) ||
+           (isEdge(parent) && isEdgeItem(item));
   }
 
   // function indices_adjacent(i1, i2, length, wraps) {
@@ -584,11 +590,7 @@ var shapes = (function() {
 
   Editor.prototype.getFirstUnselectedContainerHit = function(hitList, item) {
     function filter(hitInfo, model) {
-      var hitItem = hitInfo.item,
-          compatible = (isEdgeItem(item) && isEdge(hitItem)) ||
-                       (isHullItem(item) && isHull(hitItem)) ||
-                       (isGroupItem(item) && isGroup(hitItem));
-      return compatible && isUnselected(hitInfo, model);
+      return canAddItem(item, hitInfo.item) && isUnselected(hitInfo, model);
     }
     return this.getFirstHit(hitList, filter);
   }
@@ -919,7 +921,7 @@ var shapes = (function() {
       } else {
         // Reparent items if necessary.
         selectionModel.forEach(function(item) {
-          if (isHullItem(item) && (isHull(parent) || parent.type === 'board')) {
+          if (canAddItem(item, parent)) {
             editingModel.addItem(item, parent);
             if (hitInfo && hitInfo.border && isEdge(item)) {
               // Attach edge and initialize the angular locations of its ends.
@@ -1007,7 +1009,7 @@ var shapes = (function() {
           }
         }
       });
-      if (centroid) {
+      if (count) {
         centroid.x /= count;
         centroid.y /= count;
       }
@@ -1036,7 +1038,7 @@ var shapes = (function() {
           var points = [], subItems = item.items;
           subItems.forEach(function(subItem) {
             // HACK for now, only disks contribute to hull.
-            if (subItem.type !== 'disk')
+            if (item.type == 'hull' && subItem.type !== 'disk')
               return;
             var path = subItem._path;
             var localTransform = transformableModel.getLocal(subItem);
@@ -1128,6 +1130,42 @@ var shapes = (function() {
     visit(root, pass2);
   }
 
+  Editor.prototype.exportPaths = function(item) {
+    var self = this,
+        transformableModel = this.model.transformableModel,
+        type, path, children, result;
+    if (item.type === 'group' || item.type === 'board' || item.type === 'hull') {
+      type = 'node';
+      if (item._path)
+        path = item._path;
+      children = [];
+      item.items.forEach(function(item) {
+        var result = self.exportPaths(item);
+        if (result)
+          children.push(result);
+      });
+    } else if (item.type === 'edge') {
+      if (item._path) {
+        type = 'openPath';
+        path = item._path;
+      }
+    }
+    if (type) {
+      result = {
+        type: type,
+        transform: transformableModel.getLocal(item),
+      }
+      if (path) {
+        result.path = path.map(function(p) {
+          return { x: p.x, y: p.y };
+        });
+      }
+      if (children && children.length)
+        result.children = children;
+    }
+    return result;
+  }
+
   Editor.prototype.onKeyDown = function(e) {
     var model = this.model, board = this.board,
         selectionModel = model.selectionModel,
@@ -1174,6 +1212,12 @@ var shapes = (function() {
             return true;
           }
           return false;
+        case 69:  // 'e'
+          var pathData = this.exportPaths(board);
+          var text = JSON.stringify(pathData, null, 2);
+          // Writes path data as JSON to console.
+          console.log(text);
+          return true;
         case 83:  // 's'
           var text = JSON.stringify(
             board,

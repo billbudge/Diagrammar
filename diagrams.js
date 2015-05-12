@@ -336,7 +336,6 @@ CanvasController.prototype.configure = function(layers) {
   this.draw();
 }
 
-// TODO support rotation?
 CanvasController.prototype.setTransform = function(translation, scale) {
   var tx = 0, ty = 0, sx = 1, sy = 1, sin = 0, cos = 1;
   if (translation) {

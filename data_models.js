@@ -756,7 +756,6 @@ var selectionModel = (function () {
       this.selection.forEach(function (item) { result.push(item); });
       return result;
     }
-    // TODO selection change notification.
   }
 
   function extend(model) {
