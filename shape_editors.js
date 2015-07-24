@@ -331,10 +331,7 @@ var shapes = (function() {
         ctx.moveTo(pLast.x, pLast.y);
         for (var i = 0; i < length; i++) {
           var pi = path[i];
-          if (!pi.marked && !pLast.marked)
-            ctx.lineTo(pi.x, pi.y);
-          else
-            ctx.moveTo(pi.x, pi.y);
+          ctx.lineTo(pi.x, pi.y);
           pLast = pi;
         }
         ctx.lineWidth = 2;
@@ -1068,7 +1065,10 @@ var shapes = (function() {
     }
 
     function markHull(hull, i0, t0, i1, t1) {
-      var length = hull.length;
+      var length = hull.length,
+          oldT0 = hull[i0].t0, oldT1 = hull[i1].t1;
+      hull[i0].t0 = Math.max(oldT0 || 0, t0);
+      hull[i1].t1 = Math.min(oldT1 || 1, t1);
       var i = i0;
       while (i != i1) {
         hull[i].marked = true;
@@ -1078,7 +1078,8 @@ var shapes = (function() {
       }
     }
 
-    // Update paths for primitive edge items, and update hulls.
+    // Update paths for primitive edge items, and trim hulls where edges are
+    // attached.
     function pass2(item) {
       switch (item.type) {
         case 'edge':
@@ -1126,8 +1127,18 @@ var shapes = (function() {
       }
     }
 
+    function pass3(item) {
+      switch (item.type) {
+        case 'hull':
+        case 'group':
+          var path = item._path;
+          break;
+      }
+    }
+
     reverseVisit(root, pass1);
     visit(root, pass2);
+    visit(root, pass3);
   }
 
   Editor.prototype.exportPaths = function(item) {

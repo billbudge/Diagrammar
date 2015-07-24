@@ -410,8 +410,9 @@ var geometry = (function() {
     intersection.ny = ny * ooLength;
     intersection.i0 = i0;
     intersection.i1 = i1;
-    intersection.t = intersection.s;
 
+    // intersection.t is the parameter along the hull edge, while intersection.s
+    // is the parameter along the ray from the center.
     return intersection;
   }
 
