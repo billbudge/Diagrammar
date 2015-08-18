@@ -72,7 +72,8 @@ var shapes = (function() {
   var editingModel = (function() {
     var functions = {
       reduceSelection: function() {
-        this.model.hierarchicalModel.reduceSelection();
+        this.model.selectionModel.set(
+          this.model.hierarchicalModel.reduceSelection());
       },
 
       deleteItem: function(item) {
@@ -262,7 +263,7 @@ var shapes = (function() {
           ctx.arc(0, 0, 1, 0, 2 * Math.PI, false);
           ctx.setLineDash([lineDash]);
           ctx.stroke();
-          ctx.setLineDash([0]);
+          ctx.setLineDash([]);
         }
         drawKnobby(this, knobbyRadius, 0, 0);
         drawKnobby(this, knobbyRadius, 1, 0);
@@ -281,10 +282,10 @@ var shapes = (function() {
           ctx.lineTo(1, 0);
           ctx.setLineDash([lineDash]);
           ctx.stroke();
-          ctx.setLineDash([0]);
+          ctx.setLineDash([]);
         }
 
-        if (true) {//!item.attached) {
+        if (true) { //!item.attached) {
           ctx.lineWidth = 2 * ooScale;
           ctx.beginPath();
           ctx.moveTo(item._beziers[0][0].x, item._beziers[0][0].y);
@@ -297,6 +298,7 @@ var shapes = (function() {
 
         if (mode == normalMode)
           ctx.lineWidth = 0.25 * ooScale;
+
         drawKnobby(this, knobbyRadius, 0, 0);
         drawKnobby(this, knobbyRadius, 1, 0);
         break;
@@ -318,11 +320,11 @@ var shapes = (function() {
             ctx.lineTo(extents.xmax, 0);
             ctx.stroke();
           }
-          ctx.setLineDash([0]);
+          ctx.setLineDash([]);
           drawKnobby(this, knobbyRadius, 0, 0);
           drawKnobby(this, knobbyRadius, extents.xmax, 0);
         }
-        ctx.setLineDash([0]);
+        ctx.setLineDash([]);
         break;
       case 'hull':
         var path = item._path;
@@ -1066,9 +1068,9 @@ var shapes = (function() {
 
     function markHull(hull, i0, t0, i1, t1) {
       var length = hull.length,
-          oldT0 = hull[i0].t0, oldT1 = hull[i1].t1;
-      hull[i0].t0 = Math.max(oldT0 || 0, t0);
-      hull[i1].t1 = Math.min(oldT1 || 1, t1);
+          oldT1 = hull[i0].t1, oldT0 = hull[i1].t0;
+      hull[i0].t1 = Math.min(oldT1 || 1, t0);
+      hull[i1].t0 = Math.max(oldT0 || 0, t1);
       var i = i0;
       while (i != i1) {
         hull[i].marked = true;
@@ -1078,14 +1080,13 @@ var shapes = (function() {
       }
     }
 
-    // Update paths for primitive edge items, and trim hulls where edges are
-    // attached.
+    // Update paths for edges, and trim hulls of attached edges.
     function pass2(item) {
       switch (item.type) {
         case 'edge':
           var first, last;
           if (item.attached) {
-            // Update x, y, dx, and dy.
+            // Update x, y, dx, and dy for attachment.
             var parent = hierarchicalModel.getParent(item),
                 hull = parent._path, center = parent._centroid,
                 p1 = geometry.angleToConvexHull(hull, center, item.a1),
@@ -1130,8 +1131,28 @@ var shapes = (function() {
     function pass3(item) {
       switch (item.type) {
         case 'hull':
-        case 'group':
-          var path = item._path;
+          var path = item._path, length = path.length,
+              pLast = path[length - 1],
+              merged = [];
+          for (var i = 0; i < length; i++) {
+            var pi = path[i];
+            // if (pi.marked) {
+            //   if (pi.t0 !== undefined) {
+            //     merged.push()
+            //   }
+
+            // }
+
+
+            if (pLast.marked != pi.marked) {
+            } else {
+              if (!pi.marked)
+                merged.push(pi);
+              // otherwise, skip pi.
+            }
+            pLast = pi;
+          }
+          // item._path = merged;
           break;
       }
     }
