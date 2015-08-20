@@ -327,7 +327,7 @@ var shapes = (function() {
         ctx.setLineDash([]);
         break;
       case 'hull':
-        var path = item._path;
+        var path = item._merged ? item._merged : item._path;
         ctx.beginPath();
         var length = path.length, pLast = path[length - 1];
         ctx.moveTo(pLast.x, pLast.y);
@@ -1056,6 +1056,8 @@ var shapes = (function() {
           }
           item._centroid = centroid;
           item._extents = hull ? geometry.getExtents(hull) : null;
+          item._attachments = []; // Prepare hull for pass2.
+          item._merged = null;
           path = hull;
           break;
       }
@@ -1066,21 +1068,9 @@ var shapes = (function() {
       }
     }
 
-    function markHull(hull, i0, t0, i1, t1) {
-      var length = hull.length,
-          oldT1 = hull[i0].t1, oldT0 = hull[i1].t0;
-      hull[i0].t1 = Math.min(oldT1 || 1, t0);
-      hull[i1].t0 = Math.max(oldT0 || 0, t1);
-      var i = i0;
-      while (i != i1) {
-        hull[i].marked = true;
-        i++;
-        if (i == length)
-          i = 0;
-      }
-    }
-
-    // Update paths for edges, and trim hulls of attached edges.
+    // Update paths for edges, and trim hulls of attached edges. We have to
+    // project all edges before we can merge them with the hull to form the
+    // final edge.
     function pass2(item) {
       switch (item.type) {
         case 'edge':
@@ -1098,15 +1088,15 @@ var shapes = (function() {
             self.updateEdge(item);
             var inverseLocal = transformableModel.getInverseLocal(item),
                 flipped = item._flipped,
-                f = flipped ? 1024 : -1024,
+                f = flipped ? 1024 : -1024,  // TODO replace magic numbers
                 n1 = geometry.matMulPt({ x: p1.x + p1.ny * f, y: p1.y - p1.nx * f }, inverseLocal),
                 n2 = geometry.matMulPt({ x: p2.x - p2.ny * f, y: p2.y + p2.nx * f }, inverseLocal);
             first = n1;
             last = n2;
-            if (!flipped)
-              markHull(hull, p2.i0, p2.t, p1.i0, p1.t);
+            if (flipped)
+              parent._attachments.push({ item: item, start: p1.i1, end: p2.i1 });
             else
-              markHull(hull, p1.i0, p1.t, p2.i0, p2.t);
+              parent._attachments.push({ item: item, start: p2.i1, end: p1.i1 });
           } else {
             self.updateEdge(item);
             first = { x: 0, y: 0 };
@@ -1114,16 +1104,21 @@ var shapes = (function() {
           }
           var items = item.items,
               points = [].concat(item.items);
-          // points.sort(function(a, b) { return a.x - b.x });
           points.unshift({ x: 0, y: 0 });
           points.unshift(first);
           points.push({ x: 1, y: 0 });
           points.push(last);
           var beziers = geometry.generateInterpolatingBeziers(points);
           item._beziers =  beziers;
-          var path = sampleBeziers(beziers, 4 / item.scale);
+          var path = sampleBeziers(beziers, 0.01);
+          // If the item is attached, transform into parent's coordinates.
+          if (item.attached) {
+            var local = transformableModel.getLocal(item);
+            for (var i = 0; i < path.length; i++)
+              path[i] = geometry.matMulPt(path[i], local);
+          }
           item._path = path;
-          item._bounds = geometry.getExtents(item._path);
+          // item._bounds = geometry.getExtents(item._path);
           break;
       }
     }
@@ -1131,28 +1126,36 @@ var shapes = (function() {
     function pass3(item) {
       switch (item.type) {
         case 'hull':
-          var path = item._path, length = path.length,
-              pLast = path[length - 1],
+          var path = item._path, pLength = path.length,
+              pLast = path[pLength - 1];
+          var attachments = item._attachments;
+          if (attachments.length === 0)
+            break;
+
+          attachments.sort(function(a, b) { return a.start - b.start; });
+          var aLength = attachments.length, aLast = attachments[aLength - 1],
               merged = [];
-          for (var i = 0; i < length; i++) {
-            var pi = path[i];
-            // if (pi.marked) {
-            //   if (pi.t0 !== undefined) {
-            //     merged.push()
-            //   }
-
-            // }
-
-
-            if (pLast.marked != pi.marked) {
-            } else {
-              if (!pi.marked)
-                merged.push(pi);
-              // otherwise, skip pi.
+          for (var i = 0; i < attachments.length; i++) {
+            var ai = attachments[i];
+            // First, add edges between this start and the previous end.
+            console.log(aLast.end, ai.start);
+            for (var j = aLast.end; j != ai.start; ) {
+              merged.push(path[j]);
+              j++;
+              if (j === pLength) j = 0;
             }
-            pLast = pi;
+            // Now, add the attachment's path.
+            var aiPath = ai.item._path, aipLength = aiPath.length;
+            if (item.flipped) {
+              for (var j = 0; j < aipLength; j++)
+                merged.push(aiPath[j]);
+            } else {
+              for (var j = aipLength - 1; j >= 0; j--)
+                merged.push(aiPath[j]);
+            }
+            aLast = ai;
           }
-          // item._path = merged;
+          item._merged = merged;
           break;
       }
     }
