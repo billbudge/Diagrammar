@@ -1088,7 +1088,7 @@ var shapes = (function() {
             self.updateEdge(item);
             var inverseLocal = transformableModel.getInverseLocal(item),
                 flipped = item._flipped,
-                f = flipped ? 1024 : -1024,  // TODO replace magic numbers
+                f = flipped ? 1024 : -1024,  // TODO fix magic number
                 n1 = geometry.matMulPt({ x: p1.x + p1.ny * f, y: p1.y - p1.nx * f }, inverseLocal),
                 n2 = geometry.matMulPt({ x: p2.x - p2.ny * f, y: p2.y + p2.nx * f }, inverseLocal);
             first = n1;
@@ -1110,7 +1110,7 @@ var shapes = (function() {
           points.push(last);
           var beziers = geometry.generateInterpolatingBeziers(points);
           item._beziers =  beziers;
-          var path = sampleBeziers(beziers, 0.01);
+          var path = sampleBeziers(beziers, 0.01);  // TODO fix magic number
           // If the item is attached, transform into parent's coordinates.
           if (item.attached) {
             var local = transformableModel.getLocal(item);
@@ -1126,34 +1126,47 @@ var shapes = (function() {
     function pass3(item) {
       switch (item.type) {
         case 'hull':
-          var path = item._path, pLength = path.length,
-              pLast = path[pLength - 1];
+          var path = item._path, pLength = path.length;
           var attachments = item._attachments;
           if (attachments.length === 0)
             break;
 
           attachments.sort(function(a, b) { return a.start - b.start; });
           var aLength = attachments.length, aLast = attachments[aLength - 1],
+              wrapped = false,
               merged = [];
           for (var i = 0; i < attachments.length; i++) {
             var ai = attachments[i];
             // First, add edges between this start and the previous end.
-            console.log(aLast.end, ai.start);
             for (var j = aLast.end; j != ai.start; ) {
               merged.push(path[j]);
               j++;
-              if (j === pLength) j = 0;
+              if (j === pLength) {
+                wrapped = true;
+                j = 0;
+              }
             }
-            // Now, add the attachment's path.
+            // Now add the attachment's path.
             var aiPath = ai.item._path, aipLength = aiPath.length;
-            if (item.flipped) {
+            if (ai.item._flipped) {
               for (var j = 0; j < aipLength; j++)
                 merged.push(aiPath[j]);
             } else {
               for (var j = aipLength - 1; j >= 0; j--)
                 merged.push(aiPath[j]);
             }
+            if (ai.end < ai.start)
+              wrapped = true;
             aLast = ai;
+          }
+          if (!wrapped) {
+            var last = aLast.start - 1;
+            if (last < 0) last = pLength - 1;
+            for (var j = attachments[0].end; j != last; ) {
+              merged.push(path[j]);
+              j++;
+              if (j === pLength) j = 0;
+            }
           }
           item._merged = merged;
           break;
