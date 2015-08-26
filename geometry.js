@@ -363,22 +363,26 @@ var geometry = (function() {
 
   // Project a point onto the hull.
   function projectPointToConvexHull(hull, p) {
-    var length = hull.length, lastP = hull[length - 1],
-        minP0, minP1, minDist = Number.MAX_VALUE;
+    var length = hull.length, lastI = length - 1, lastP = hull[lastI],
+        minDist = Number.MAX_VALUE, minI0, minI1;
     for (var i = 0; i < length; i++) {
       var pi = hull[i],
           dist = geometry.pointToSegmentDist(lastP, pi, p);
       if (dist < minDist) {
-        minP0 = lastP;
-        minP1 = pi;
+        minI0 = lastI;
+        minI1 = i;
         minDist = dist;
       }
+      lastI = i;
       lastP = pi;
     }
-    var t = geometry.projectPointToSegment(minP0, minP1, p);
+    var minP0 = hull[minI0], minP1 = hull[minI1],
+        t = geometry.projectPointToSegment(minP0, minP1, p);
     return {
       x: minP0.x + t * (minP1.x - minP0.x),
       y: minP0.y + t * (minP1.y - minP0.y),
+      i0: minI0,
+      i1: minI1,
       p0: minP0,
       p1: minP1,
       t: t,

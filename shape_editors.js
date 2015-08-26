@@ -275,16 +275,14 @@ Renderer.prototype.drawItem = function(item, mode) {
       //   ctx.setLineDash([]);
       // }
 
-      if (!item.attached) {
-        ctx.lineWidth = 2 * ooScale;
-        ctx.beginPath();
-        ctx.moveTo(item._beziers[0][0].x, item._beziers[0][0].y);
-        for (var i = 0; i < item._beziers.length; i++) {
-          var seg = item._beziers[i];
-          ctx.bezierCurveTo(seg[1].x, seg[1].y, seg[2].x, seg[2].y, seg[3].x, seg[3].y);
-        }
-        ctx.stroke();
+      ctx.lineWidth = 2 * ooScale;
+      ctx.beginPath();
+      ctx.moveTo(item._beziers[0][0].x, item._beziers[0][0].y);
+      for (var i = 0; i < item._beziers.length; i++) {
+        var seg = item._beziers[i];
+        ctx.bezierCurveTo(seg[1].x, seg[1].y, seg[2].x, seg[2].y, seg[3].x, seg[3].y);
       }
+      ctx.stroke();
 
       if (mode == normalMode)
         ctx.lineWidth = 0.25 * ooScale;
@@ -343,8 +341,8 @@ Renderer.prototype.drawItem = function(item, mode) {
         ctx.lineTo(pi.x, pi.y);
       }
       ctx.lineWidth = 2;
-      if (mode == normalMode)
-        ctx.fill();
+      // if (mode == normalMode)
+      //   ctx.fill();
       ctx.stroke();
       break;
   }
