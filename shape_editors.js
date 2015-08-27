@@ -906,7 +906,7 @@ Editor.prototype.onEndDrag = function(p) {
           items: [
             {
               type: 'point',
-              x: 0.25,
+              x: 0.5,
               y: 0,
             }
           ],
@@ -1078,7 +1078,14 @@ Editor.prototype.updateGeometry = function(root) {
   function pass2(item) {
     switch (item.type) {
       case 'edge':
-        var first, last;
+        // Make the control point array for the curve.
+        var cps = item.items,
+            points = [{ x: 0, y: 0 }, { x: 0, y: 0 }].concat(cps);
+        points.push({ x: 1, y: 0 });
+        points.push({ x: 1, y: 0 });
+        var pLength = points.length,
+            first = points[0], last = points[pLength - 1];
+
         if (item.attached) {
           // Update x, y, dx, and dy for attachment.
           var parent = hierarchicalModel.getParent(item),
@@ -1095,23 +1102,28 @@ Editor.prototype.updateGeometry = function(root) {
               f = flipped ? 1024 : -1024,  // TODO fix magic number
               n1 = geometry.matMulPt({ x: p1.x + p1.ny * f, y: p1.y - p1.nx * f }, inverseLocal),
               n2 = geometry.matMulPt({ x: p2.x - p2.ny * f, y: p2.y + p2.nx * f }, inverseLocal);
-          first = n1;
-          last = n2;
+          first.x = n1.x;
+          first.y = n1.y;
+          last.x = n2.x;
+          last.y = n2.y;
           if (flipped)
             parent._attachments.push({ item: item, start: p1.i1, end: p2.i1 });
           else
             parent._attachments.push({ item: item, start: p2.i1, end: p1.i1 });
         } else {
           self.updateEdge(item);
-          first = { x: 0, y: 0 };
-          last = { x: 1, y: 0 };
+          // Create quadratics at each end that we use to extrapolate first and
+          // last control points so that the curve appears most natural.
+          var q0 = geometry.makeInterpolatingQuadratic(points[3], points[2], points[1]),
+              q1 = geometry.makeInterpolatingQuadratic(
+                       points[pLength - 4], points[pLength - 3], points[pLength - 2]),
+              c0 = geometry.evaluateQuadratic(q0, 2),
+              c1 = geometry.evaluateQuadratic(q1, 2);
+          first.x = c0.x;
+          first.y = c0.y;
+          last.x = c1.x;
+          last.y = c1.y;
         }
-        var items = item.items,
-            points = [].concat(item.items);
-        points.unshift({ x: 0, y: 0 });
-        points.unshift(first);
-        points.push({ x: 1, y: 0 });
-        points.push(last);
         var beziers = geometry.generateInterpolatingBeziers(points);
         item._beziers =  beziers;
         var path = sampleBeziers(beziers, 0.01);  // TODO fix magic number

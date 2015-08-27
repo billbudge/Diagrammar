@@ -77,7 +77,38 @@ var geometry = (function() {
     // Parallel or coincident.
   }
 
+  function makeInterpolatingQuadratic(p0, p1, p2) {
+    var smoothValue = 0.5;
+    var c1 = { x: (p0.x + p1.x) * 0.5, y: (p0.y + p1.y) * 0.5 };
+    var c2 = { x: (p1.x + p2.x) * 0.5, y: (p1.y + p2.y) * 0.5 };
+
+    var d1 = { x: p1.x - p0.x, y: p1.y - p0.y };
+    var d2 = { x: p2.x - p1.x, y: p2.y - p1.y };
+
+    var len1 = Math.sqrt(d1.x * d1.x + d1.y * d1.y);
+    var len2 = Math.sqrt(d2.x * d2.x + d2.y * d2.y);
+
+    var k = len1 / (len1 + len2);
+
+    var m = { x: c1.x + (c2.x - c1.x) * k, y: c1.y + (c2.y - c1.y) * k };
+
+    var newC = { x: m.x + (c2.x - m.x) * smoothValue + p1.x - m.x,
+                 y: m.y + (c2.y - m.y) * smoothValue + p1.y - m.y };
+
+    return [{ x: p1.x, y: p1.y }, newC, { x: p2.x, y: p2.y }];
+  }
+
+  // Evaluate quadratic segment by deCastlejau algorithm.
+  function evaluateQuadratic(q, t) {
+    var tp = 1.0 - t;
+    var s11 = { x: q[0].x * tp + q[1].x * t, y: q[0].y * tp + q[1].y * t },
+        s12 = { x: q[1].x * tp + q[2].x * t, y: q[1].y * tp + q[2].y * t },
+        s21 = { x: s11.x * tp + s12.x * t, y: s11.y * tp + s12.y * t};
+    return s21;
+  }
+
   function makeInterpolatingBezier(p0, p1, p2, p3) {
+    var smoothValue = 0.75;
     var c1 = { x: (p0.x + p1.x) * 0.5, y: (p0.y + p1.y) * 0.5 };
     var c2 = { x: (p1.x + p2.x) * 0.5, y: (p1.y + p2.y) * 0.5 };
     var c3 = { x: (p2.x + p3.x) * 0.5, y: (p2.y + p3.y) * 0.5 };
@@ -454,6 +485,8 @@ var geometry = (function() {
     pointToSegmentDist: pointToSegmentDist,
     pointOnSegment: pointOnSegment,
     lineIntersection: lineIntersection,
+    makeInterpolatingQuadratic: makeInterpolatingQuadratic,
+    evaluateQuadratic: evaluateQuadratic,
     makeInterpolatingBezier: makeInterpolatingBezier,
     evaluateBezier: evaluateBezier,
     generateInterpolatingBeziers: generateInterpolatingBeziers,
@@ -478,8 +511,6 @@ var geometry = (function() {
     insetConvexHull: insetConvexHull,
   };
 })();
-
-var smoothValue = 0.75;
 
 
 function parameterizePath(path) {
