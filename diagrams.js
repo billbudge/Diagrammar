@@ -365,21 +365,22 @@ CanvasController.prototype.viewToCanvas = function(p) {
 }
 
 // TODO make controller less mouse-centric.
-function getPointerPosition(e) {
-  if (e.offsetX !== undefined && e.offsetY !== undefined) {
-    return { x: e.offsetX, y: e.offsetY };
+function getPointerPosition(e, canvas) {
+  var rect = canvas.getBoundingClientRect();
+  if (e.clientX !== undefined && e.clientY !== undefined) {
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   } else {
     var touches = e.touches;
     if (touches && touches.length) {
       var touch = touches[0];
-      return { x: touch.clientX, y: touch.clientY };
+      return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
     }
   }
 }
 
 CanvasController.prototype.onMouseDown = function(e) {
   var self = this,
-      mouse = this.mouse = this.click = getPointerPosition(e),
+      mouse = this.mouse = this.click = getPointerPosition(e, this.canvas),
       alt = (e.button !== 0);
   this.layers.some(function(layer) {
     if (!layer.onClick || !layer.onClick(mouse, alt))
@@ -394,7 +395,7 @@ CanvasController.prototype.onMouseDown = function(e) {
 }
 
 CanvasController.prototype.onMouseMove = function(e) {
-  var mouse = this.mouse = getPointerPosition(e),
+  var mouse = this.mouse = getPointerPosition(e, this.canvas),
       click = this.click;
   if (this.clickOwner) {
     var dx = mouse.x - click.x,
@@ -418,7 +419,7 @@ CanvasController.prototype.onMouseMove = function(e) {
 }
 
 CanvasController.prototype.onMouseUp = function(e) {
-  var mouse = this.mouse = getPointerPosition(e) || this.mouse;
+  var mouse = this.mouse = getPointerPosition(e, this.canvas);
   if (this.isDragging) {
     this.isDragging = false;
     this.clickOwner.onEndDrag(mouse);
