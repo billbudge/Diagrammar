@@ -175,6 +175,7 @@ var editingModel = (function() {
     dataModels.transactionHistory.extend(model);
     dataModels.instancingModel.extend(model);
     dataModels.editingModel.extend(model);
+    dataModels.invalidatingModel.extend(model);
 
     var instance = Object.create(model.editingModel);
     instance.prototype = Object.getPrototypeOf(instance);
@@ -472,12 +473,14 @@ function Editor(model, renderer) {
   dataModels.observableModel.extend(palette);
   dataModels.hierarchicalModel.extend(palette);
   dataModels.transformableModel.extend(palette);
+  dataModels.invalidatingModel.extend(palette);
   palette.dataModel.initialize();
 
   editingModel.extend(model);
   model.dataModel.initialize();
 
-  this.updateGeometry(palette.root);
+  this.updateGeometry(palette);
+  this.updateGeometry(model);
 }
 
 Editor.prototype.initialize = function(canvasController) {
@@ -510,7 +513,7 @@ Editor.prototype.draw = function() {
       palette = this.palette,
       canvasController = this.canvasController;
 
-  this.updateGeometry();
+  this.updateGeometry(model);
 
   renderer.beginDraw(model, ctx);
   canvasController.applyTransform();
@@ -961,13 +964,12 @@ Editor.prototype.onEndDrag = function(p) {
 // }
 
 // Paths are computed in the local space of the item, translated when combining.
-Editor.prototype.updateGeometry = function(root) {
-  var self = this, model = this.model,
+Editor.prototype.updateGeometry = function(model) {
+  var self = this, root = model.root,
       hierarchicalModel = model.hierarchicalModel,
       transformableModel = model.transformableModel,
-      referencingModel = model.referencingModel;
-  if (!root)
-    root = this.board;
+      referencingModel = model.referencingModel,
+      invalidatingModel = model.invalidatingModel;
 
   function sampleBeziers(beziers, error) {
     var points = [];
@@ -1021,6 +1023,9 @@ Editor.prototype.updateGeometry = function(root) {
 
   // Update paths for primitive hull items and form hulls
   function pass1(item) {
+    if (invalidatingModel.getValid(item))
+      return;
+
     var path;
     switch (item.type) {
       case 'disk':
@@ -1040,6 +1045,8 @@ Editor.prototype.updateGeometry = function(root) {
         // Transform points from subItems into parent space.
         var points = [], subItems = item.items;
         subItems.forEach(function(subItem) {
+          if (subItem.type == 'edge')
+            invalidatingModel.setValid(subItem, false);
           // HACK for now, only disks contribute to hull.
           if (item.type == 'hull' && subItem.type !== 'disk')
             return;
@@ -1076,6 +1083,9 @@ Editor.prototype.updateGeometry = function(root) {
   // project all edges before we can merge them with the hull to form the
   // final edge.
   function pass2(item) {
+    if (invalidatingModel.getValid(item))
+      return;
+
     switch (item.type) {
       case 'edge':
         // Make the control point array for the curve.
@@ -1140,6 +1150,9 @@ Editor.prototype.updateGeometry = function(root) {
   }
 
   function pass3(item) {
+    if (invalidatingModel.getValid(item))
+      return;
+
     switch (item.type) {
       case 'hull':
         var path = item._path, pLength = path.length;
@@ -1192,6 +1205,8 @@ Editor.prototype.updateGeometry = function(root) {
   reverseVisit(root, pass1);
   visit(root, pass2);
   visit(root, pass3);
+
+  invalidatingModel.reset();
 }
 
 Editor.prototype.exportPaths = function(item) {

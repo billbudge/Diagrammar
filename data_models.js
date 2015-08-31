@@ -8,6 +8,10 @@ var dataModels = (function () {
 
 var dataModel = (function () {
   var proto = {
+    getRoot: function() {
+      return this.model.root;
+    },
+
     // Returns unique id (number) for an item, to allow references to be
     // resolved. Only items have ids and can be referenced. 0 is an invalid id.
     getId: function (item) {
@@ -93,7 +97,7 @@ var dataModel = (function () {
 
     initialize: function(item) {
       var self = this,
-          root = item || this.model.root;
+          root = item || this.getRoot();
       this.visitSubtree(root, function(item) {
         self.initializers.forEach(function(initializer) {
           initializer(item);
@@ -112,7 +116,7 @@ var dataModel = (function () {
     // Find the maximum id in the model and set nextId to 1 greater.
     var maxId = 0;
     var self = this;
-    instance.visitSubtree(model.root, function (item) {
+    instance.visitSubtree(instance.getRoot(), function (item) {
       var id = instance.getId(item);
       if (id)
         maxId = Math.max(maxId, id);
@@ -632,7 +636,7 @@ var referencingModel = (function () {
       });
     }
     instance.targets_ = new HashMap();
-    instance.addTargets_(model.root);
+    instance.addTargets_(model.dataModel.getRoot());
 
     model.referencingModel = instance;
     return instance;
@@ -656,7 +660,7 @@ var referenceValidator = (function () {
     onTransactionEnding_: function (transaction) {
       var self = this, dataModel = this.model.dataModel,
           referencingModel = this.model.referencingModel;
-      dataModel.visitSubtree(this.model.root, function (item) {
+      dataModel.visitSubtree(dataModel.getRoot(), function (item) {
         dataModel.visitReferences(item, function (item, attr) {
           if (!referencingModel.resolveId(item[attr]))
             self.onDanglingReference(item, attr);
@@ -938,7 +942,7 @@ var editingModel = (function () {
 var hierarchicalModel = (function () {
   var proto = {
     getRoot: function () {
-      return this.model.root;
+      return this.model.dataModel.getRoot();
     },
 
     getParent: function (item) {
@@ -1037,7 +1041,7 @@ var hierarchicalModel = (function () {
       });
     }
 
-    instance.init(model.root, null);
+    instance.init(model.dataModel.getRoot(), null);
 
     model.hierarchicalModel = instance;
     return instance;
@@ -1208,6 +1212,93 @@ var transformableModel = (function () {
 
 //------------------------------------------------------------------------------
 
+// A simple dependency model based on the model's hierarchy, where parents
+// depend on their descendants.
+var dependencyModel = (function () {
+  var proto = {
+    getDependents: function(item) {
+      var hierarchicalModel = this.model.hierarchicalModel,
+          ancestor = hierarchicalModel.getParent(item),
+          dependents = [];
+      while (ancestor) {
+        dependents.push(ancestor);
+        ancestor = hierarchicalModel.getParent(ancestor);
+      }
+      return dependents;
+    },
+  }
+
+  function extend(model) {
+    if (model.dependencyModel)
+      return model.dependencyModel;
+
+    hierarchicalModel.extend(model);
+
+    var instance = Object.create(proto);
+    instance.model = model;
+
+    model.dependencyModel = instance;
+    return instance;
+  }
+
+  return {
+    extend: extend,
+  };
+})();
+
+//------------------------------------------------------------------------------
+
+// A simple model for efficient updating of a model with dependencies. When an
+// item changes, it and its dependents are marked as not valid. Items start out
+// in an 'invalid' state until reset() is called.
+var invalidatingModel = (function () {
+  var proto = {
+    getValid: function(item) {
+      return item._valid === true;
+    },
+    setValid: function (item, valid) {
+      item._valid = valid;
+    },
+    reset: function() {
+      var self = this,
+          dataModel = this.model.dataModel, root = dataModel.getRoot();
+      dataModel.visitSubtree(root, function(item) {
+        self.setValid(item, true);
+      });
+    },
+    onChanged_: function (change) {
+      var self = this, item = change.item,
+          dependents = this.model.dependencyModel.getDependents(item);
+      self.setValid(item, false);
+      dependents.forEach(function(item) { self.setValid(item, false) });
+    },
+  }
+
+  function extend(model) {
+    if (model.invalidatingModel)
+      return model.invalidatingModel;
+
+    dataModel.extend(model);
+    dependencyModel.extend(model);
+    observableModel.extend(model);
+
+    var instance = Object.create(proto);
+    instance.model = model;
+    model.observableModel.addHandler('changed', function (change) {
+      instance.onChanged_(change);
+    });
+
+    model.invalidatingModel = instance;
+    return instance;
+  }
+
+  return {
+    extend: extend,
+  };
+})();
+
+//------------------------------------------------------------------------------
+
 // var myModel = (function () {
 //   var proto = {
 //     foo: function (item) {
@@ -1255,5 +1346,7 @@ var transformableModel = (function () {
     editingModel: editingModel,
     hierarchicalModel: hierarchicalModel,
     transformableModel: transformableModel,
+    dependencyModel: dependencyModel,
+    invalidatingModel: invalidatingModel,
   }
 })();
