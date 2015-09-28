@@ -1254,7 +1254,7 @@ var dependencyModel = (function () {
 var invalidatingModel = (function () {
   var proto = {
     getValid: function(item) {
-      return item._valid === true;
+      return item._valid;
     },
     setValid: function (item, valid) {
       item._valid = valid;

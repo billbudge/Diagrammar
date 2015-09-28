@@ -204,7 +204,7 @@ var geometry = (function() {
       }
     }
     if (dMin < tolerance)
-      return { x: closestX, y: closestY };
+      return { x: closestX, y: closestY, d: dMin };
     // Otherwise, return nothing.
   }
 
@@ -250,7 +250,7 @@ var geometry = (function() {
     return cos;
   }
 
-  // Compares cosines, works for 0 - pi radians.
+  // Compares cosines, works over [0, pi].
   function compareCosines(a, b) {
     if (a.cos > b.cos)
       return -1;
@@ -358,55 +358,64 @@ var geometry = (function() {
     return a.angle - b.angle;
   }
 
-  // Annotates the convex hull points with the following useful infomation:
-  // 1) angle: the angle between p[i] and center. 0 is the positive x-axis.
-  // 2) nx, ny: the normal of the edge from p[i] to p[(i + 1) % hull.length].
-  // Sorts the hull by angle to speed up angle-to-hull calculations.
-  function annotateConvexHull(hull, center) {
-    var cx = center.x, cy = center.y,
-        length = hull.length;
+  function visitHullEdges(hull, edgeFn) {
+    var length = hull.length, lastI = length - 1, lastP = hull[lastI];
     for (var i = 0; i < length; i++) {
-      var pi = hull[i], dx = pi.x - cx, dy = pi.y - cy;
-      pi.angle = getAngle(dx, dy);
-    }
-    hull.sort(compareAngles);
-    var pLast = hull[length - 1];
-    for (var i = 0; i < length; i++) {
-      var pi = hull[i], dx = pi.x - pLast.x, dy = pi.y - pLast.y,
-          ooLength = 1.0 / Math.sqrt(dx * dx + dy * dy);
-      pi.nx = dy * ooLength;
-      pi.ny = -dx * ooLength;
-      pLast = pi;
+      var pi = hull[i];
+      edgeFn(lastP, pi, lastI, i);
+      lastI = i;
+      lastP = pi;
     }
   }
 
+  // Annotates the convex hull points with the following useful infomation:
+  // 1) angle: the angle between p[i] and center. 0 is the positive x-axis.
+  // 2) length: the length of the edge starting at p[i].
+  // 3) nx, ny: the normal of the edge starting at p[i].
+  // Sorts the hull by angle to speed up angle-to-hull calculations.
+  function annotateConvexHull(hull, c) {
+    var cx = c.x, cy = c.y, minAngle = -1, minI;
+    hull.forEach(function(p, i) {
+      var angle = getAngle(p.x - cx, p.y - cy);
+      p.angle = angle;
+      if (angle < minAngle) {
+        minAngle = angle;
+        minI = i;
+      }
+    });
+    hull.sort(compareAngles); // TODO should be able to rotate array
+    visitHullEdges(hull, function(p0, p1, i0, i1) {
+      var dx = p1.x - p0.x, dy = p1.y - p0.y,
+          length = Math.sqrt(dx * dx + dy * dy),
+          ooLength = 1.0 / length;
+      p0.length = length;
+      p0.nx = dy * ooLength;
+      p0.ny = -dx * ooLength;
+    });
+  }
+
   // Determines if point is within tolerance of being inside the convex hull.
+  // Requires normals calculated by annotateConvexHull.
   function pointInConvexHull(hull, p, tolerance) {
-    var length = hull.length;
-    for (var i = 0; i < length; i++) {
-      var pi = hull[i], dx = p.x - pi.x, dy = p.y - pi.y,
+    return !hull.find(function(pi) {
+      var dx = p.x - pi.x, dy = p.y - pi.y,
           offset = dx * pi.nx + dy * pi.ny;
       if (offset < -tolerance)
-        return false;
-    }
-    return true;
+        return true;
+    });
   }
 
   // Project a point onto the hull.
   function projectPointToConvexHull(hull, p) {
-    var length = hull.length, lastI = length - 1, lastP = hull[lastI],
-        minDist = Number.MAX_VALUE, minI0, minI1;
-    for (var i = 0; i < length; i++) {
-      var pi = hull[i],
-          dist = geometry.pointToSegmentDist(lastP, pi, p);
+    var minDist = Number.MAX_VALUE, minI0, minI1;
+    visitHullEdges(hull, function(p0, p1, i0, i1) {
+      var dist = geometry.pointToSegmentDist(p0, p1, p);
       if (dist < minDist) {
-        minI0 = lastI;
-        minI1 = i;
+        minI0 = i0;
+        minI1 = i1;
         minDist = dist;
       }
-      lastI = i;
-      lastP = pi;
-    }
+    });
     var minP0 = hull[minI0], minP1 = hull[minI1],
         t = geometry.projectPointToSegment(minP0, minP1, p);
     return {
@@ -417,6 +426,7 @@ var geometry = (function() {
       p0: minP0,
       p1: minP1,
       t: t,
+      dist: minDist,
     };
   }
 
@@ -452,26 +462,14 @@ var geometry = (function() {
   }
 
   // Moves the convex hull points in the normal direction by amount.
+  // Requires normals calculated by annotateConvexHull.
   function insetConvexHull(hull, amount) {
-    // normals[i] is normal to edge from p[i - 1] to p[i].
-    var length = hull.length,
-        normals = [], pLast = hull[length - 1];
-    for (var i = 0; i < length; i++) {
-      var pi = hull[i];
-      var dx = pi.x - pLast.x, dy = pi.y - pLast.y;
-      var ns = 1 / Math.sqrt(dx * dx + dy * dy);
-      normals[i] = { x: dy * ns, y: -dx * ns };
-      pLast = pi;
-    }
-    var outset = [], nLast = normals[length - 1];
-    for (var i = 0; i < length; i++) {
-      var pi = hull[i], ni = normals[i];
+    visitHullEdges(hull, function(p0, p1, i0, i1) {
       // average the normals of the edges adjacent to each point.
-      var bx = (ni.x + nLast.x) / 2, by = (ni.y + nLast.y) / 2;
-      pi.x += bx * amount;
-      pi.y += by * amount;
-      nLast = ni;
-    }
+      var bx = (p0.nx + p1.nx) / 2, by = (p0.ny + p1.ny) / 2;
+      p1.x += bx * amount;
+      p1.y += by * amount;
+    });
   }
 
   return {
@@ -504,6 +502,7 @@ var geometry = (function() {
     getCentroid: getCentroid,
     getAngle: getAngle,
     compareAngles: compareAngles,
+    visitHullEdges: visitHullEdges,
     annotateConvexHull: annotateConvexHull,
     pointInConvexHull: pointInConvexHull,
     projectPointToConvexHull: projectPointToConvexHull,
@@ -633,71 +632,6 @@ function turnToHull(hull, center, item) {
   var slope = turnToSlope(item.t);
   var intersection = LineIntersection(p0, p1, center, { x: center.x + slope.x, y: center.y + slope.y });
   return { i0: i0, i1: i1, p0: p0, p1: p1, t: intersection.s, x: intersection.x, y: intersection.y };
-}
-
-function deformHull(hull, item) {
-  // Compute normals along hull edges.
-  var pLast = hull[hull.length - 1];
-  for (var i = 0; i < hull.length; i++) {
-    var pi = hull[i];
-    var dx = pi.x - pLast.x, dy = pi.y - pLast.y;
-    var ns = 1 / Math.sqrt(dx * dx + dy * dy);
-    pi.nx = dy * ns;
-    pi.ny = -dx * ns;
-    pLast = pi;
-  }
-
-  // Update knots based on hull and centroid.
-  var knots = item.knots;
-  knots.sort(compareTurn);
-
-  // Position knots.
-  var center = { x: item._cx, y: item._cy };
-  for (var i = 0; i < knots.length; i++) {
-    var knot = knots[i];
-    var edge = turnToHull(hull, center, knot);
-    knot._edge = edge;
-    // Interpolate along edge by t and offset in normal direction by d to get knot position.
-    knot._position = { x: edge.x + knot.d * edge.p0.nx, y: edge.y + knot.d * edge.p0.ny };
-  }
-
-  // Deform the hull.
-  // We must have at least 3 knots.
-  var path = [];
-  var k0 = knots[0], k1 = knots[0], k2 = knots[1], k3 = knots[2];
-  var nextKnotT = k0.t;
-  var i = 0, j = 0;
-  while (i < hull.length) {// || j < knots.length - 2) {
-    while (i < hull.length && hull[i].t < nextKnotT)
-      path.push(hull[i++]);
-    if (i >= hull.length)
-      break;
-    while (j < knots.length - 1) {
-      deforming = true;
-      // x is knot.t, y id knot.d.
-      // var segment = GetCurveSegment({ x: k0.t, y: k0.d },
-                                       // { x: k1.t, y: k1.d },
-                                       // { x: k2.t, y: k2.d },
-                                       // { x: k3.t, y: k3.d });
-      var segment = GetCurveSegment(k0._position, k1._position, k2._position, k3._position);
-      var steps = 16;
-      for (var k = 0; k < steps; k++) {
-        var segPt = EvaluateCurveSegment(segment, k / steps);
-        // var t = segPt.x, d = segPt.y;
-        // var edge = turnToHull(hull, center, { t: t });
-        // i = edge.i1;
-        // path.push({ x: edge.x + edge.p0.nx * d, y: edge.y + edge.p0.ny * d});
-        path.push(segPt);
-      }
-      k0 = k1; k1 = k2; k2 = k3; k3 = knots[Math.min(j + 4, knots.length - 1)];
-      j++;
-    }
-
-    i = binarySearch(hull, k3, compareTurn) + 1;
-    nextKnotT = 2;
-  }
-
-  return path;
 }
 
 var minRadius = 6;

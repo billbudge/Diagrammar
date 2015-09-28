@@ -143,7 +143,7 @@ var editingModel = (function() {
       }
     },
 
-    addPoint: function(point, edge) {
+    addPoint: function(point, edge, index) {
       var model = this.model, hierarchicalModel = model.hierarchicalModel,
           oldParent = hierarchicalModel.getParent(point);
       if (oldParent !== parent) {
@@ -154,13 +154,7 @@ var editingModel = (function() {
 
         geometry.matMulPt(point, transformableModel.getInverseAbsolute(edge));
       }
-      var x = point.x,
-          points = edge.items, length = points.length;
-      for (var i = 0; i < length; i++) {
-        if (x < points[i].x)
-          break;
-      }
-      this.model.observableModel.insertElement(edge, 'items', i, point);
+      this.model.observableModel.insertElement(edge, 'items', index, point);
     },
   }
 
@@ -345,6 +339,7 @@ Renderer.prototype.drawItem = function(item, mode) {
       // if (mode == normalMode)
       //   ctx.fill();
       ctx.stroke();
+      // drawKnobby(this, knobbyRadius, item._centroid.x, item._centroid.y);
       break;
   }
   ctx.restore();
@@ -390,13 +385,20 @@ Renderer.prototype.hitTest = function(item, p, tol, mode) {
         hitInfo = { p2: true };
       // Now check the edge segments.
       if (!hitInfo) {
-        var beziers = item._beziers, length = beziers.length;
+        var beziers = item._beziers, length = beziers.length,
+            dMin = Number.MAX_VALUE, iMin = -1;
+        var d = [];
         for (var i = 0; i < length; i++) {
           var b = beziers[i];
-          if (geometry.hitTestCurveSegment(b[0], b[1], b[2], b[3], localP, tol)) {
-            hitInfo = { curve: true, index: i };
-            break;
+          var result = geometry.hitTestCurveSegment(b[0], b[1], b[2], b[3], localP, tol);
+          if (result && result.d < dMin) {
+            d.push(result.d);
+            iMin = i;
+            dMin = result.d;
           }
+        }
+        if (iMin >= 0) {
+          hitInfo = { curve: true, index: iMin };
         }
       }
       break;
@@ -436,6 +438,16 @@ function Editor(model, renderer) {
   this.renderer = renderer;
 
   this.hitTolerance = 8;
+}
+
+Editor.prototype.initialize = function(canvasController) {
+  var model = this.model;
+
+  this.canvasController = canvasController;
+  this.canvas = canvasController.canvas;
+  this.ctx = canvasController.ctx;
+  if (!this.renderer)
+    this.renderer = new Renderer(canvasController.theme);
 
   var palette = this.palette = {
     root: {
@@ -481,14 +493,6 @@ function Editor(model, renderer) {
 
   this.updateGeometry(palette);
   this.updateGeometry(model);
-}
-
-Editor.prototype.initialize = function(canvasController) {
-  this.canvasController = canvasController;
-  this.canvas = canvasController.canvas;
-  this.ctx = canvasController.ctx;
-  if (!this.renderer)
-    this.renderer = new Renderer(canvasController.theme);
 }
 
 Editor.prototype.isPaletteItem = function(item) {
@@ -728,17 +732,6 @@ Editor.prototype.moveItem = function(item, parentDrag) {
   observableModel.changeValue(item, 'y', snapshot.y + parentDrag.y);
 }
 
-// Updates edge based on dx and dy.
-Editor.prototype.updateEdge = function(edge) {
-  var transformableModel = this.model.transformableModel,
-      dx = edge.dx, dy = edge.dy,
-      da = edge.a2 - edge.a1;
-  edge._rotation = Math.atan2(-dy, dx);
-  edge._scale = Math.sqrt(dx * dx + dy * dy);
-  edge._flipped = (da > 0 && da < Math.PI) || (da < 0 && da < -Math.PI);
-  transformableModel.update(edge);
-}
-
 function adjustAngle(angle) {
   var twoPi = Math.PI * 2;
   while (angle < 0)
@@ -919,7 +912,7 @@ Editor.prototype.onEndDrag = function(p) {
         newItem = edge;
       }
       if (newItem.type === 'point') {
-        editingModel.addPoint(newItem, parent);
+        editingModel.addPoint(newItem, parent, hitInfo.index);
       } else {
         editingModel.addItem(newItem, parent);
       }
@@ -963,6 +956,148 @@ Editor.prototype.onEndDrag = function(p) {
 //   }
 // }
 
+// Updates edge based on dx and dy.
+Editor.prototype.updateEdge = function(edge) {
+  var transformableModel = this.model.transformableModel,
+      dx = edge.dx, dy = edge.dy,
+      da = edge.a2 - edge.a1;
+  edge._rotation = Math.atan2(-dy, dx);
+  edge._scale = Math.sqrt(dx * dx + dy * dy);
+  edge._flipped = (da > 0 && da < Math.PI) || (da < 0 && da < -Math.PI);
+  transformableModel.update(edge);
+}
+
+Editor.prototype.updateFreeEdge = function(edge) {
+  this.updateEdge(edge);
+  // Make the control point array for the curve.
+  var cps = edge.items,
+      points = [{ x: 0, y: 0 }, { x: 0, y: 0 }].concat(cps);
+  points.push({ x: 1, y: 0 });
+  points.push({ x: 1, y: 0 });
+  var pLength = points.length,
+      first = points[0], last = points[pLength - 1];
+
+  // Create quadratics at each end that we use to extrapolate first and
+  // last control points so that the curve appears most natural.
+  var q0 = geometry.makeInterpolatingQuadratic(points[3], points[2], points[1]),
+      q1 = geometry.makeInterpolatingQuadratic(
+               points[pLength - 4], points[pLength - 3], points[pLength - 2]),
+      c0 = geometry.evaluateQuadratic(q0, 2),
+      c1 = geometry.evaluateQuadratic(q1, 2);
+  first.x = c0.x;
+  first.y = c0.y;
+  last.x = c1.x;
+  last.y = c1.y;
+  var beziers = geometry.generateInterpolatingBeziers(points);
+  edge._beziers =  beziers;
+}
+
+// Compute length of hull segment (i0, t0, i1, t1)
+// Compute bezier samples
+// length of segment per sample
+// for bezier samples, get hull pt, normal
+// offset
+
+// function offsetPointsFromHull(points, hull, i0, t0, i1, t1) {
+//   var hLength = hull.length,
+//       l0 = hull[i0].length, accum = l0 * t0, d = -accum;
+//   // Get the length of the hull segment.
+//   for (var i = i0; i != i1; ) {
+//     d += hull[i].length;
+//     i++;
+//     if (i == hLength)
+//       i = 0;
+//   }
+//   d += hull[i1].length * t1;
+
+//   var pLength = points.length,
+//       j = i0, hj = hull[i0], lastX = 0;
+//   for (var i = 0; i < pLength; i++) {
+//     var pi = points[i],
+//         dx = pi.x - lastX,
+//         nx = hj.nx, ny = hj.ny,
+//         offset = pi.y,
+//         t = accum / hj.length;
+//     lastX = pi.x;
+//     pi.x = hj.x + t * -ny * hj.length - offset * nx;
+//     pi.y = hj.y + t * nx * hj.length - offset * ny;
+
+//     accum += d * dx;
+//     while (accum > hj.length) {
+//       accum -= hj.length;
+//       j++;
+//       if (j == hLength)
+//         j = 0;
+//       hj = hull[j];
+//     }
+//   }
+// }
+
+function sampleBeziers(beziers, error) {
+  var points = [];
+  beziers.forEach(function(b) {
+    var b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3],
+        approxLength = geometry.pointToPointDist(b0, b1) +
+                       geometry.pointToPointDist(b1, b2) +
+                       geometry.pointToPointDist(b2, b3),
+        subdivisions = approxLength / error;
+    points.push({ x: b0.x, y: b0.y });
+    if (subdivisions > 1) {
+      var dt = 1.0 / subdivisions;
+      for (var t = dt / 2; t < 1.0; t += dt) {
+        points.push(geometry.evaluateBezier(b, t));
+      }
+    }
+  });
+  // Add end point of last bezier.
+  var pLast = beziers[beziers.length - 1][3];
+  points.push({ x: pLast.x, y: pLast.y });
+  return points;
+}
+
+Editor.prototype.updateAttachedEdge = function(edge, parent, attachments) {
+  // Make the control point array for the curve.
+  var cps = edge.items,
+      points = [{ x: 0, y: 0 }, { x: 0, y: 0 }].concat(cps);
+  points.push({ x: 1, y: 0 });
+  points.push({ x: 1, y: 0 });
+  var pLength = points.length,
+      first = points[0], last = points[pLength - 1];
+
+  // Update x, y, dx, and dy for attachment.
+  var hull = parent._path, center = parent._centroid,
+      p1 = geometry.angleToConvexHull(hull, center, edge.a1),
+      p2 = geometry.angleToConvexHull(hull, center, edge.a2);
+  edge.x = p1.x;
+  edge.y = p1.y;
+  edge.dx = p2.x - p1.x;
+  edge.dy = p2.y - p1.y;
+  this.updateEdge(edge);
+  var transformableModel = this.model.transformableModel,
+      inverseLocal = transformableModel.getInverseLocal(edge),
+      flipped = edge._flipped,
+      f = flipped ? 1024 : -1024,  // TODO fix magic number
+      n1 = geometry.matMulPt({ x: p1.x + p1.ny * f, y: p1.y - p1.nx * f }, inverseLocal),
+      n2 = geometry.matMulPt({ x: p2.x - p2.ny * f, y: p2.y + p2.nx * f }, inverseLocal);
+  first.x = n1.x;
+  first.y = n1.y;
+  last.x = n2.x;
+  last.y = n2.y;
+  if (!flipped) {
+    var temp = p1; p1 = p2; p2 = temp;
+  }
+  attachments.push({ item: edge, start: p1.i1, end: p2.i1 });
+
+  var beziers = geometry.generateInterpolatingBeziers(points);
+  edge._beziers =  beziers;
+  var path = sampleBeziers(beziers, 0.01);  // TODO fix magic number
+  var local = transformableModel.getLocal(edge);
+  for (var i = 0; i < path.length; i++)
+    path[i] = geometry.matMulPt(path[i], local);
+  edge._path = path;
+  // edge._extents = geometry.getExtents(edge._path);
+}
+
 // Paths are computed in the local space of the item, translated when combining.
 Editor.prototype.updateGeometry = function(model) {
   var self = this, root = model.root,
@@ -970,28 +1105,6 @@ Editor.prototype.updateGeometry = function(model) {
       transformableModel = model.transformableModel,
       referencingModel = model.referencingModel,
       invalidatingModel = model.invalidatingModel;
-
-  function sampleBeziers(beziers, error) {
-    var points = [];
-    beziers.forEach(function(b) {
-      var b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3],
-          approxLength = geometry.pointToPointDist(b0, b1) +
-                         geometry.pointToPointDist(b1, b2) +
-                         geometry.pointToPointDist(b2, b3),
-          subdivisions = approxLength / error;
-      points.push({ x: b0.x, y: b0.y });
-      if (subdivisions > 1) {
-        var dt = 1.0 / subdivisions;
-        for (var t = dt / 2; t < 1.0; t += dt) {
-          points.push(geometry.evaluateBezier(b, t));
-        }
-      }
-    });
-    // Add end point of last bezier.
-    var pLast = beziers[beziers.length - 1][3];
-    points.push({ x: pLast.x, y: pLast.y });
-    return points;
-  }
 
   function getCentroid(item) {
     var subItems = item.items, count = 0,
@@ -1022,11 +1135,11 @@ Editor.prototype.updateGeometry = function(model) {
   }
 
   // Update paths for primitive hull items and form hulls
-  function pass1(item) {
+  function update(item) {
     if (invalidatingModel.getValid(item))
       return;
+    invalidatingModel.setValid(item, true);
 
-    var path;
     switch (item.type) {
       case 'disk':
         var subdivisions = Math.sqrt(item.scale) * 16,
@@ -1037,7 +1150,14 @@ Editor.prototype.updateGeometry = function(model) {
             y: Math.sin(2 * Math.PI * i / subdivisions),
           });
         }
-        path = points;
+        item._path = points;
+        item._extents = geometry.getExtents(points);
+        break;
+
+      case 'edge':
+        // Attached edges must be updated after their containing hull.
+        if (!item.attached)
+          self.updateFreeEdge(item);
         break;
 
       case 'hull':
@@ -1045,8 +1165,6 @@ Editor.prototype.updateGeometry = function(model) {
         // Transform points from subItems into parent space.
         var points = [], subItems = item.items;
         subItems.forEach(function(subItem) {
-          if (subItem.type == 'edge')
-            invalidatingModel.setValid(subItem, false);
           // HACK for now, only disks contribute to hull.
           if (item.type == 'hull' && subItem.type !== 'disk')
             return;
@@ -1058,105 +1176,34 @@ Editor.prototype.updateGeometry = function(model) {
         });
         if (points.length > 0) {
           var hull = geometry.getConvexHull(points),
-              centroid = getCentroid(item);
-          if (centroid) {
-            geometry.annotateConvexHull(hull, centroid);
-            if (item.type == 'group')
-              geometry.insetConvexHull(hull, -16);
-          }
-        }
-        item._centroid = centroid;
-        item._extents = hull ? geometry.getExtents(hull) : null;
-        item._attachments = []; // Prepare hull for pass2.
-        item._merged = null;
-        path = hull;
-        break;
-    }
-    // Update local bounds if item has a path.
-    if (path) {
-      item._path = path;
-      item._bounds = geometry.getExtents(path);
-    }
-  }
+              extents = geometry.getExtents(hull),
+              centroid = { x: (extents.xmin + extents.xmax) / 2,
+                           y: (extents.ymin + extents.ymax) / 2 };
+          geometry.annotateConvexHull(hull, centroid);
 
-  // Update paths for edges, and trim hulls of attached edges. We have to
-  // project all edges before we can merge them with the hull to form the
-  // final edge.
-  function pass2(item) {
-    if (invalidatingModel.getValid(item))
-      return;
-
-    switch (item.type) {
-      case 'edge':
-        // Make the control point array for the curve.
-        var cps = item.items,
-            points = [{ x: 0, y: 0 }, { x: 0, y: 0 }].concat(cps);
-        points.push({ x: 1, y: 0 });
-        points.push({ x: 1, y: 0 });
-        var pLength = points.length,
-            first = points[0], last = points[pLength - 1];
-
-        if (item.attached) {
-          // Update x, y, dx, and dy for attachment.
-          var parent = hierarchicalModel.getParent(item),
-              hull = parent._path, center = parent._centroid,
-              p1 = geometry.angleToConvexHull(hull, center, item.a1),
-              p2 = geometry.angleToConvexHull(hull, center, item.a2);
-          item.x = p1.x;
-          item.y = p1.y;
-          item.dx = p2.x - p1.x;
-          item.dy = p2.y - p1.y;
-          self.updateEdge(item);
-          var inverseLocal = transformableModel.getInverseLocal(item),
-              flipped = item._flipped,
-              f = flipped ? 1024 : -1024,  // TODO fix magic number
-              n1 = geometry.matMulPt({ x: p1.x + p1.ny * f, y: p1.y - p1.nx * f }, inverseLocal),
-              n2 = geometry.matMulPt({ x: p2.x - p2.ny * f, y: p2.y + p2.nx * f }, inverseLocal);
-          first.x = n1.x;
-          first.y = n1.y;
-          last.x = n2.x;
-          last.y = n2.y;
-          if (flipped)
-            parent._attachments.push({ item: item, start: p1.i1, end: p2.i1 });
-          else
-            parent._attachments.push({ item: item, start: p2.i1, end: p1.i1 });
+          if (item.type == 'group')
+            geometry.insetConvexHull(hull, -16);
         } else {
-          self.updateEdge(item);
-          // Create quadratics at each end that we use to extrapolate first and
-          // last control points so that the curve appears most natural.
-          var q0 = geometry.makeInterpolatingQuadratic(points[3], points[2], points[1]),
-              q1 = geometry.makeInterpolatingQuadratic(
-                       points[pLength - 4], points[pLength - 3], points[pLength - 2]),
-              c0 = geometry.evaluateQuadratic(q0, 2),
-              c1 = geometry.evaluateQuadratic(q1, 2);
-          first.x = c0.x;
-          first.y = c0.y;
-          last.x = c1.x;
-          last.y = c1.y;
+          // Empty group or hull.
+          return;
         }
-        var beziers = geometry.generateInterpolatingBeziers(points);
-        item._beziers =  beziers;
-        var path = sampleBeziers(beziers, 0.01);  // TODO fix magic number
-        // If the item is attached, transform into parent's coordinates.
-        if (item.attached) {
-          var local = transformableModel.getLocal(item);
-          for (var i = 0; i < path.length; i++)
-            path[i] = geometry.matMulPt(path[i], local);
-        }
-        item._path = path;
-        // item._bounds = geometry.getExtents(item._path);
-        break;
-    }
-  }
 
-  function pass3(item) {
-    if (invalidatingModel.getValid(item))
-      return;
+        item._path = hull;
+        item._extents = extents;
+        item._centroid = centroid;
 
-    switch (item.type) {
-      case 'hull':
+        var attachments = [];
+        subItems.forEach(function(subItem) {
+          if (subItem.type == 'edge') {
+            if (!subItem.attached)
+              return;
+            self.updateAttachedEdge(subItem, item, attachments);
+          }
+        });
+
+        item._merged = null;
+
         var path = item._path, pLength = path.length;
-        var attachments = item._attachments;
         if (attachments.length === 0)
           break;
 
@@ -1202,11 +1249,7 @@ Editor.prototype.updateGeometry = function(model) {
     }
   }
 
-  reverseVisit(root, pass1);
-  visit(root, pass2);
-  visit(root, pass3);
-
-  invalidatingModel.reset();
+  reverseVisit(root, update);
 }
 
 Editor.prototype.exportPaths = function(item) {
