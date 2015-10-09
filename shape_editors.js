@@ -146,6 +146,7 @@ var editingModel = (function() {
     addPoint: function(point, edge, index) {
       var model = this.model, hierarchicalModel = model.hierarchicalModel,
           oldParent = hierarchicalModel.getParent(point);
+      // Move 'point' into 'edge' local space.
       if (oldParent !== parent) {
         var transformableModel = model.transformableModel;
         if (oldParent) {
@@ -339,7 +340,7 @@ Renderer.prototype.drawItem = function(item, mode) {
       // if (mode == normalMode)
       //   ctx.fill();
       ctx.stroke();
-      // drawKnobby(this, knobbyRadius, item._centroid.x, item._centroid.y);
+      drawKnobby(this, knobbyRadius, item._centroid.x, item._centroid.y);
       break;
   }
   ctx.restore();
@@ -516,8 +517,6 @@ Editor.prototype.draw = function() {
   var renderer = this.renderer, model = this.model, ctx = this.ctx,
       palette = this.palette,
       canvasController = this.canvasController;
-
-  this.updateGeometry(model);
 
   renderer.beginDraw(model, ctx);
   canvasController.applyTransform();
@@ -732,6 +731,34 @@ Editor.prototype.moveItem = function(item, parentDrag) {
   observableModel.changeValue(item, 'y', snapshot.y + parentDrag.y);
 }
 
+function getCentroid(item) {
+  var subItems = item.items, count = 0,
+      centroid;
+  // Calculate centroid from items.
+  subItems.forEach(function(item) {
+    var c = item._centroid;
+    if (!c && item.type == 'disk')
+      c = item;
+    if (c) {
+      count++;
+      if (centroid) {
+        centroid.x += c.x;
+        centroid.y += c.y;
+      } else {
+        centroid = {
+          x: c.x,
+          y: c.y,
+        }
+      }
+    }
+  });
+  if (count) {
+    centroid.x /= count;
+    centroid.y /= count;
+  }
+  return centroid;
+}
+
 function adjustAngle(angle) {
   var twoPi = Math.PI * 2;
   while (angle < 0)
@@ -773,6 +800,20 @@ Editor.prototype.onDrag = function(p0, p) {
         // Find container underneath item for hot tracking.
         hitInfo = this.getFirstUnselectedContainerHit(hitList, dragItem);
       }
+      // Update centroids of hulls that are now invalid.
+      var invalidatingModel = model.invalidatingModel;
+
+      function update(item) {
+        if (isHull(item) && !invalidatingModel.isValid(item)) {
+          var centroid = getCentroid(item),
+          oldCx = item.cx || 0, oldCy = item.cy || 0;
+          if (centroid.x != oldCx)
+            observableModel.changeValue(item, 'cx', centroid.x);
+          if (centroid.y != oldCy)
+            observableModel.changeValue(item, 'cy', centroid.y);
+        }
+      }
+      visit(model.root, update);
       break;
 
     case 'resizeDisk':
@@ -848,6 +889,7 @@ Editor.prototype.onDrag = function(p0, p) {
       break;
   }
   this.hotTrackInfo = (hitInfo && hitInfo.item !== this.board) ? hitInfo : null;
+  this.updateGeometry(model);
 }
 
 Editor.prototype.onEndDrag = function(p) {
@@ -912,7 +954,8 @@ Editor.prototype.onEndDrag = function(p) {
         newItem = edge;
       }
       if (newItem.type === 'point') {
-        editingModel.addPoint(newItem, parent, hitInfo.index);
+        var index = hitInfo.p1 ? 0 : hitInfo.p2 ? parent.items.length : hitInfo.index;
+        editingModel.addPoint(newItem, parent, index);
       } else {
         editingModel.addItem(newItem, parent);
       }
@@ -940,6 +983,8 @@ Editor.prototype.onEndDrag = function(p) {
   this.drag = null;
   this.mouseHitInfo = null;
   this.hotTrackInfo = null;
+
+  this.updateGeometry(model);
 }
 
 // // Calculate auto-rotation using parent hull.
@@ -1055,6 +1100,21 @@ function sampleBeziers(beziers, error) {
   return points;
 }
 
+function visitHullSegments(hull, segments, segFn) {
+  var length = segments.length;
+  if (!length) {
+    segFn(0, hull.length - 1, false);
+  } else {
+    var startI = segments[length - 1].i1;
+    for (var i = 0; i < length; i++) {
+      var segI = segments[i];
+      segFn(startI, segI.i0, false);
+      segFn(segI.i0, segI.i1, true);
+      startI = segI.i1;
+    }
+  }
+}
+
 Editor.prototype.updateAttachedEdge = function(edge, parent, attachments) {
   // Make the control point array for the curve.
   var cps = edge.items,
@@ -1106,37 +1166,9 @@ Editor.prototype.updateGeometry = function(model) {
       referencingModel = model.referencingModel,
       invalidatingModel = model.invalidatingModel;
 
-  function getCentroid(item) {
-    var subItems = item.items, count = 0,
-        centroid;
-    // Calculate centroid from items.
-    subItems.forEach(function(item) {
-      var c = item._centroid;
-      if (!c && item.type == 'disk')
-        c = item;
-      if (c) {
-        count++;
-        if (centroid) {
-          centroid.x += c.x;
-          centroid.y += c.y;
-        } else {
-          centroid = {
-            x: c.x,
-            y: c.y,
-          }
-        }
-      }
-    });
-    if (count) {
-      centroid.x /= count;
-      centroid.y /= count;
-    }
-    return centroid;
-  }
-
   // Update paths for primitive hull items and form hulls
   function update(item) {
-    if (invalidatingModel.getValid(item))
+    if (invalidatingModel.isValid(item))
       return;
     invalidatingModel.setValid(item, true);
 
@@ -1171,15 +1203,23 @@ Editor.prototype.updateGeometry = function(model) {
           var path = subItem._path;
           var localTransform = transformableModel.getLocal(subItem);
           path.forEach(function(p) {
-            points.push(geometry.matMulPtNew(p, localTransform));
+            var localP = geometry.matMulPtNew(p, localTransform);
+            localP.item = subItem;
+            points.push(localP);
           });
         });
         if (points.length > 0) {
           var hull = geometry.getConvexHull(points),
+              segments = [],
               extents = geometry.getExtents(hull),
               centroid = { x: (extents.xmin + extents.xmax) / 2,
                            y: (extents.ymin + extents.ymax) / 2 };
+          centroid = { x: 0, y: 0 };
           geometry.annotateConvexHull(hull, centroid);
+          geometry.visitHullEdges(hull, function(p0, p1, i0, i1) {
+            if (p0.item != p1.item)
+              segments.push({ i0: i0, i1: i1 });
+          });
 
           if (item.type == 'group')
             geometry.insetConvexHull(hull, -16);
@@ -1189,6 +1229,10 @@ Editor.prototype.updateGeometry = function(model) {
         }
 
         item._path = hull;
+        item._segments = segments;
+        // visitHullSegments(hull, segments, function(i0, i1, breaks) {
+        //   console.log(i0, i1, breaks);
+        // });
         item._extents = extents;
         item._centroid = centroid;
 
@@ -1295,51 +1339,55 @@ Editor.prototype.onKeyDown = function(e) {
       transactionHistory = model.transactionHistory,
       keyCode = e.keyCode,
       cmdKey = e.ctrlKey || e.metaKey,
-      shiftKey = e.shiftKey;
+      shiftKey = e.shiftKey,
+      handled = false;
 
   if (keyCode == 8) {  // 'delete'
     editingModel.doDelete();
-    return true;
-  }
-  if (cmdKey) {
+    handled = true;
+  } else if (cmdKey) {
     switch (keyCode) {
       case 65:  // 'a'
         board.items.forEach(function(v) {
           selectionModel.add(v);
         });
-        return true;
+        handled = true;
+        break;
       case 90:  // 'z'
         if (transactionHistory.getUndo()) {
           selectionModel.clear();
           transactionHistory.undo();
-          return true;
+          handled = true;
         }
-        return false;
+        break;
       case 89:  // 'y'
         if (transactionHistory.getRedo()) {
           selectionModel.clear();
           transactionHistory.redo();
-          return true;
+          handled = true;
         }
-        return false;
+        break;
       case 88:  // 'x'
         editingModel.doCut();
-        return true;
+        handled = true;
+        break;
       case 67:  // 'c'
         editingModel.doCopy();
-        return true;
+        handled = true;
+        break;
       case 86:  // 'v'
         if (editingModel.getScrap()) {
           editingModel.doPaste();
-          return true;
+          handled = true;
         }
-        return false;
+        break;
       case 69:  // 'e'
         var pathData = this.exportPaths(board);
         var text = JSON.stringify(pathData, null, 2);
         // Writes path data as JSON to console.
         console.log(text);
-        return true;
+        handled = true;
+        break;
       case 83:  // 's'
         var text = JSON.stringify(
           board,
@@ -1353,9 +1401,13 @@ Editor.prototype.onKeyDown = function(e) {
           2);
         // Writes board as JSON to console.
         console.log(text);
-        return true;
+        handled = true;
+        break;
     }
   }
+
+  this.updateGeometry(model);
+  return handled;
 }
 
 return {
@@ -1366,392 +1418,398 @@ return {
 })();
 
 
-
 var shape_data = {
   "type": "board",
   "x": 0,
   "y": 0,
   "id": 153,
-  "items": [
-    {
-      "type": "hull",
-      "x": 480.2124748491592,
-      "y": 441.31822494301855,
-      "items": [
-        {
-          "type": "disk",
-          "x": -156.31478543097683,
-          "y": -286.3908062031094,
-          "scale": 139.92260819176386,
-          "id": 181
-        },
-        {
-          "type": "disk",
-          "x": -253.64863947626174,
-          "y": 429.32557059934396,
-          "scale": 16,
-          "id": 183
-        },
-        {
-          "type": "disk",
-          "x": 247.5219337773098,
-          "y": 432.79392975105844,
-          "scale": 16,
-          "id": 184
-        },
-        {
-          "type": "disk",
-          "x": 203.64283211451658,
-          "y": -313.1867376213238,
-          "scale": 66.90411048657579,
-          "id": 185
-        },
-        {
-          "type": "hull",
-          "x": -58.01131188742505,
-          "y": 13.825032454571897,
-          "rotation": 0.5053386521302267,
-          "items": [
-            {
-              "type": "disk",
-              "x": 6,
-              "y": -7,
-              "scale": 16,
-              "id": 210
-            },
-            {
-              "type": "disk",
-              "x": -48,
-              "y": -36,
-              "scale": 34.04715277226595,
-              "id": 211
-            },
-            {
-              "type": "disk",
-              "x": 22.27723102448806,
-              "y": -80.38363918347522,
-              "scale": 16,
-              "id": 212
-            }
-          ],
-          "id": 213
-        },
-        {
-          "type": "hull",
-          "x": 30.522957811180788,
-          "y": -274.38208002274524,
-          "items": [
-            {
-              "type": "disk",
-              "x": 1.0591567279294054,
-              "y": 9.714062075191123,
-              "scale": 39.505914005112075,
-              "id": 224
-            }
-          ],
-          "id": 225
-        },
-        {
-          "type": "hull",
-          "x": 145.35038687458473,
-          "y": -225.04769653162586,
-          "items": [
-            {
-              "type": "disk",
-              "x": -2.6864846531382227,
-              "y": -3.6858898297738847,
-              "scale": 40.23684148848271,
-              "id": 222
-            }
-          ],
-          "id": 223
-        },
-        {
-          "type": "hull",
-          "x": 36.75786752824001,
-          "y": -126.59047899094017,
-          "items": [
-            {
-              "type": "disk",
-              "x": 6.209026467187698,
-              "y": -12.464737708126393,
-              "scale": 40.23684148848271,
-              "id": 220
-            }
-          ],
-          "id": 221,
-          "rotation": -0.2890831021546629
-        },
-        {
-          "type": "hull",
-          "x": 147.78896984980156,
-          "y": -100.57958647152671,
-          "items": [
-            {
-              "type": "disk",
-              "x": 1.4390396526332552,
-              "y": -12.710848007366963,
-              "scale": 40.23684148848271,
-              "id": 218
-            }
-          ],
-          "id": 219
-        },
-        {
-          "type": "hull",
-          "x": -67.28823528551425,
-          "y": 212.3011032135555,
-          "items": [
-            {
-              "type": "disk",
-              "x": -64.55052450536971,
-              "y": 0.7278211520033437,
-              "scale": 18.161224791664853,
-              "id": 214
-            },
-            {
-              "type": "disk",
-              "x": 1.0590049742303904,
-              "y": -18.671576008170803,
-              "scale": 25.475244635370935,
-              "id": 215
-            },
-            {
-              "type": "disk",
-              "x": 46.44947549463029,
-              "y": 26.727821152003344,
-              "scale": 16,
-              "id": 216
-            }
-          ],
-          "id": 217
-        },
-        {
-          "type": "hull",
-          "x": 163.70496685814476,
-          "y": 169.16088137219577,
-          "items": [
-            {
-              "type": "disk",
-              "x": -112,
-              "y": 0,
-              "scale": 16,
-              "id": 206
-            },
-            {
-              "type": "disk",
-              "x": -48,
-              "y": -36,
-              "scale": 34.04715277226595,
-              "id": 207
-            },
-            {
-              "type": "disk",
-              "x": -29.750868624734267,
-              "y": -140.5005790831562,
-              "scale": 16,
-              "id": 208
-            }
-          ],
-          "id": 209
-        },
-        {
-          "type": "hull",
-          "x": -182.95132747621312,
-          "y": -300.83375183392,
-          "items": [
-            {
-              "type": "disk",
-              "x": 2.4499156637059514,
-              "y": 0.9799662654823464,
-              "scale": 9.929778600166998,
-              "id": 226
-            },
-            {
-              "type": "disk",
-              "x": 2.407409674665587,
-              "y": 81.85192893863245,
-              "scale": 10.333627809386586,
-              "id": 228
-            }
-          ],
-          "id": 227
-        },
-        {
-          "type": "hull",
-          "x": -123.66336841453142,
-          "y": -321.4130434090492,
-          "items": [
-            {
-              "type": "disk",
-              "x": 2.4499156637059514,
-              "y": 0.9799662654823464,
-              "scale": 9.929778600166998,
-              "id": 232
-            },
-            {
-              "type": "disk",
-              "x": 2.407409674665587,
-              "y": 81.85192893863245,
-              "scale": 10.333627809386586,
-              "id": 233
-            }
-          ],
-          "id": 234
-        },
-        {
-          "type": "hull",
-          "x": -65.84535875107315,
-          "y": -338.07246992224907,
-          "items": [
-            {
-              "type": "disk",
-              "x": 2.4499156637059514,
-              "y": 0.9799662654823464,
-              "scale": 9.929778600166998,
-              "id": 235
-            },
-            {
-              "type": "disk",
-              "x": 2.407409674665587,
-              "y": 81.85192893863245,
-              "scale": 10.333627809386586,
-              "id": 236
-            }
-          ],
-          "id": 237
-        },
-        {
-          "type": "disk",
-          "x": -228.7961837282378,
-          "y": -144.14306449748278,
-          "scale": 85.98177053809061,
-          "id": 239
-        },
-        {
-          "type": "hull",
-          "x": -97.98277525938909,
-          "y": 374.481135107979,
-          "items": [
-            {
-              "type": "disk",
-              "x": 40.76144937840979,
-              "y": 16.902619979964015,
-              "scale": 7.317260635772668,
-              "id": 247
-            },
-            {
-              "type": "disk",
-              "x": -14.686604372139072,
-              "y": -7.215555194286196,
-              "scale": 16.638179481930923,
-              "id": 250
-            }
-          ],
-          "id": 248
-        },
-        {
-          "type": "hull",
-          "x": 104.21134325766923,
-          "y": 365.71638066903546,
-          "items": [
-            {
-              "type": "disk",
-              "x": -55.209515158474346,
-              "y": 28.298840462272892,
-              "scale": 7.317260635772668,
-              "id": 254
-            },
-            {
-              "type": "disk",
-              "x": -0.20760179262651945,
-              "y": 0.02394609547008031,
-              "scale": 16.638179481930923,
-              "id": 255
-            }
-          ],
-          "id": 256
-        },
-        {
-          "type": "disk",
-          "x": -190.2059411651818,
-          "y": 468.9282907628569,
-          "scale": 16,
-          "id": 257
-        },
-        {
-          "type": "edge",
-          "x": -265.61852241251705,
-          "y": -373.739584676665,
-          "dx": -44.13540775678291,
-          "dy": 296.43224823320054,
-          "items": [
-            {
-              "type": "point",
-              "x": 0.7360075600735081,
-              "y": -0.19009103337667266
-            }
-          ],
-          "attached": true,
-          "a1": 2.1033102491779037,
-          "a2": 2.7682492410764343
-        },
-        {
-          "type": "edge",
-          "x": -308.1496203241887,
-          "y": -57.01702337199282,
-          "dx": 29.224085113227318,
-          "dy": 369.6080517000016,
-          "items": [
-            {
-              "type": "point",
-              "x": 0.2153189624859957,
-              "y": -0.11924854388815925
-            }
-          ],
-          "id": 265,
-          "attached": true,
-          "a1": 2.829885403585282,
-          "a2": 3.9735472003644925
-        },
-        {
-          "type": "edge",
-          "x": 177.6893456922686,
-          "y": 14.25402101185773,
-          "dx": -117,
-          "dy": 210,
-          "items": [
-            {
-              "type": "point",
-              "x": 0.6258185336548361,
-              "y": -0.2993705141268176
-            }
-          ],
-          "id": 268
-        },
-        {
-          "type": "edge",
-          "x": 187.77126595249013,
-          "y": -298.2086279348582,
-          "dx": 28,
-          "dy": 750,
-          "items": [
-            {
-              "type": "point",
-              "x": 0.03608149637667418,
-              "y": -0.02439579618317711,
-              "id": 262
-            },
-            {
-              "type": "point",
-              "x": 0.10719113215820592,
-              "y": -0.04351068776204081
-            }
-          ],
-          "id": 260
-        }
-      ],
-      "id": 182
-    }
-  ]
+  "items": []
 }
+// var shape_data = {
+//   "type": "board",
+//   "x": 0,
+//   "y": 0,
+//   "id": 153,
+//   "items": [
+//     {
+//       "type": "hull",
+//       "x": 480.2124748491592,
+//       "y": 441.31822494301855,
+//       "items": [
+//         {
+//           "type": "disk",
+//           "x": -156.31478543097683,
+//           "y": -286.3908062031094,
+//           "scale": 139.92260819176386,
+//           "id": 181
+//         },
+//         {
+//           "type": "disk",
+//           "x": -253.64863947626174,
+//           "y": 429.32557059934396,
+//           "scale": 16,
+//           "id": 183
+//         },
+//         {
+//           "type": "disk",
+//           "x": 247.5219337773098,
+//           "y": 432.79392975105844,
+//           "scale": 16,
+//           "id": 184
+//         },
+//         {
+//           "type": "disk",
+//           "x": 203.64283211451658,
+//           "y": -313.1867376213238,
+//           "scale": 66.90411048657579,
+//           "id": 185
+//         },
+//         {
+//           "type": "hull",
+//           "x": -58.01131188742505,
+//           "y": 13.825032454571897,
+//           "rotation": 0.5053386521302267,
+//           "items": [
+//             {
+//               "type": "disk",
+//               "x": 6,
+//               "y": -7,
+//               "scale": 16,
+//               "id": 210
+//             },
+//             {
+//               "type": "disk",
+//               "x": -48,
+//               "y": -36,
+//               "scale": 34.04715277226595,
+//               "id": 211
+//             },
+//             {
+//               "type": "disk",
+//               "x": 22.27723102448806,
+//               "y": -80.38363918347522,
+//               "scale": 16,
+//               "id": 212
+//             }
+//           ],
+//           "id": 213
+//         },
+//         {
+//           "type": "hull",
+//           "x": 30.522957811180788,
+//           "y": -274.38208002274524,
+//           "items": [
+//             {
+//               "type": "disk",
+//               "x": 1.0591567279294054,
+//               "y": 9.714062075191123,
+//               "scale": 39.505914005112075,
+//               "id": 224
+//             }
+//           ],
+//           "id": 225
+//         },
+//         {
+//           "type": "hull",
+//           "x": 145.35038687458473,
+//           "y": -225.04769653162586,
+//           "items": [
+//             {
+//               "type": "disk",
+//               "x": -2.6864846531382227,
+//               "y": -3.6858898297738847,
+//               "scale": 40.23684148848271,
+//               "id": 222
+//             }
+//           ],
+//           "id": 223
+//         },
+//         {
+//           "type": "hull",
+//           "x": 36.75786752824001,
+//           "y": -126.59047899094017,
+//           "items": [
+//             {
+//               "type": "disk",
+//               "x": 6.209026467187698,
+//               "y": -12.464737708126393,
+//               "scale": 40.23684148848271,
+//               "id": 220
+//             }
+//           ],
+//           "id": 221,
+//           "rotation": -0.2890831021546629
+//         },
+//         {
+//           "type": "hull",
+//           "x": 147.78896984980156,
+//           "y": -100.57958647152671,
+//           "items": [
+//             {
+//               "type": "disk",
+//               "x": 1.4390396526332552,
+//               "y": -12.710848007366963,
+//               "scale": 40.23684148848271,
+//               "id": 218
+//             }
+//           ],
+//           "id": 219
+//         },
+//         {
+//           "type": "hull",
+//           "x": -67.28823528551425,
+//           "y": 212.3011032135555,
+//           "items": [
+//             {
+//               "type": "disk",
+//               "x": -64.55052450536971,
+//               "y": 0.7278211520033437,
+//               "scale": 18.161224791664853,
+//               "id": 214
+//             },
+//             {
+//               "type": "disk",
+//               "x": 1.0590049742303904,
+//               "y": -18.671576008170803,
+//               "scale": 25.475244635370935,
+//               "id": 215
+//             },
+//             {
+//               "type": "disk",
+//               "x": 46.44947549463029,
+//               "y": 26.727821152003344,
+//               "scale": 16,
+//               "id": 216
+//             }
+//           ],
+//           "id": 217
+//         },
+//         {
+//           "type": "hull",
+//           "x": 163.70496685814476,
+//           "y": 169.16088137219577,
+//           "items": [
+//             {
+//               "type": "disk",
+//               "x": -112,
+//               "y": 0,
+//               "scale": 16,
+//               "id": 206
+//             },
+//             {
+//               "type": "disk",
+//               "x": -48,
+//               "y": -36,
+//               "scale": 34.04715277226595,
+//               "id": 207
+//             },
+//             {
+//               "type": "disk",
+//               "x": -29.750868624734267,
+//               "y": -140.5005790831562,
+//               "scale": 16,
+//               "id": 208
+//             }
+//           ],
+//           "id": 209
+//         },
+//         {
+//           "type": "hull",
+//           "x": -182.95132747621312,
+//           "y": -300.83375183392,
+//           "items": [
+//             {
+//               "type": "disk",
+//               "x": 2.4499156637059514,
+//               "y": 0.9799662654823464,
+//               "scale": 9.929778600166998,
+//               "id": 226
+//             },
+//             {
+//               "type": "disk",
+//               "x": 2.407409674665587,
+//               "y": 81.85192893863245,
+//               "scale": 10.333627809386586,
+//               "id": 228
+//             }
+//           ],
+//           "id": 227
+//         },
+//         {
+//           "type": "hull",
+//           "x": -123.66336841453142,
+//           "y": -321.4130434090492,
+//           "items": [
+//             {
+//               "type": "disk",
+//               "x": 2.4499156637059514,
+//               "y": 0.9799662654823464,
+//               "scale": 9.929778600166998,
+//               "id": 232
+//             },
+//             {
+//               "type": "disk",
+//               "x": 2.407409674665587,
+//               "y": 81.85192893863245,
+//               "scale": 10.333627809386586,
+//               "id": 233
+//             }
+//           ],
+//           "id": 234
+//         },
+//         {
+//           "type": "hull",
+//           "x": -65.84535875107315,
+//           "y": -338.07246992224907,
+//           "items": [
+//             {
+//               "type": "disk",
+//               "x": 2.4499156637059514,
+//               "y": 0.9799662654823464,
+//               "scale": 9.929778600166998,
+//               "id": 235
+//             },
+//             {
+//               "type": "disk",
+//               "x": 2.407409674665587,
+//               "y": 81.85192893863245,
+//               "scale": 10.333627809386586,
+//               "id": 236
+//             }
+//           ],
+//           "id": 237
+//         },
+//         {
+//           "type": "disk",
+//           "x": -228.7961837282378,
+//           "y": -144.14306449748278,
+//           "scale": 85.98177053809061,
+//           "id": 239
+//         },
+//         {
+//           "type": "hull",
+//           "x": -97.98277525938909,
+//           "y": 374.481135107979,
+//           "items": [
+//             {
+//               "type": "disk",
+//               "x": 40.76144937840979,
+//               "y": 16.902619979964015,
+//               "scale": 7.317260635772668,
+//               "id": 247
+//             },
+//             {
+//               "type": "disk",
+//               "x": -14.686604372139072,
+//               "y": -7.215555194286196,
+//               "scale": 16.638179481930923,
+//               "id": 250
+//             }
+//           ],
+//           "id": 248
+//         },
+//         {
+//           "type": "hull",
+//           "x": 104.21134325766923,
+//           "y": 365.71638066903546,
+//           "items": [
+//             {
+//               "type": "disk",
+//               "x": -55.209515158474346,
+//               "y": 28.298840462272892,
+//               "scale": 7.317260635772668,
+//               "id": 254
+//             },
+//             {
+//               "type": "disk",
+//               "x": -0.20760179262651945,
+//               "y": 0.02394609547008031,
+//               "scale": 16.638179481930923,
+//               "id": 255
+//             }
+//           ],
+//           "id": 256
+//         },
+//         {
+//           "type": "disk",
+//           "x": -190.2059411651818,
+//           "y": 468.9282907628569,
+//           "scale": 16,
+//           "id": 257
+//         },
+//         {
+//           "type": "edge",
+//           "x": -265.61852241251705,
+//           "y": -373.739584676665,
+//           "dx": -44.13540775678291,
+//           "dy": 296.43224823320054,
+//           "items": [
+//             {
+//               "type": "point",
+//               "x": 0.7360075600735081,
+//               "y": -0.19009103337667266
+//             }
+//           ],
+//           "attached": true,
+//           "a1": 2.1033102491779037,
+//           "a2": 2.7682492410764343
+//         },
+//         {
+//           "type": "edge",
+//           "x": -308.1496203241887,
+//           "y": -57.01702337199282,
+//           "dx": 29.224085113227318,
+//           "dy": 369.6080517000016,
+//           "items": [
+//             {
+//               "type": "point",
+//               "x": 0.2153189624859957,
+//               "y": -0.11924854388815925
+//             }
+//           ],
+//           "id": 265,
+//           "attached": true,
+//           "a1": 2.829885403585282,
+//           "a2": 3.9735472003644925
+//         },
+//         {
+//           "type": "edge",
+//           "x": 177.6893456922686,
+//           "y": 14.25402101185773,
+//           "dx": -117,
+//           "dy": 210,
+//           "items": [
+//             {
+//               "type": "point",
+//               "x": 0.6258185336548361,
+//               "y": -0.2993705141268176
+//             }
+//           ],
+//           "id": 268
+//         },
+//         {
+//           "type": "edge",
+//           "x": 187.77126595249013,
+//           "y": -298.2086279348582,
+//           "dx": 28,
+//           "dy": 750,
+//           "items": [
+//             {
+//               "type": "point",
+//               "x": 0.03608149637667418,
+//               "y": -0.02439579618317711,
+//               "id": 262
+//             },
+//             {
+//               "type": "point",
+//               "x": 0.10719113215820592,
+//               "y": -0.04351068776204081
+//             }
+//           ],
+//           "id": 260
+//         }
+//       ],
+//       "id": 182
+//     }
+//   ]
+// }

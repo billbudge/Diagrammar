@@ -1253,8 +1253,8 @@ var dependencyModel = (function () {
 // in an 'invalid' state until reset() is called.
 var invalidatingModel = (function () {
   var proto = {
-    getValid: function(item) {
-      return item._valid;
+    isValid: function(item) {
+      return !!item._valid;
     },
     setValid: function (item, valid) {
       item._valid = valid;

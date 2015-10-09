@@ -359,13 +359,30 @@ var geometry = (function() {
   }
 
   function visitHullEdges(hull, edgeFn) {
-    var length = hull.length, lastI = length - 1, lastP = hull[lastI];
-    for (var i = 0; i < length; i++) {
-      var pi = hull[i];
-      edgeFn(lastP, pi, lastI, i);
-      lastI = i;
-      lastP = pi;
+    var length = hull.length, i0 = length - 1, p0 = hull[i0];
+    for (var i1 = 0; i1 < length; i1++) {
+      var p1 = hull[i1];
+      edgeFn(p0, p1, i0, i1);
+      i0 = i1;
+      p0 = p1;
     }
+  }
+
+  // Rotates an array right so that the k-th element becomes the first.
+  function rotateArray(a, k) {
+    function reverse(a, i0, i1) {
+      while (i0 < i1) {
+        var temp = a[i0];
+        a[i0] = a[i1];
+        a[i1] = temp;
+        i0++;
+        i1--;
+      }
+    }
+    var length = a.length;
+    reverse(a, 0, k - 1);
+    reverse(a, k, length - 1);
+    reverse(a, 0, length - 1);
   }
 
   // Annotates the convex hull points with the following useful infomation:
@@ -374,7 +391,7 @@ var geometry = (function() {
   // 3) nx, ny: the normal of the edge starting at p[i].
   // Sorts the hull by angle to speed up angle-to-hull calculations.
   function annotateConvexHull(hull, c) {
-    var cx = c.x, cy = c.y, minAngle = -1, minI;
+    var cx = c.x, cy = c.y, minAngle = Number.MAX_VALUE, minI;
     hull.forEach(function(p, i) {
       var angle = getAngle(p.x - cx, p.y - cy);
       p.angle = angle;
@@ -383,7 +400,6 @@ var geometry = (function() {
         minI = i;
       }
     });
-    hull.sort(compareAngles); // TODO should be able to rotate array
     visitHullEdges(hull, function(p0, p1, i0, i1) {
       var dx = p1.x - p0.x, dy = p1.y - p0.y,
           length = Math.sqrt(dx * dx + dy * dy),
@@ -392,6 +408,8 @@ var geometry = (function() {
       p0.nx = dy * ooLength;
       p0.ny = -dx * ooLength;
     });
+    // The hull points only need rotation to be sorted by angle.
+    rotateArray(hull, minI);
   }
 
   // Determines if point is within tolerance of being inside the convex hull.
