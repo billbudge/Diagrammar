@@ -340,7 +340,7 @@ Renderer.prototype.drawItem = function(item, mode) {
       // if (mode == normalMode)
       //   ctx.fill();
       ctx.stroke();
-      drawKnobby(this, knobbyRadius, item._centroid.x, item._centroid.y);
+      drawKnobby(this, knobbyRadius, item.cx, item.cy);
       break;
   }
   ctx.restore();
@@ -683,7 +683,9 @@ Editor.prototype.onBeginDrag = function(p0) {
   if (drag) {
     if (drag.type === 'moveSelection')
       model.editingModel.reduceSelection();
+
     model.transactionModel.beginTransaction(drag.name);
+
     if (newItem) {
       drag.item = newItem;
       model.dataModel.initialize(newItem);
@@ -717,9 +719,9 @@ Editor.prototype.projectToParentHull = function(item, p) {
   var model = this.model,
       parent = model.hierarchicalModel.getParent(item);
   if (parent && parent.type == 'hull') {
-    var centroid = parent._centroid, hull = parent._path,
+    var hull = parent._path,
         pProj = geometry.projectPointToConvexHull(hull, p),
-        angle = geometry.getAngle(pProj.x - centroid.x, pProj.y - centroid.y);
+        angle = geometry.getAngle(pProj.x - parent.cx, pProj.y - parent.cy);
     return angle;
   }
 }
@@ -735,20 +737,17 @@ function getCentroid(item) {
   var subItems = item.items, count = 0,
       centroid;
   // Calculate centroid from items.
-  subItems.forEach(function(item) {
-    var c = item._centroid;
-    if (!c && item.type == 'disk')
-      c = item;
-    if (c) {
-      count++;
-      if (centroid) {
-        centroid.x += c.x;
-        centroid.y += c.y;
-      } else {
-        centroid = {
-          x: c.x,
-          y: c.y,
-        }
+  subItems.forEach(function(subItem) {
+    if (subItem.type != 'disk')
+      return;
+    count++;
+    if (centroid) {
+      centroid.x += subItem.x;
+      centroid.y += subItem.y;
+    } else {
+      centroid = {
+        x: subItem.x,
+        y: subItem.y,
       }
     }
   });
@@ -768,6 +767,36 @@ function adjustAngle(angle) {
   return angle;
 }
 
+Editor.prototype.updateAttachedEdgePositions = function(edge) {
+  var model = this.model,
+      observableModel = model.observableModel,
+      hierarchicalModel = model.hierarchicalModel,
+      parent = hierarchicalModel.getParent(edge),
+      hull = parent._path, center = { x: parent.cx, y: parent.cy },
+      p1 = geometry.angleToConvexHull(hull, center, edge._a1),
+      p2 = geometry.angleToConvexHull(hull, center, edge._a2),
+      dx = p2.x - p1.x,
+      dy = p2.y - p1.y;
+  if (Math.abs(edge.x - p1.x) > 0.000001)
+    observableModel.changeValue(edge, 'x', p1.x);
+  if (Math.abs(edge.y - p1.y) > 0.000001)
+    observableModel.changeValue(edge, 'y', p1.y);
+  if (Math.abs(edge.dx - dx) > 0.000001)
+    observableModel.changeValue(edge, 'dx', dx);
+  if (Math.abs(edge.dy - dy) > 0.000001)
+    observableModel.changeValue(edge, 'dy', dy);
+}
+
+Editor.prototype.updateAttachedEdgeAngles = function(edge) {
+  var a1 = this.projectToParentHull(edge, edge),
+      a2 = this.projectToParentHull(edge, { x: edge.x + edge.dx, y: edge.y + edge.dy }),
+      da = a2 - a1,
+      flipped = (da > 0 && da < Math.PI) || (da < 0 && da < -Math.PI);
+  edge._a1 = a1;
+  edge._a2 = a2;
+  edge._flipped = flipped;
+}
+
 Editor.prototype.onDrag = function(p0, p) {
   var self = this,
       drag = this.drag,
@@ -775,6 +804,7 @@ Editor.prototype.onDrag = function(p0, p) {
       model = this.model,
       observableModel = model.observableModel,
       transactionModel = model.transactionModel,
+      hierarchicalModel = model.hierarchicalModel,
       renderer = this.renderer,
       mouseHitInfo = this.mouseHitInfo,
       canvasController = this.canvasController,
@@ -806,11 +836,25 @@ Editor.prototype.onDrag = function(p0, p) {
       function update(item) {
         if (isHull(item) && !invalidatingModel.isValid(item)) {
           var centroid = getCentroid(item),
-          oldCx = item.cx || 0, oldCy = item.cy || 0;
+              hullSnap = transactionModel.getSnapshot(item),
+              oldCx = item.cx, oldCy = item.cy;  // might be undefined.
+          // update the hull centroid.
           if (centroid.x != oldCx)
             observableModel.changeValue(item, 'cx', centroid.x);
           if (centroid.y != oldCy)
             observableModel.changeValue(item, 'cy', centroid.y);
+          // update any attached edges' angles.
+          item.items.forEach(function(subItem) {
+            if (isEdge(subItem) && subItem.attached) {
+              var edgeSnap = transactionModel.getSnapshot(subItem),
+                  dx = edgeSnap.x - hullSnap.cx, dy = edgeSnap.y - hullSnap.cy;
+              subItem._a1 = geometry.getAngle(dx, dy);
+              subItem._a2 = geometry.getAngle(dx + edgeSnap.dx, dy + edgeSnap.dy);
+              self.updateAttachedEdgePositions(subItem);
+              self.updateAttachedEdgeAngles(subItem);
+              self.updateAttachedEdgePositions(subItem);
+            }
+          });
         }
       }
       visit(model.root, update);
@@ -847,45 +891,37 @@ Editor.prototype.onDrag = function(p0, p) {
       break;
 
     case 'p1':
-      if (dragItem.attached) {
-        var a1 = self.projectToParentHull(dragItem, drags.parentMouse);
-        observableModel.changeValue(dragItem, 'a1', a1);
-      } else {
-        var snapshot = transactionModel.getSnapshot(dragItem),
-            parentDrag = drags.parentDrag,
-            dx = snapshot.dx - parentDrag.x, dy = snapshot.dy - parentDrag.y;
-        observableModel.changeValue(dragItem, 'dx', dx);
-        observableModel.changeValue(dragItem, 'dy', dy);
-        observableModel.changeValue(dragItem, 'x', snapshot.x + parentDrag.x);
-        observableModel.changeValue(dragItem, 'y', snapshot.y + parentDrag.y);
-      }
+      var snapshot = transactionModel.getSnapshot(dragItem),
+          parentDrag = drags.parentDrag;
+      observableModel.changeValue(dragItem, 'dx', snapshot.dx - parentDrag.x);
+      observableModel.changeValue(dragItem, 'dy', snapshot.dy - parentDrag.y);
+      observableModel.changeValue(dragItem, 'x', snapshot.x + parentDrag.x);
+      observableModel.changeValue(dragItem, 'y', snapshot.y + parentDrag.y);
+      if (dragItem.attached)
+        self.updateAttachedEdgeAngles(dragItem);
       break;
 
     case 'p2':
-      if (dragItem.attached) {
-        var a2 = self.projectToParentHull(dragItem, drags.parentMouse);
-        observableModel.changeValue(dragItem, 'a2', a2);
-      } else {
-        var snapshot = transactionModel.getSnapshot(dragItem),
-            parentDrag = drags.parentDrag,
-            dx = snapshot.dx + parentDrag.x, dy = snapshot.dy + parentDrag.y;
-        observableModel.changeValue(dragItem, 'dx', dx);
-        observableModel.changeValue(dragItem, 'dy', dy);
-      }
+      var snapshot = transactionModel.getSnapshot(dragItem),
+          parentDrag = drags.parentDrag;
+      observableModel.changeValue(dragItem, 'dx', snapshot.dx + parentDrag.x);
+      observableModel.changeValue(dragItem, 'dy', snapshot.dy + parentDrag.y);
+      if (dragItem.attached)
+        self.updateAttachedEdgeAngles(dragItem);
       break;
 
     case 'dragEdge':
-      var parentClick = drags.parentClick, parentMouse = drags.parentMouse,
-          hull = model.hierarchicalModel.getParent(dragItem),
-          centroid = hull._centroid,
-          angle0 = geometry.getAngle(parentClick.x - centroid.x, parentClick.y - centroid.y),
-          angle = geometry.getAngle(parentMouse.x - centroid.x, parentMouse.y - centroid.y),
-          da = angle - angle0,
-          snapshot = transactionModel.getSnapshot(dragItem),
-          a1 = adjustAngle(snapshot.a1 + da),
-          a2 = adjustAngle(snapshot.a2 + da);
-      observableModel.changeValue(dragItem, 'a1', a1);
-      observableModel.changeValue(dragItem, 'a2', a2);
+      // var parentClick = drags.parentClick, parentMouse = drags.parentMouse,
+      //     hull = model.hierarchicalModel.getParent(dragItem),
+      //     centroid = hull._centroid,
+      //     angle0 = geometry.getAngle(parentClick.x - centroid.x, parentClick.y - centroid.y),
+      //     angle = geometry.getAngle(parentMouse.x - centroid.x, parentMouse.y - centroid.y),
+      //     da = angle - angle0,
+      //     snapshot = transactionModel.getSnapshot(dragItem),
+      //     a1 = adjustAngle(snapshot.a1 + da),
+      //     a2 = adjustAngle(snapshot.a2 + da);
+      // observableModel.changeValue(dragItem, 'a1', a1);
+      // observableModel.changeValue(dragItem, 'a2', a2);
       break;
   }
   this.hotTrackInfo = (hitInfo && hitInfo.item !== this.board) ? hitInfo : null;
@@ -926,6 +962,8 @@ Editor.prototype.onEndDrag = function(p) {
           type: 'hull',
           x: x,
           y: y,
+          cx: 0,
+          cy: 0,
           items: [ newItem ],
         };
         dataModel.assignId(hull);
@@ -968,10 +1006,7 @@ Editor.prototype.onEndDrag = function(p) {
           if (hitInfo && hitInfo.border && isEdge(item)) {
             // Attach edge and initialize the angular locations of its ends.
             observableModel.changeValue(item, 'attached', true);
-            var a1 = self.projectToParentHull(item, item),
-                a2 = self.projectToParentHull(item, { x: item.x + item.dx, y: item.y + item.dy });
-            observableModel.changeValue(item, 'a1', a1);
-            observableModel.changeValue(item, 'a2', a2);
+            self.updateAttachedEdgeAngles(dragItem);
           }
         }
       });
@@ -1004,11 +1039,9 @@ Editor.prototype.onEndDrag = function(p) {
 // Updates edge based on dx and dy.
 Editor.prototype.updateEdge = function(edge) {
   var transformableModel = this.model.transformableModel,
-      dx = edge.dx, dy = edge.dy,
-      da = edge.a2 - edge.a1;
+      dx = edge.dx, dy = edge.dy;
   edge._rotation = Math.atan2(-dy, dx);
   edge._scale = Math.sqrt(dx * dx + dy * dy);
-  edge._flipped = (da > 0 && da < Math.PI) || (da < 0 && da < -Math.PI);
   transformableModel.update(edge);
 }
 
@@ -1117,7 +1150,8 @@ function visitHullSegments(hull, segments, segFn) {
 
 Editor.prototype.updateAttachedEdge = function(edge, parent, attachments) {
   // Make the control point array for the curve.
-  var cps = edge.items,
+  var self = this,
+      cps = edge.items,
       points = [{ x: 0, y: 0 }, { x: 0, y: 0 }].concat(cps);
   points.push({ x: 1, y: 0 });
   points.push({ x: 1, y: 0 });
@@ -1125,14 +1159,16 @@ Editor.prototype.updateAttachedEdge = function(edge, parent, attachments) {
       first = points[0], last = points[pLength - 1];
 
   // Update x, y, dx, and dy for attachment.
-  var hull = parent._path, center = parent._centroid,
-      p1 = geometry.angleToConvexHull(hull, center, edge.a1),
-      p2 = geometry.angleToConvexHull(hull, center, edge.a2);
-  edge.x = p1.x;
-  edge.y = p1.y;
-  edge.dx = p2.x - p1.x;
-  edge.dy = p2.y - p1.y;
+  this.updateAttachedEdgeAngles(edge);
+  this.updateAttachedEdgePositions(edge);
   this.updateEdge(edge);
+  var hull = parent._path,
+      center = { x: parent.cx, y: parent.cy },
+      a1 = edge._a1,
+      a2 = edge._a2,
+      p1 = geometry.angleToConvexHull(hull, center, a1),
+      p2 = geometry.angleToConvexHull(hull, center, a2);
+
   var transformableModel = this.model.transformableModel,
       inverseLocal = transformableModel.getInverseLocal(edge),
       flipped = edge._flipped,
@@ -1212,9 +1248,7 @@ Editor.prototype.updateGeometry = function(model) {
           var hull = geometry.getConvexHull(points),
               segments = [],
               extents = geometry.getExtents(hull),
-              centroid = { x: (extents.xmin + extents.xmax) / 2,
-                           y: (extents.ymin + extents.ymax) / 2 };
-          centroid = { x: 0, y: 0 };
+              centroid = { x: item.cx, y: item.cy };
           geometry.annotateConvexHull(hull, centroid);
           geometry.visitHullEdges(hull, function(p0, p1, i0, i1) {
             if (p0.item != p1.item)
@@ -1234,7 +1268,6 @@ Editor.prototype.updateGeometry = function(model) {
         //   console.log(i0, i1, breaks);
         // });
         item._extents = extents;
-        item._centroid = centroid;
 
         var attachments = [];
         subItems.forEach(function(subItem) {
@@ -1423,393 +1456,312 @@ var shape_data = {
   "x": 0,
   "y": 0,
   "id": 153,
-  "items": []
+  "items": [
+    {
+      "type": "hull",
+      "x": 349.9001125051177,
+      "y": 168.11528218818455,
+      "cx": 145.79527410507018,
+      "cy": 334.0031208740103,
+      "items": [
+        {
+          "type": "disk",
+          "x": 6.986624825670276,
+          "y": 7.010254300319438,
+          "scale": 143.04708471058007,
+          "rotation": -0.020979888118177793,
+          "id": 155
+        },
+        {
+          "type": "disk",
+          "x": -29.010254300319446,
+          "y": 236.0053500697319,
+          "scale": 100.97263113715321,
+          "rotation": -0.13919765280920743,
+          "id": 158
+        },
+        {
+          "type": "disk",
+          "x": -26,
+          "y": 722,
+          "scale": 16,
+          "rotation": 0,
+          "id": 160
+        },
+        {
+          "type": "disk",
+          "x": 353,
+          "y": -18,
+          "scale": 98.2496819333274,
+          "rotation": -0.07130746478529032,
+          "id": 162
+        },
+        {
+          "type": "disk",
+          "x": 424,
+          "y": 723,
+          "scale": 16,
+          "rotation": 0,
+          "id": 164
+        },
+        {
+          "type": "edge",
+          "x": -128.31745486545478,
+          "y": 254.20339070988007,
+          "dx": 49.77917432831188,
+          "dy": 270.636558262825,
+          "items": [
+            {
+              "type": "point",
+              "x": 0.8586541248238833,
+              "y": -0.10125092364212429
+            }
+          ],
+          "id": 170,
+          "attached": true
+        },
+        {
+          "type": "edge",
+          "x": 352.2860668794466,
+          "y": -116.43960686799036,
+          "dx": -335.62438377561693,
+          "dy": -19.265666747150107,
+          "items": [
+            {
+              "type": "point",
+              "x": 0.6768783835077514,
+              "y": -0.08863759325418824
+            }
+          ],
+          "id": 173,
+          "attached": true
+        },
+        {
+          "type": "edge",
+          "x": -110.53772228658056,
+          "y": -74.50652512379284,
+          "dx": -19.913976035416027,
+          "dy": 294.1639976074598,
+          "items": [
+            {
+              "type": "point",
+              "x": 0.7813709480355009,
+              "y": -0.058307380186732094
+            }
+          ],
+          "id": 176,
+          "attached": true
+        },
+        {
+          "type": "edge",
+          "x": 375.98573035787376,
+          "y": -18.000000000000114,
+          "dx": 25,
+          "dy": 756,
+          "items": [
+            {
+              "type": "point",
+              "x": 0.045094884081776365,
+              "y": -0.043669294632918465,
+              "id": 181
+            },
+            {
+              "type": "point",
+              "x": 0.14451439367590585,
+              "y": -0.05214616165729591
+            }
+          ],
+          "id": 179
+        },
+        {
+          "type": "hull",
+          "x": 196.43483957083708,
+          "y": 42.472023241335705,
+          "cx": 0,
+          "cy": 0,
+          "items": [
+            {
+              "type": "disk",
+              "x": 0,
+              "y": 0,
+              "scale": 32.2442705585308,
+              "rotation": 0.031460999539714665,
+              "id": 166
+            }
+          ],
+          "id": 167
+        },
+        {
+          "type": "hull",
+          "x": 323.5478716566695,
+          "y": 143.21404463189072,
+          "cx": 0,
+          "cy": 0,
+          "items": [
+            {
+              "type": "disk",
+              "x": 0,
+              "y": 0,
+              "scale": 32.2442705585308,
+              "rotation": 0.031460999539714665,
+              "id": 190
+            }
+          ],
+          "id": 191
+        },
+        {
+          "type": "hull",
+          "x": 303.7191073621823,
+          "y": 41.22943932519274,
+          "cx": 0,
+          "cy": 0,
+          "items": [
+            {
+              "type": "disk",
+              "x": 0,
+              "y": 0,
+              "scale": 32.2442705585308,
+              "rotation": 0.031460999539714665,
+              "id": 186
+            }
+          ],
+          "id": 187
+        },
+        {
+          "type": "hull",
+          "x": 218.29214314957653,
+          "y": 140.39954997952947,
+          "cx": 0,
+          "cy": 0,
+          "items": [
+            {
+              "type": "disk",
+              "x": 0,
+              "y": 0,
+              "scale": 32.2442705585308,
+              "rotation": 0.031460999539714665,
+              "id": 188
+            }
+          ],
+          "id": 189
+        },
+        {
+          "type": "hull",
+          "x": 80.58926509491909,
+          "y": 602.7767150748746,
+          "cx": 26,
+          "cy": 8,
+          "items": [
+            {
+              "type": "disk",
+              "x": 0,
+              "y": 0,
+              "scale": 12.828789023078684,
+              "rotation": 0,
+              "id": 193
+            },
+            {
+              "type": "disk",
+              "x": 52,
+              "y": 16,
+              "scale": 6.03758756324316,
+              "rotation": -0.03752628679378855,
+              "id": 196
+            }
+          ],
+          "id": 194
+        },
+        {
+          "type": "hull",
+          "x": 161.64497749225598,
+          "y": 601.0452615546664,
+          "cx": 76.85263316563123,
+          "cy": 7.093939720879575,
+          "items": [
+            {
+              "type": "disk",
+              "x": 101.70526633126246,
+              "y": -1.8121205582408493,
+              "scale": 12.828789023078684,
+              "rotation": 0,
+              "id": 200
+            },
+            {
+              "type": "disk",
+              "x": 52,
+              "y": 16,
+              "scale": 6.03758756324316,
+              "rotation": -0.03752628679378855,
+              "id": 201
+            }
+          ],
+          "id": 202
+        },
+        {
+          "type": "edge",
+          "x": -16.749644232489516,
+          "y": 434.1340507990395,
+          "dx": 98.64359721338347,
+          "dy": 153.11742538573264,
+          "items": [
+            {
+              "type": "point",
+              "x": 0.41667036412677283,
+              "y": 0.26622735155418703,
+              "id": 214
+            },
+            {
+              "type": "point",
+              "x": 0.5176963243631012,
+              "y": 0.3219534794382075,
+              "id": 215
+            },
+            {
+              "type": "point",
+              "x": 0.6307780353251482,
+              "y": 0.2801409390026643,
+              "id": 216
+            }
+          ],
+          "id": 217
+        },
+        {
+          "type": "hull",
+          "x": 30.27191858861653,
+          "y": 422.6134836496286,
+          "cx": 17.75436347293146,
+          "cy": 73.77933046501356,
+          "items": [
+            {
+              "type": "disk",
+              "x": 0,
+              "y": 0,
+              "scale": 16,
+              "rotation": 0,
+              "id": 219
+            },
+            {
+              "type": "disk",
+              "x": 1.1368683772161603e-13,
+              "y": 101.04502975357673,
+              "scale": 16,
+              "rotation": 0,
+              "id": 222
+            },
+            {
+              "type": "disk",
+              "x": 53.26309041879426,
+              "y": 120.29296164146393,
+              "scale": 16,
+              "rotation": 0,
+              "id": 224
+            }
+          ],
+          "id": 220
+        }
+      ],
+      "id": 156
+    }
+  ]
 }
-// var shape_data = {
-//   "type": "board",
-//   "x": 0,
-//   "y": 0,
-//   "id": 153,
-//   "items": [
-//     {
-//       "type": "hull",
-//       "x": 480.2124748491592,
-//       "y": 441.31822494301855,
-//       "items": [
-//         {
-//           "type": "disk",
-//           "x": -156.31478543097683,
-//           "y": -286.3908062031094,
-//           "scale": 139.92260819176386,
-//           "id": 181
-//         },
-//         {
-//           "type": "disk",
-//           "x": -253.64863947626174,
-//           "y": 429.32557059934396,
-//           "scale": 16,
-//           "id": 183
-//         },
-//         {
-//           "type": "disk",
-//           "x": 247.5219337773098,
-//           "y": 432.79392975105844,
-//           "scale": 16,
-//           "id": 184
-//         },
-//         {
-//           "type": "disk",
-//           "x": 203.64283211451658,
-//           "y": -313.1867376213238,
-//           "scale": 66.90411048657579,
-//           "id": 185
-//         },
-//         {
-//           "type": "hull",
-//           "x": -58.01131188742505,
-//           "y": 13.825032454571897,
-//           "rotation": 0.5053386521302267,
-//           "items": [
-//             {
-//               "type": "disk",
-//               "x": 6,
-//               "y": -7,
-//               "scale": 16,
-//               "id": 210
-//             },
-//             {
-//               "type": "disk",
-//               "x": -48,
-//               "y": -36,
-//               "scale": 34.04715277226595,
-//               "id": 211
-//             },
-//             {
-//               "type": "disk",
-//               "x": 22.27723102448806,
-//               "y": -80.38363918347522,
-//               "scale": 16,
-//               "id": 212
-//             }
-//           ],
-//           "id": 213
-//         },
-//         {
-//           "type": "hull",
-//           "x": 30.522957811180788,
-//           "y": -274.38208002274524,
-//           "items": [
-//             {
-//               "type": "disk",
-//               "x": 1.0591567279294054,
-//               "y": 9.714062075191123,
-//               "scale": 39.505914005112075,
-//               "id": 224
-//             }
-//           ],
-//           "id": 225
-//         },
-//         {
-//           "type": "hull",
-//           "x": 145.35038687458473,
-//           "y": -225.04769653162586,
-//           "items": [
-//             {
-//               "type": "disk",
-//               "x": -2.6864846531382227,
-//               "y": -3.6858898297738847,
-//               "scale": 40.23684148848271,
-//               "id": 222
-//             }
-//           ],
-//           "id": 223
-//         },
-//         {
-//           "type": "hull",
-//           "x": 36.75786752824001,
-//           "y": -126.59047899094017,
-//           "items": [
-//             {
-//               "type": "disk",
-//               "x": 6.209026467187698,
-//               "y": -12.464737708126393,
-//               "scale": 40.23684148848271,
-//               "id": 220
-//             }
-//           ],
-//           "id": 221,
-//           "rotation": -0.2890831021546629
-//         },
-//         {
-//           "type": "hull",
-//           "x": 147.78896984980156,
-//           "y": -100.57958647152671,
-//           "items": [
-//             {
-//               "type": "disk",
-//               "x": 1.4390396526332552,
-//               "y": -12.710848007366963,
-//               "scale": 40.23684148848271,
-//               "id": 218
-//             }
-//           ],
-//           "id": 219
-//         },
-//         {
-//           "type": "hull",
-//           "x": -67.28823528551425,
-//           "y": 212.3011032135555,
-//           "items": [
-//             {
-//               "type": "disk",
-//               "x": -64.55052450536971,
-//               "y": 0.7278211520033437,
-//               "scale": 18.161224791664853,
-//               "id": 214
-//             },
-//             {
-//               "type": "disk",
-//               "x": 1.0590049742303904,
-//               "y": -18.671576008170803,
-//               "scale": 25.475244635370935,
-//               "id": 215
-//             },
-//             {
-//               "type": "disk",
-//               "x": 46.44947549463029,
-//               "y": 26.727821152003344,
-//               "scale": 16,
-//               "id": 216
-//             }
-//           ],
-//           "id": 217
-//         },
-//         {
-//           "type": "hull",
-//           "x": 163.70496685814476,
-//           "y": 169.16088137219577,
-//           "items": [
-//             {
-//               "type": "disk",
-//               "x": -112,
-//               "y": 0,
-//               "scale": 16,
-//               "id": 206
-//             },
-//             {
-//               "type": "disk",
-//               "x": -48,
-//               "y": -36,
-//               "scale": 34.04715277226595,
-//               "id": 207
-//             },
-//             {
-//               "type": "disk",
-//               "x": -29.750868624734267,
-//               "y": -140.5005790831562,
-//               "scale": 16,
-//               "id": 208
-//             }
-//           ],
-//           "id": 209
-//         },
-//         {
-//           "type": "hull",
-//           "x": -182.95132747621312,
-//           "y": -300.83375183392,
-//           "items": [
-//             {
-//               "type": "disk",
-//               "x": 2.4499156637059514,
-//               "y": 0.9799662654823464,
-//               "scale": 9.929778600166998,
-//               "id": 226
-//             },
-//             {
-//               "type": "disk",
-//               "x": 2.407409674665587,
-//               "y": 81.85192893863245,
-//               "scale": 10.333627809386586,
-//               "id": 228
-//             }
-//           ],
-//           "id": 227
-//         },
-//         {
-//           "type": "hull",
-//           "x": -123.66336841453142,
-//           "y": -321.4130434090492,
-//           "items": [
-//             {
-//               "type": "disk",
-//               "x": 2.4499156637059514,
-//               "y": 0.9799662654823464,
-//               "scale": 9.929778600166998,
-//               "id": 232
-//             },
-//             {
-//               "type": "disk",
-//               "x": 2.407409674665587,
-//               "y": 81.85192893863245,
-//               "scale": 10.333627809386586,
-//               "id": 233
-//             }
-//           ],
-//           "id": 234
-//         },
-//         {
-//           "type": "hull",
-//           "x": -65.84535875107315,
-//           "y": -338.07246992224907,
-//           "items": [
-//             {
-//               "type": "disk",
-//               "x": 2.4499156637059514,
-//               "y": 0.9799662654823464,
-//               "scale": 9.929778600166998,
-//               "id": 235
-//             },
-//             {
-//               "type": "disk",
-//               "x": 2.407409674665587,
-//               "y": 81.85192893863245,
-//               "scale": 10.333627809386586,
-//               "id": 236
-//             }
-//           ],
-//           "id": 237
-//         },
-//         {
-//           "type": "disk",
-//           "x": -228.7961837282378,
-//           "y": -144.14306449748278,
-//           "scale": 85.98177053809061,
-//           "id": 239
-//         },
-//         {
-//           "type": "hull",
-//           "x": -97.98277525938909,
-//           "y": 374.481135107979,
-//           "items": [
-//             {
-//               "type": "disk",
-//               "x": 40.76144937840979,
-//               "y": 16.902619979964015,
-//               "scale": 7.317260635772668,
-//               "id": 247
-//             },
-//             {
-//               "type": "disk",
-//               "x": -14.686604372139072,
-//               "y": -7.215555194286196,
-//               "scale": 16.638179481930923,
-//               "id": 250
-//             }
-//           ],
-//           "id": 248
-//         },
-//         {
-//           "type": "hull",
-//           "x": 104.21134325766923,
-//           "y": 365.71638066903546,
-//           "items": [
-//             {
-//               "type": "disk",
-//               "x": -55.209515158474346,
-//               "y": 28.298840462272892,
-//               "scale": 7.317260635772668,
-//               "id": 254
-//             },
-//             {
-//               "type": "disk",
-//               "x": -0.20760179262651945,
-//               "y": 0.02394609547008031,
-//               "scale": 16.638179481930923,
-//               "id": 255
-//             }
-//           ],
-//           "id": 256
-//         },
-//         {
-//           "type": "disk",
-//           "x": -190.2059411651818,
-//           "y": 468.9282907628569,
-//           "scale": 16,
-//           "id": 257
-//         },
-//         {
-//           "type": "edge",
-//           "x": -265.61852241251705,
-//           "y": -373.739584676665,
-//           "dx": -44.13540775678291,
-//           "dy": 296.43224823320054,
-//           "items": [
-//             {
-//               "type": "point",
-//               "x": 0.7360075600735081,
-//               "y": -0.19009103337667266
-//             }
-//           ],
-//           "attached": true,
-//           "a1": 2.1033102491779037,
-//           "a2": 2.7682492410764343
-//         },
-//         {
-//           "type": "edge",
-//           "x": -308.1496203241887,
-//           "y": -57.01702337199282,
-//           "dx": 29.224085113227318,
-//           "dy": 369.6080517000016,
-//           "items": [
-//             {
-//               "type": "point",
-//               "x": 0.2153189624859957,
-//               "y": -0.11924854388815925
-//             }
-//           ],
-//           "id": 265,
-//           "attached": true,
-//           "a1": 2.829885403585282,
-//           "a2": 3.9735472003644925
-//         },
-//         {
-//           "type": "edge",
-//           "x": 177.6893456922686,
-//           "y": 14.25402101185773,
-//           "dx": -117,
-//           "dy": 210,
-//           "items": [
-//             {
-//               "type": "point",
-//               "x": 0.6258185336548361,
-//               "y": -0.2993705141268176
-//             }
-//           ],
-//           "id": 268
-//         },
-//         {
-//           "type": "edge",
-//           "x": 187.77126595249013,
-//           "y": -298.2086279348582,
-//           "dx": 28,
-//           "dy": 750,
-//           "items": [
-//             {
-//               "type": "point",
-//               "x": 0.03608149637667418,
-//               "y": -0.02439579618317711,
-//               "id": 262
-//             },
-//             {
-//               "type": "point",
-//               "x": 0.10719113215820592,
-//               "y": -0.04351068776204081
-//             }
-//           ],
-//           "id": 260
-//         }
-//       ],
-//       "id": 182
-//     }
-//   ]
-// }
+
