@@ -625,9 +625,12 @@ Editor.prototype.onClick = function(p) {
 Editor.prototype.onBeginDrag = function(p0) {
   if (!this.mouseHitInfo)
     return;
-  var mouseHitInfo = this.mouseHitInfo,
+  var self = this,
+      mouseHitInfo = this.mouseHitInfo,
       dragItem = mouseHitInfo.item,
-      model = this.model, transformableModel = model.transformableModel,
+      model = this.model,
+      observableModel = model.observableModel,
+      transformableModel = model.transformableModel,
       transform = transformableModel.getLocal(dragItem),
       newItem, drag;
   if (this.isPaletteItem(dragItem)) {
@@ -693,6 +696,28 @@ Editor.prototype.onBeginDrag = function(p0) {
     } else {
       drag.item = dragItem;
     }
+
+    if (drag.type == 'moveSelection') {
+      // Update centroids of any affected hulls.
+      function update(item) {
+        if (isHull(item)) {
+          // Get the stable centroid (only unselected sub-items).
+          var centroid = self.getCentroid(item),
+              oldCx = item.cx, oldCy = item.cy;  // might be undefined.
+          if (centroid.x != oldCx)
+            observableModel.changeValue(item, 'cx', centroid.x);
+          if (centroid.y != oldCy)
+            observableModel.changeValue(item, 'cy', centroid.y);
+          // update any attached edges' angles.
+          item.items.forEach(function(subItem) {
+            if (isEdge(subItem) && subItem.attached) {
+              self.updateAttachedEdgeAngles(subItem);
+            }
+          });
+        }
+      }
+      visit(model.root, update);
+    }
   }
 }
 
@@ -733,29 +758,23 @@ Editor.prototype.moveItem = function(item, parentDrag) {
   observableModel.changeValue(item, 'y', snapshot.y + parentDrag.y);
 }
 
-function getCentroid(item) {
-  var subItems = item.items, count = 0,
-      centroid;
-  // Calculate centroid from items.
+Editor.prototype.getCentroid = function(item) {
+  var model = this.model, selectionModel = model.selectionModel,
+      subItems = item.items, count = 0,
+      cx = 0, cy = 0;
+  // Calculate centroid from contained disks that are not selected.
   subItems.forEach(function(subItem) {
-    if (subItem.type != 'disk')
+    if (subItem.type != 'disk' || selectionModel.contains(subItem))
       return;
     count++;
-    if (centroid) {
-      centroid.x += subItem.x;
-      centroid.y += subItem.y;
-    } else {
-      centroid = {
-        x: subItem.x,
-        y: subItem.y,
-      }
-    }
+    cx += subItem.x;
+    cy += subItem.y;
   });
   if (count) {
-    centroid.x /= count;
-    centroid.y /= count;
+    cx /= count;
+    cy /= count;
   }
-  return centroid;
+  return { x: cx, y: cy };
 }
 
 function adjustAngle(angle) {
@@ -830,34 +849,6 @@ Editor.prototype.onDrag = function(p0, p) {
         // Find container underneath item for hot tracking.
         hitInfo = this.getFirstUnselectedContainerHit(hitList, dragItem);
       }
-      // Update centroids of hulls that are now invalid.
-      var invalidatingModel = model.invalidatingModel;
-
-      function update(item) {
-        if (isHull(item) && !invalidatingModel.isValid(item)) {
-          var centroid = getCentroid(item),
-              hullSnap = transactionModel.getSnapshot(item),
-              oldCx = item.cx, oldCy = item.cy;  // might be undefined.
-          // update the hull centroid.
-          if (centroid.x != oldCx)
-            observableModel.changeValue(item, 'cx', centroid.x);
-          if (centroid.y != oldCy)
-            observableModel.changeValue(item, 'cy', centroid.y);
-          // update any attached edges' angles.
-          item.items.forEach(function(subItem) {
-            if (isEdge(subItem) && subItem.attached) {
-              var edgeSnap = transactionModel.getSnapshot(subItem),
-                  dx = edgeSnap.x - hullSnap.cx, dy = edgeSnap.y - hullSnap.cy;
-              subItem._a1 = geometry.getAngle(dx, dy);
-              subItem._a2 = geometry.getAngle(dx + edgeSnap.dx, dy + edgeSnap.dy);
-              self.updateAttachedEdgePositions(subItem);
-              self.updateAttachedEdgeAngles(subItem);
-              self.updateAttachedEdgePositions(subItem);
-            }
-          });
-        }
-      }
-      visit(model.root, update);
       break;
 
     case 'resizeDisk':
@@ -1159,7 +1150,8 @@ Editor.prototype.updateAttachedEdge = function(edge, parent, attachments) {
       first = points[0], last = points[pLength - 1];
 
   // Update x, y, dx, and dy for attachment.
-  this.updateAttachedEdgeAngles(edge);
+  if (edge._a1 === undefined || edge._a2 === undefined)
+    this.updateAttachedEdgeAngles(edge);
   this.updateAttachedEdgePositions(edge);
   this.updateEdge(edge);
   var hull = parent._path,
