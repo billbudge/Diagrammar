@@ -388,7 +388,7 @@ var geometry = (function() {
   // Annotates the convex hull points with the following useful infomation:
   // 1) angle: the angle between p[i] and center. 0 is the positive x-axis.
   // 2) length: the length of the edge starting at p[i].
-  // 3) nx, ny: the normal of the edge starting at p[i].
+  // 3) nx, ny: the unit length normal vector to the edge starting at p[i].
   // Sorts the hull by angle to speed up angle-to-hull calculations.
   function annotateConvexHull(hull, c) {
     var cx = c.x, cy = c.y, minAngle = Number.MAX_VALUE, minI;

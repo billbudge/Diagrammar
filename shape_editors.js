@@ -340,7 +340,7 @@ Renderer.prototype.drawItem = function(item, mode) {
       // if (mode == normalMode)
       //   ctx.fill();
       ctx.stroke();
-      drawKnobby(this, knobbyRadius, item.cx, item.cy);
+      drawKnobby(this, knobbyRadius, item._center);
       break;
   }
   ctx.restore();
@@ -648,34 +648,37 @@ Editor.prototype.onBeginDrag = function(p0) {
       case 'disk':
         // Direction/scale vector, in parent space.
         var vector = geometry.matMulVec({ x: 1, y: 0 }, transform);
-        if (mouseHitInfo.resizer)
+        if (mouseHitInfo.resizer) {
           drag = { type: 'resizeDisk', name: 'Resize disk', vector: vector };
-        else if (mouseHitInfo.center)
+        } else if (mouseHitInfo.center) {
           drag = { type: 'moveSelection', name: 'Move items' };
+        }
         break;
       case 'point':
         drag = { type: 'moveSelection', name: 'Move items' };
         break;
       case 'edge':
         // Direction/scale vector, in parent space.
-        if (mouseHitInfo.p1)
+        if (mouseHitInfo.p1) {
           drag = { type: 'p1', name: 'Edit edge' };
-        else if (mouseHitInfo.p2)
+        } else if (mouseHitInfo.p2) {
           drag = { type: 'p2', name: 'Edit edge' };
-        else if (dragItem.attached)
-          drag = { type: 'dragEdge', name: 'Edit edge' };
-        else
+        } else if (dragItem.attached) {
+          drag = { type: 'dragAttachedEdge', name: 'Edit edge' };
+        } else {
           drag = { type: 'moveSelection', name: 'Move items' };
+        }
         break;
       case 'group':
         // Direction/scale vector, in parent space.
         var vector = geometry.matMulVec({ x: dragItem._extents.xmax, y: 0 }, transform);
-        if (mouseHitInfo.resizer)
+        if (mouseHitInfo.resizer) {
           drag = { type: 'resizeGroup', name: 'Resize group', vector: vector };
-        else if (mouseHitInfo.relocator)
+        } else if (mouseHitInfo.relocator) {
           drag = { type: 'relocateGroup', name: 'Relocate group origin', vector: vector };
-        else
+        } else {
           drag = { type: 'moveSelection', name: 'Move items' };
+        }
         break;
       case 'hull':
         drag = { type: 'moveSelection', name: 'Move items' };
@@ -698,17 +701,11 @@ Editor.prototype.onBeginDrag = function(p0) {
     }
 
     if (drag.type == 'moveSelection') {
-      // Update centroids of any affected hulls.
+      // Update centers of any affected hulls.
       function update(item) {
         if (isHull(item)) {
-          // Get the stable centroid (only unselected sub-items).
-          var centroid = self.getCentroid(item),
-              oldCx = item.cx, oldCy = item.cy;  // might be undefined.
-          if (centroid.x != oldCx)
-            observableModel.changeValue(item, 'cx', centroid.x);
-          if (centroid.y != oldCy)
-            observableModel.changeValue(item, 'cy', centroid.y);
-          // update any attached edges' angles.
+          item._center = self.getStableCenter(item);
+          // Attached edges should update their angles to the new hull center.
           item.items.forEach(function(subItem) {
             if (isEdge(subItem) && subItem.attached) {
               self.updateAttachedEdgeAngles(subItem);
@@ -740,17 +737,6 @@ Editor.prototype.calcDrags = function(item, model, p, p0) {
   };
 }
 
-Editor.prototype.projectToParentHull = function(item, p) {
-  var model = this.model,
-      parent = model.hierarchicalModel.getParent(item);
-  if (parent && parent.type == 'hull') {
-    var hull = parent._path,
-        pProj = geometry.projectPointToConvexHull(hull, p),
-        angle = geometry.getAngle(pProj.x - parent.cx, pProj.y - parent.cy);
-    return angle;
-  }
-}
-
 Editor.prototype.moveItem = function(item, parentDrag) {
   var model = this.model, observableModel = model.observableModel,
       snapshot = model.transactionModel.getSnapshot(item);
@@ -758,11 +744,11 @@ Editor.prototype.moveItem = function(item, parentDrag) {
   observableModel.changeValue(item, 'y', snapshot.y + parentDrag.y);
 }
 
-Editor.prototype.getCentroid = function(item) {
+Editor.prototype.getStableCenter = function(item) {
   var model = this.model, selectionModel = model.selectionModel,
       subItems = item.items, count = 0,
       cx = 0, cy = 0;
-  // Calculate centroid from contained disks that are not selected.
+  // Calculate center from contained disks that are not selected.
   subItems.forEach(function(subItem) {
     if (subItem.type != 'disk' || selectionModel.contains(subItem))
       return;
@@ -791,7 +777,8 @@ Editor.prototype.updateAttachedEdgePositions = function(edge) {
       observableModel = model.observableModel,
       hierarchicalModel = model.hierarchicalModel,
       parent = hierarchicalModel.getParent(edge),
-      hull = parent._path, center = { x: parent.cx, y: parent.cy },
+      hull = parent._path,
+      center = parent._center,
       p1 = geometry.angleToConvexHull(hull, center, edge._a1),
       p2 = geometry.angleToConvexHull(hull, center, edge._a2),
       dx = p2.x - p1.x,
@@ -804,6 +791,18 @@ Editor.prototype.updateAttachedEdgePositions = function(edge) {
     observableModel.changeValue(edge, 'dx', dx);
   if (Math.abs(edge.dy - dy) > 0.000001)
     observableModel.changeValue(edge, 'dy', dy);
+}
+
+Editor.prototype.projectToParentHull = function(item, p) {
+  var model = this.model,
+      parent = model.hierarchicalModel.getParent(item);
+  if (parent && parent.type == 'hull') {
+    var hull = parent._path,
+        pProj = geometry.projectPointToConvexHull(hull, p),
+        center = parent._center,
+        angle = geometry.getAngle(pProj.x - center.x, pProj.y - center.y);
+    return angle;
+  }
 }
 
 Editor.prototype.updateAttachedEdgeAngles = function(edge) {
@@ -882,37 +881,48 @@ Editor.prototype.onDrag = function(p0, p) {
       break;
 
     case 'p1':
-      var snapshot = transactionModel.getSnapshot(dragItem),
-          parentDrag = drags.parentDrag;
-      observableModel.changeValue(dragItem, 'dx', snapshot.dx - parentDrag.x);
-      observableModel.changeValue(dragItem, 'dy', snapshot.dy - parentDrag.y);
-      observableModel.changeValue(dragItem, 'x', snapshot.x + parentDrag.x);
-      observableModel.changeValue(dragItem, 'y', snapshot.y + parentDrag.y);
-      if (dragItem.attached)
-        self.updateAttachedEdgeAngles(dragItem);
+      if (dragItem.attached) {
+        dragItem._a1 = self.projectToParentHull(dragItem, drags.parentMouse);
+        self.updateAttachedEdgePositions(dragItem);
+      } else {
+        var snapshot = transactionModel.getSnapshot(dragItem),
+            parentDrag = drags.parentDrag,
+            dx = snapshot.dx - parentDrag.x, dy = snapshot.dy - parentDrag.y;
+        observableModel.changeValue(dragItem, 'dx', dx);
+        observableModel.changeValue(dragItem, 'dy', dy);
+        observableModel.changeValue(dragItem, 'x', snapshot.x + parentDrag.x);
+        observableModel.changeValue(dragItem, 'y', snapshot.y + parentDrag.y);
+      }
       break;
 
     case 'p2':
-      var snapshot = transactionModel.getSnapshot(dragItem),
-          parentDrag = drags.parentDrag;
-      observableModel.changeValue(dragItem, 'dx', snapshot.dx + parentDrag.x);
-      observableModel.changeValue(dragItem, 'dy', snapshot.dy + parentDrag.y);
-      if (dragItem.attached)
-        self.updateAttachedEdgeAngles(dragItem);
+      if (dragItem.attached) {
+        dragItem._a2 = self.projectToParentHull(dragItem, drags.parentMouse);
+        self.updateAttachedEdgePositions(dragItem);
+      } else {
+        var snapshot = transactionModel.getSnapshot(dragItem),
+            parentDrag = drags.parentDrag,
+            dx = snapshot.dx + parentDrag.x, dy = snapshot.dy + parentDrag.y;
+        observableModel.changeValue(dragItem, 'dx', dx);
+        observableModel.changeValue(dragItem, 'dy', dy);
+      }
       break;
 
-    case 'dragEdge':
-      // var parentClick = drags.parentClick, parentMouse = drags.parentMouse,
-      //     hull = model.hierarchicalModel.getParent(dragItem),
-      //     centroid = hull._centroid,
-      //     angle0 = geometry.getAngle(parentClick.x - centroid.x, parentClick.y - centroid.y),
-      //     angle = geometry.getAngle(parentMouse.x - centroid.x, parentMouse.y - centroid.y),
-      //     da = angle - angle0,
-      //     snapshot = transactionModel.getSnapshot(dragItem),
-      //     a1 = adjustAngle(snapshot.a1 + da),
-      //     a2 = adjustAngle(snapshot.a2 + da);
-      // observableModel.changeValue(dragItem, 'a1', a1);
-      // observableModel.changeValue(dragItem, 'a2', a2);
+    case 'dragAttachedEdge':
+      var parentClick = drags.parentClick, parentMouse = drags.parentMouse,
+          hull = hierarchicalModel.getParent(dragItem),
+          center = hull._center, cx = center.x, cy = center.y,
+          angle0 = geometry.getAngle(parentClick.x - cx, parentClick.y - cy),
+          angle = geometry.getAngle(parentMouse.x - cx, parentMouse.y - cy),
+          da = angle - angle0,
+          snapshot = transactionModel.getSnapshot(dragItem),
+          a1 = geometry.getAngle(snapshot.x - cx, snapshot.y - cy),
+          a2 = geometry.getAngle((snapshot.x + snapshot.dx) - cx,
+                                 (snapshot.y + snapshot.dy) - cy);
+
+      dragItem._a1 = adjustAngle(a1 + da),
+      dragItem._a2 = adjustAngle(a2 + da);
+      self.updateAttachedEdgePositions(dragItem);
       break;
   }
   this.hotTrackInfo = (hitInfo && hitInfo.item !== this.board) ? hitInfo : null;
@@ -1023,7 +1033,7 @@ Editor.prototype.onEndDrag = function(p) {
 //     var i0 = findClosestPathSegment(hull, p);
 //     var i1 = (i0 < hull.length - 1) ? i0 + 1 : 0;
 //     var t = getTurn(hull[i0].x - hull[i1].x, hull[i0].y - hull[i1].y);
-//     model.observableModel.changeValue(item, '_rotation', t * 2 * Math.PI);
+//     model.observableModel.changeValue(item, 'rotation', t * 2 * Math.PI);
 //   }
 // }
 
@@ -1124,21 +1134,6 @@ function sampleBeziers(beziers, error) {
   return points;
 }
 
-function visitHullSegments(hull, segments, segFn) {
-  var length = segments.length;
-  if (!length) {
-    segFn(0, hull.length - 1, false);
-  } else {
-    var startI = segments[length - 1].i1;
-    for (var i = 0; i < length; i++) {
-      var segI = segments[i];
-      segFn(startI, segI.i0, false);
-      segFn(segI.i0, segI.i1, true);
-      startI = segI.i1;
-    }
-  }
-}
-
 Editor.prototype.updateAttachedEdge = function(edge, parent, attachments) {
   // Make the control point array for the curve.
   var self = this,
@@ -1150,12 +1145,13 @@ Editor.prototype.updateAttachedEdge = function(edge, parent, attachments) {
       first = points[0], last = points[pLength - 1];
 
   // Update x, y, dx, and dy for attachment.
+  var a1 = edge._a1, a2 = edge._a2;
   if (edge._a1 === undefined || edge._a2 === undefined)
     this.updateAttachedEdgeAngles(edge);
   this.updateAttachedEdgePositions(edge);
   this.updateEdge(edge);
   var hull = parent._path,
-      center = { x: parent.cx, y: parent.cy },
+      center = parent._center,
       a1 = edge._a1,
       a2 = edge._a2,
       p1 = geometry.angleToConvexHull(hull, center, a1),
@@ -1174,7 +1170,7 @@ Editor.prototype.updateAttachedEdge = function(edge, parent, attachments) {
   if (!flipped) {
     var temp = p1; p1 = p2; p2 = temp;
   }
-  attachments.push({ item: edge, start: p1.i1, end: p2.i1 });
+  attachments.push({ item: edge, start: p1.i1, startT: p1.t, end: p2.i1, endT: p2.t });
 
   var beziers = geometry.generateInterpolatingBeziers(points);
   edge._beziers =  beziers;
@@ -1185,6 +1181,21 @@ Editor.prototype.updateAttachedEdge = function(edge, parent, attachments) {
   edge._path = path;
   // edge._extents = geometry.getExtents(edge._path);
 }
+
+// function visitHullSegments(hull, segments, segFn) {
+//   var length = segments.length;
+//   if (!length) {
+//     segFn(0, hull.length - 1, false);
+//   } else {
+//     var startI = segments[length - 1].i1;
+//     for (var i = 0; i < length; i++) {
+//       var segI = segments[i];
+//       segFn(startI, segI.i0, false);
+//       segFn(segI.i0, segI.i1, true);
+//       startI = segI.i1;
+//     }
+//   }
+// }
 
 // Paths are computed in the local space of the item, translated when combining.
 Editor.prototype.updateGeometry = function(model) {
@@ -1215,7 +1226,8 @@ Editor.prototype.updateGeometry = function(model) {
         break;
 
       case 'edge':
-        // Attached edges must be updated after their containing hull.
+        // Update unattached edges. Attached edges must be updated after their
+        // containing hull.
         if (!item.attached)
           self.updateFreeEdge(item);
         break;
@@ -1224,6 +1236,7 @@ Editor.prototype.updateGeometry = function(model) {
       case 'group':
         // Transform points from subItems into parent space.
         var points = [], subItems = item.items;
+
         subItems.forEach(function(subItem) {
           // HACK for now, only disks contribute to hull.
           if (item.type == 'hull' && subItem.type !== 'disk')
@@ -1238,14 +1251,16 @@ Editor.prototype.updateGeometry = function(model) {
         });
         if (points.length > 0) {
           var hull = geometry.getConvexHull(points),
+              center = item._center,
               segments = [],
-              extents = geometry.getExtents(hull),
-              centroid = { x: item.cx, y: item.cy };
-          geometry.annotateConvexHull(hull, centroid);
-          geometry.visitHullEdges(hull, function(p0, p1, i0, i1) {
-            if (p0.item != p1.item)
-              segments.push({ i0: i0, i1: i1 });
-          });
+              extents = geometry.getExtents(hull);
+          if (!center)
+            item._center = center = self.getStableCenter(item);
+          geometry.annotateConvexHull(hull, center);
+          // geometry.visitHullEdges(hull, function(p0, p1, i0, i1) {
+          //   if (p0.item != p1.item)
+          //     segments.push({ i0: i0, i1: i1 });
+          // });
 
           if (item.type == 'group')
             geometry.insetConvexHull(hull, -16);
@@ -1255,7 +1270,7 @@ Editor.prototype.updateGeometry = function(model) {
         }
 
         item._path = hull;
-        item._segments = segments;
+        // item._segments = segments;
         // visitHullSegments(hull, segments, function(i0, i1, breaks) {
         //   console.log(i0, i1, breaks);
         // });
@@ -1276,7 +1291,12 @@ Editor.prototype.updateGeometry = function(model) {
         if (attachments.length === 0)
           break;
 
-        attachments.sort(function(a, b) { return a.start - b.start; });
+        attachments.sort(function(a, b) {
+          var d = a.start - b.start;
+          if (d)
+            return d;
+          return a.startT - b.startT;
+        });
         var aLength = attachments.length, aLast = attachments[aLength - 1],
             wrapped = false,
             merged = [];
