@@ -220,6 +220,7 @@ HashSet.prototype = {
     var id = this.getIdFn_(element);
     if (this.inner_.hasOwnProperty(id))
       return false;
+    // TODO no need to store the element itself.
     this.inner_[id] = element;
     this.length += 1;
     return true;

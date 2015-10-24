@@ -434,6 +434,22 @@ CanvasController.prototype.onMouseOut = function(e) {
   // TODO
 }
 
+CanvasController.prototype.onDoubleClick = function(e) {
+  var self = this,
+      mouse = this.mouse = this.click = getPointerPosition(e, this.canvas),
+      alt = (e.button !== 0),
+      handler;
+  this.layers.some(function(layer) {
+    if (!layer.onDoubleClick || !layer.onDoubleClick(mouse, alt))
+      return false;
+    handler = layer;
+    return true;
+  });
+  this.cancelHover_();
+  this.draw();
+  return handler;
+}
+
 CanvasController.prototype.onKeyDown = function(e) {
   var self = this;
   this.shiftKeyDown = e.shiftKey;

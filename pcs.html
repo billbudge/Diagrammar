@@ -95,6 +95,10 @@ function onMouseUp(e) {
   canvasController.onMouseUp(e);
 }
 
+function onDoubleClick(e) {
+  canvasController.onDoubleClick(e);
+}
+
 canvas.addEventListener('mousedown', onMouseDown);
 canvas.addEventListener('mousemove', onMouseMove);
 canvas.addEventListener('mouseup', onMouseUp);
@@ -105,12 +109,13 @@ canvas.addEventListener("touchend", onMouseUp);
 // canvas.addEventListener("touchleave", handleEnd, false);
 canvas.addEventListener("touchmove", onMouseMove);
 
-canvas.addEventListener('dblclick', function(e) {
-  editorName = (editorName == 'statecharts' ? 'shapes' : 'statecharts');
-  startEditor();
-});
+canvas.addEventListener('dblclick', onDoubleClick);
 
 document.addEventListener('keydown', function(e) {
+  if (e.keyCode == 81) {  // 'q'
+    editorName = (editorName == 'statecharts' ? 'shapes' : 'statecharts');
+    startEditor();
+  }
   canvasController.onKeyDown(e);
 });
 

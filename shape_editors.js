@@ -26,35 +26,30 @@ function reverseVisit(item, itemFn) {
   itemFn(item);
 }
 
-function isHullItem(item) {
+function isGroup(item) {
+  return item.type === 'group';
+}
+
+function isGroupItem(item) {
   return item.type === 'disk' || item.type === 'edge' ||
-         item.type === 'hull';
-}
-
-function isHull(item) {
-  return item.type === 'hull';
-}
-
-function isEdgeItem(item) {
-  return item.type === 'point';
+         item.type === 'group';
 }
 
 function isEdge(item) {
   return item.type === 'edge';
 }
 
-function isGroupItem(item) {
-  return item.type == 'hull' || item.type == 'group';
-}
-
-function isGroup(item) {
-  return item.type == 'group';
+function isEdgeItem(item) {
+  return item.type === 'point';
 }
 
 function canAddItem(item, parent) {
   return (isGroup(parent) && isGroupItem(item)) ||
-         (isHull(parent) && isHullItem(item)) ||
          (isEdge(parent) && isEdgeItem(item));
+}
+
+function isHullItem(item) {
+  return item.type === 'disk';
 }
 
 //------------------------------------------------------------------------------
@@ -157,6 +152,33 @@ var editingModel = (function() {
       }
       this.model.observableModel.insertElement(edge, 'items', index, point);
     },
+
+    open: function(openItem) {
+      var visible = this._visible;
+      visible.clear();
+
+      if (openItem) {
+        var model = this.model, hierarchicalModel = model.hierarchicalModel;
+        visit(model.root, function(item) {
+          if (item.type === 'disk') {
+            if (hierarchicalModel.getParent(item) !== openItem)
+              return;
+          } else if (item.type == 'edge') {
+            if (item.attached && hierarchicalModel.getParent(item) !== openItem)
+              return;
+          } else if (item.type === 'point') {
+            var edge = hierarchicalModel.getParent(item);
+            if (edge !== openItem && hierarchicalModel.getParent(edge) !== openItem)
+              return;
+          }
+          visible.add(item);
+        });
+      }
+    },
+
+    isVisible: function(item) {
+      return this._visible.contains(item);
+    },
   }
 
   function extend(model) {
@@ -179,6 +201,9 @@ var editingModel = (function() {
 
     instance.model = model;
     instance.board = model.root;
+
+    instance._visible = new HashSet(model.dataModel.getId);
+    instance.open(instance.board.items[0]);
 
     model.editingModel = instance;
     return instance;
@@ -286,31 +311,31 @@ Renderer.prototype.drawItem = function(item, mode) {
       drawKnobby(this, knobbyRadius, 0, 0);
       drawKnobby(this, knobbyRadius, 1, 0);
       break;
+    // case 'group':
+    //   var path = item._path;
+    //   ctx.setLineDash([lineDash]);
+    //   if (!path) {
+    //     ctx.beginPath();
+    //     ctx.arc(0, 0, 16, 0, 2 * Math.PI, false);
+    //     ctx.stroke();
+    //   } else {
+    //     diagrams.closedPath(path, ctx);
+    //     ctx.stroke();
+    //     var extents = item._extents;
+    //     if (mode == normalMode) {
+    //       ctx.lineWidth = 0.25 * ooScale;
+    //       ctx.beginPath();
+    //       ctx.moveTo(0, 0);
+    //       ctx.lineTo(extents.xmax, 0);
+    //       ctx.stroke();
+    //     }
+    //     ctx.setLineDash([]);
+    //     drawKnobby(this, knobbyRadius, 0, 0);
+    //     drawKnobby(this, knobbyRadius, extents.xmax, 0);
+    //   }
+    //   ctx.setLineDash([]);
+    //   break;
     case 'group':
-      var path = item._path;
-      ctx.setLineDash([lineDash]);
-      if (!path) {
-        ctx.beginPath();
-        ctx.arc(0, 0, 16, 0, 2 * Math.PI, false);
-        ctx.stroke();
-      } else {
-        diagrams.closedPath(path, ctx);
-        ctx.stroke();
-        var extents = item._extents;
-        if (mode == normalMode) {
-          ctx.lineWidth = 0.25 * ooScale;
-          ctx.beginPath();
-          ctx.moveTo(0, 0);
-          ctx.lineTo(extents.xmax, 0);
-          ctx.stroke();
-        }
-        ctx.setLineDash([]);
-        drawKnobby(this, knobbyRadius, 0, 0);
-        drawKnobby(this, knobbyRadius, extents.xmax, 0);
-      }
-      ctx.setLineDash([]);
-      break;
-    case 'hull':
       var path = item._path, length = path.length, pLast = path[length - 1];
       if (item._merged) {
         // Draw the baseline hull first.
@@ -403,22 +428,22 @@ Renderer.prototype.hitTest = function(item, p, tol, mode) {
         }
       }
       break;
+    // case 'group':
+    //   var path = item._path;
+    //   if (!path) {
+    //     hitInfo = diagrams.hitTestDisk(0, 0, 16, localP, tol);
+    //   } else {
+    //     var extents = item._extents;
+    //     if (hitKnobby(0, 0, knobbyRadius, localP)) {
+    //       hitInfo = { relocator: true };
+    //     } else if (hitKnobby(extents.xmax, 0, knobbyRadius, localP)) {
+    //       hitInfo = { resizer: true };
+    //     } else if (mode == normalMode) {
+    //       hitInfo = diagrams.hitTestConvexHull(path, localP, tol);
+    //     }
+    //   }
+    //   break;
     case 'group':
-      var path = item._path;
-      if (!path) {
-        hitInfo = diagrams.hitTestDisk(0, 0, 16, localP, tol);
-      } else {
-        var extents = item._extents;
-        if (hitKnobby(0, 0, knobbyRadius, localP)) {
-          hitInfo = { relocator: true };
-        } else if (hitKnobby(extents.xmax, 0, knobbyRadius, localP)) {
-          hitInfo = { resizer: true };
-        } else if (mode == normalMode) {
-          hitInfo = diagrams.hitTestConvexHull(path, localP, tol);
-        }
-      }
-      break;
-    case 'hull':
       if (mode == normalMode) {
         var path = item._path;
         hitInfo = diagrams.hitTestConvexHull(path, localP, tol);
@@ -470,15 +495,15 @@ Editor.prototype.initialize = function(canvasController) {
           x: 80,
           y: 40,
         },
-        {
-          type: 'group',
-          id: 3,
-          x: 40,
-          y: 100,
-          scale: 1,
-          rotation: 0,
-          items: [],
-        },
+        // {
+        //   type: 'group',
+        //   id: 3,
+        //   x: 40,
+        //   y: 100,
+        //   scale: 1,
+        //   rotation: 0,
+        //   items: [],
+        // },
       ]
     }
   }
@@ -514,14 +539,18 @@ Editor.prototype.getTemporaryItem = function() {
 }
 
 Editor.prototype.draw = function() {
-  var renderer = this.renderer, model = this.model, ctx = this.ctx,
-      palette = this.palette,
-      canvasController = this.canvasController;
+  var renderer = this.renderer, ctx = this.ctx,
+      canvasController = this.canvasController,
+      model = this.model,
+      hierarchicalModel = model.hierarchicalModel,
+      editingModel = model.editingModel,
+      palette = this.palette;
 
   renderer.beginDraw(model, ctx);
   canvasController.applyTransform();
   visit(this.board, function(item) {
-    renderer.drawItem(item, normalMode);
+    if (editingModel.isVisible(item))
+      renderer.drawItem(item, normalMode);
   });
 
   this.model.selectionModel.forEach(function(item) {
@@ -555,6 +584,8 @@ Editor.prototype.hitTest = function(p) {
       scale = canvasController.scale,
       zoom = Math.max(scale.x, scale.y),
       tol = this.hitTolerance, cTol = tol / zoom,
+      model = this.model,
+      editingModel = model.editingModel,
       hitList = [];
   function pushInfo(info) {
     if (info)
@@ -571,13 +602,10 @@ Editor.prototype.hitTest = function(p) {
   // });
 
   reverseVisit(this.board, function(item) {
-    pushInfo(renderer.hitTest(item, cp, cTol, normalMode));
+    if (editingModel.isVisible(item))
+      pushInfo(renderer.hitTest(item, cp, cTol, normalMode));
   });
   return hitList;
-}
-
-function isDraggable(hitInfo, model) {
-  return true;
 }
 
 function isUnselected(hitInfo, model) {
@@ -590,7 +618,7 @@ Editor.prototype.getFirstHit = function(hitList, filterFn) {
     var model = this.model, length = hitList.length;
     for (var i = 0; i < length; i++) {
       var hitInfo = hitList[i];
-      if (filterFn(hitInfo, model))
+      if (!filterFn || filterFn(hitInfo, model))
         return hitInfo;
     }
   }
@@ -608,7 +636,7 @@ Editor.prototype.onClick = function(p) {
   var model = this.model,
       shiftKeyDown = this.canvasController.shiftKeyDown,
       hitList = this.hitTest(p),
-      mouseHitInfo = this.mouseHitInfo = this.getFirstHit(hitList, isDraggable);
+      mouseHitInfo = this.mouseHitInfo = this.getFirstHit(hitList);
   if (mouseHitInfo) {
     if (!model.selectionModel.contains(mouseHitInfo.item) && !shiftKeyDown)
       model.selectionModel.clear();
@@ -618,6 +646,22 @@ Editor.prototype.onClick = function(p) {
     if (!shiftKeyDown) {
       model.selectionModel.clear();
     }
+  }
+  return mouseHitInfo != null;
+}
+
+Editor.prototype.onDoubleClick = function(p) {
+  var model = this.model,
+      shiftKeyDown = this.canvasController.shiftKeyDown,
+      hitList = this.hitTest(p),
+      mouseHitInfo = this.mouseHitInfo = this.getFirstHit(hitList);
+  if (mouseHitInfo) {
+    if (!model.selectionModel.contains(mouseHitInfo.item) && !shiftKeyDown)
+      model.selectionModel.clear();
+    if (!this.isPaletteItem(mouseHitInfo.item))
+      model.selectionModel.add(mouseHitInfo.item);
+
+    model.editingModel.open(mouseHitInfo.item);
   }
   return mouseHitInfo != null;
 }
@@ -669,18 +713,18 @@ Editor.prototype.onBeginDrag = function(p0) {
           drag = { type: 'moveSelection', name: 'Move items' };
         }
         break;
+      // case 'group':
+      //   // Direction/scale vector, in parent space.
+      //   var vector = geometry.matMulVec({ x: dragItem._extents.xmax, y: 0 }, transform);
+      //   if (mouseHitInfo.resizer) {
+      //     drag = { type: 'resizeGroup', name: 'Resize group', vector: vector };
+      //   } else if (mouseHitInfo.relocator) {
+      //     drag = { type: 'relocateGroup', name: 'Relocate group origin', vector: vector };
+      //   } else {
+      //     drag = { type: 'moveSelection', name: 'Move items' };
+      //   }
+      //   break;
       case 'group':
-        // Direction/scale vector, in parent space.
-        var vector = geometry.matMulVec({ x: dragItem._extents.xmax, y: 0 }, transform);
-        if (mouseHitInfo.resizer) {
-          drag = { type: 'resizeGroup', name: 'Resize group', vector: vector };
-        } else if (mouseHitInfo.relocator) {
-          drag = { type: 'relocateGroup', name: 'Relocate group origin', vector: vector };
-        } else {
-          drag = { type: 'moveSelection', name: 'Move items' };
-        }
-        break;
-      case 'hull':
         drag = { type: 'moveSelection', name: 'Move items' };
         break;
     }
@@ -701,11 +745,11 @@ Editor.prototype.onBeginDrag = function(p0) {
     }
 
     if (drag.type == 'moveSelection') {
-      // Update centers of any affected hulls.
+      // Update centers of any affected groups.
       function update(item) {
-        if (isHull(item)) {
+        if (isGroup(item)) {
           item._center = self.getStableCenter(item);
-          // Attached edges should update their angles to the new hull center.
+          // Attached edges should update their angles to the new group center.
           item.items.forEach(function(subItem) {
             if (isEdge(subItem) && subItem.attached) {
               self.updateAttachedEdgeAngles(subItem);
@@ -796,7 +840,7 @@ Editor.prototype.updateAttachedEdgePositions = function(edge) {
 Editor.prototype.projectToParentHull = function(item, p) {
   var model = this.model,
       parent = model.hierarchicalModel.getParent(item);
-  if (parent && parent.type == 'hull') {
+  if (parent && parent.type == 'group') {
     var hull = parent._path,
         pProj = geometry.projectPointToConvexHull(hull, p),
         center = parent._center,
@@ -859,26 +903,26 @@ Editor.prototype.onDrag = function(p0, p) {
       observableModel.changeValue(dragItem, 'scale', scale);
       break;
 
-    case 'resizeGroup':
-      var vector = drag.vector, parentDrag = drags.parentDrag,
-          dx = vector.x + parentDrag.x, dy = vector.y + parentDrag.y,
-          rotation = Math.atan2(-dy, dx),
-          scale = Math.sqrt(dx * dx + dy * dy);
-      observableModel.changeValue(dragItem, 'rotation', rotation);
-      // model.observableModel.changeValue(dragItem, 'scale', scale);
-      break;
+    // case 'resizeGroup':
+    //   var vector = drag.vector, parentDrag = drags.parentDrag,
+    //       dx = vector.x + parentDrag.x, dy = vector.y + parentDrag.y,
+    //       rotation = Math.atan2(-dy, dx),
+    //       scale = Math.sqrt(dx * dx + dy * dy);
+    //   observableModel.changeValue(dragItem, 'rotation', rotation);
+    //   // model.observableModel.changeValue(dragItem, 'scale', scale);
+    //   break;
 
-    case 'relocateGroup':
-      var snapshot = transactionModel.getSnapshot(dragItem);
-      this.moveItem(dragItem, drags.parentDrag);
-      // Move contents by equal and opposite amount.
-      dragItem.items.forEach(function(item) {
-        var drags = self.calcDrags(item, model, cp, cp0),
-            parentDrag = drags.parentDrag,
-            inverse = { x: -parentDrag.x, y: -parentDrag.y };
-        self.moveItem(item, inverse);
-      });
-      break;
+    // case 'relocateGroup':
+    //   var snapshot = transactionModel.getSnapshot(dragItem);
+    //   this.moveItem(dragItem, drags.parentDrag);
+    //   // Move contents by equal and opposite amount.
+    //   dragItem.items.forEach(function(item) {
+    //     var drags = self.calcDrags(item, model, cp, cp0),
+    //         parentDrag = drags.parentDrag,
+    //         inverse = { x: -parentDrag.x, y: -parentDrag.y };
+    //     self.moveItem(item, inverse);
+    //   });
+    //   break;
 
     case 'p1':
       if (dragItem.attached) {
@@ -910,8 +954,8 @@ Editor.prototype.onDrag = function(p0, p) {
 
     case 'dragAttachedEdge':
       var parentClick = drags.parentClick, parentMouse = drags.parentMouse,
-          hull = hierarchicalModel.getParent(dragItem),
-          center = hull._center, cx = center.x, cy = center.y,
+          group = hierarchicalModel.getParent(dragItem),
+          center = group._center, cx = center.x, cy = center.y,
           angle0 = geometry.getAngle(parentClick.x - cx, parentClick.y - cy),
           angle = geometry.getAngle(parentMouse.x - cx, parentMouse.y - cy),
           da = angle - angle0,
@@ -957,19 +1001,19 @@ Editor.prototype.onEndDrag = function(p) {
         parent = hitInfo ? hitInfo.item : board;
     if (newItem) {
       var x = newItem.x, y = newItem.y;
-      if (isHullItem(newItem) && !isHull(parent)) {
-        // Items that can't be added without being wrapped in a hull.
-        var hull = {
-          type: 'hull',
+      if (isGroupItem(newItem) && !isGroup(parent)) {
+        // Items that can't be added without being wrapped in a group.
+        var group = {
+          type: 'group',
           x: x,
           y: y,
           items: [ newItem ],
         };
-        dataModel.assignId(hull);
-        dataModel.initialize(hull);
+        dataModel.assignId(group);
+        dataModel.initialize(group);
         newItem.x = 0;
         newItem.y = 0;
-        newItem = hull;
+        newItem = group;
       } else if (isEdgeItem(newItem) && !isEdge(parent)) {
         // Items that can't be added without being wrapped in an edge.
         var edge = {
@@ -1225,19 +1269,18 @@ Editor.prototype.updateGeometry = function(model) {
 
       case 'edge':
         // Update unattached edges. Attached edges must be updated after their
-        // containing hull.
+        // containing group's hull.
         if (!item.attached)
           self.updateFreeEdge(item);
         break;
 
-      case 'hull':
       case 'group':
         // Transform points from subItems into parent space.
         var points = [], subItems = item.items;
 
         subItems.forEach(function(subItem) {
           // HACK for now, only disks contribute to hull.
-          if (item.type == 'hull' && subItem.type !== 'disk')
+          if (item.type == 'group' && subItem.type !== 'disk')
             return;
           var path = subItem._path;
           var localTransform = transformableModel.getLocal(subItem);
@@ -1260,10 +1303,10 @@ Editor.prototype.updateGeometry = function(model) {
           //     segments.push({ i0: i0, i1: i1 });
           // });
 
-          if (item.type == 'group')
-            geometry.insetConvexHull(hull, -16);
+          // if (item.type == 'group')
+          //   geometry.insetConvexHull(hull, -16);
         } else {
-          // Empty group or hull.
+          // Empty group.
           return;
         }
 
@@ -1343,7 +1386,7 @@ Editor.prototype.exportPaths = function(item) {
   var self = this,
       transformableModel = this.model.transformableModel,
       type, path, children, result;
-  if (item.type === 'group' || item.type === 'board' || item.type === 'hull') {
+  if (item.type === 'board' || item.type === 'group') {
     type = 'node';
     if (item._path)
       path = item._path;
@@ -1468,7 +1511,7 @@ var shape_data = {
   "id": 153,
   "items": [
     {
-      "type": "hull",
+      "type": "group",
       "x": 349.9001125051177,
       "y": 168.11528218818455,
       "items": [
@@ -1566,7 +1609,7 @@ var shape_data = {
           "id": 179
         },
         {
-          "type": "hull",
+          "type": "group",
           "x": 196.43483957083708,
           "y": 42.472023241335705,
           "items": [
@@ -1582,7 +1625,7 @@ var shape_data = {
           "id": 167
         },
         {
-          "type": "hull",
+          "type": "group",
           "x": 323.5478716566695,
           "y": 143.21404463189072,
           "items": [
@@ -1598,7 +1641,7 @@ var shape_data = {
           "id": 191
         },
         {
-          "type": "hull",
+          "type": "group",
           "x": 303.7191073621823,
           "y": 41.22943932519274,
           "items": [
@@ -1614,7 +1657,7 @@ var shape_data = {
           "id": 187
         },
         {
-          "type": "hull",
+          "type": "group",
           "x": 218.29214314957653,
           "y": 140.39954997952947,
           "items": [
@@ -1630,7 +1673,7 @@ var shape_data = {
           "id": 189
         },
         {
-          "type": "hull",
+          "type": "group",
           "x": 80.58926509491909,
           "y": 602.7767150748746,
           "items": [
@@ -1654,7 +1697,7 @@ var shape_data = {
           "id": 194
         },
         {
-          "type": "hull",
+          "type": "group",
           "x": 161.64497749225598,
           "y": 601.0452615546664,
           "items": [
@@ -1706,7 +1749,7 @@ var shape_data = {
           "id": 217
         },
         {
-          "type": "hull",
+          "type": "group",
           "x": 30.27191858861653,
           "y": 422.6134836496286,
           "items": [

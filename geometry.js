@@ -18,6 +18,38 @@ var geometry = (function() {
     }
   }
 
+  function matMulNew(m1, m2) {
+    return [ m1[0] * m2[0] + m1[1] * m2[2],
+             m1[0] * m2[1] + m1[1] * m2[3],
+             m1[2] * m2[0] + m1[3] * m2[2],
+             m1[2] * m2[1] + m1[3] * m2[3],
+             m1[4] * m2[0] + m1[5] * m2[2] + m2[4],
+             m1[4] * m2[1] + m1[5] * m2[3] + m2[5]
+           ];
+  }
+
+  function matMulVec(v, m) {
+    var x = v.x, y = v.y;
+    v.x = x * m[0] + y * m[2];
+    v.y = x * m[1] + y * m[3];
+    return v;
+  }
+
+  function matMulVecNew(v, m) {
+    return matMulVec({ x: v.x, y: v.y }, m);
+  }
+
+  function matMulPt(v, m) {
+    var x = v.x, y = v.y;
+    v.x = x * m[0] + y * m[2] + m[4];
+    v.y = x * m[1] + y * m[3] + m[5];
+    return v;
+  }
+
+  function matMulPtNew(v, m) {
+    return matMulPt({ x: v.x, y: v.y }, m);
+  }
+
   function pointToPointDist(p1, p2) {
     var dx = p2.x - p1.x, dy = p2.y - p1.y;
     return Math.sqrt(dx * dx + dy * dy);
@@ -206,38 +238,6 @@ var geometry = (function() {
     if (dMin < tolerance)
       return { x: closestX, y: closestY, d: dMin };
     // Otherwise, return nothing.
-  }
-
-  function matMulNew(m1, m2) {
-    return [ m1[0] * m2[0] + m1[1] * m2[2],
-             m1[0] * m2[1] + m1[1] * m2[3],
-             m1[2] * m2[0] + m1[3] * m2[2],
-             m1[2] * m2[1] + m1[3] * m2[3],
-             m1[4] * m2[0] + m1[5] * m2[2] + m2[4],
-             m1[4] * m2[1] + m1[5] * m2[3] + m2[5]
-           ];
-  }
-
-  function matMulVec(v, m) {
-    var x = v.x, y = v.y;
-    v.x = x * m[0] + y * m[2];
-    v.y = x * m[1] + y * m[3];
-    return v;
-  }
-
-  function matMulVecNew(v, m) {
-    return matMulVec({ x: v.x, y: v.y }, m);
-  }
-
-  function matMulPt(v, m) {
-    var x = v.x, y = v.y;
-    v.x = x * m[0] + y * m[2] + m[4];
-    v.y = x * m[1] + y * m[3] + m[5];
-    return v;
-  }
-
-  function matMulPtNew(v, m) {
-    return matMulPt({ x: v.x, y: v.y }, m);
   }
 
   // Cosine of angle between x-axis (1, 0) and (dx, dy).
@@ -494,6 +494,11 @@ var geometry = (function() {
     lineLength: lineLength,
     vecLength: vecLength,
     vecNormalize: vecNormalize,
+    matMulNew: matMulNew,
+    matMulVec: matMulVec,
+    matMulVecNew: matMulVecNew,
+    matMulPt: matMulPt,
+    matMulPtNew: matMulPtNew,
     pointToPointDist: pointToPointDist,
     projectPointToLine: projectPointToLine,
     projectPointToSegment: projectPointToSegment,
@@ -507,11 +512,6 @@ var geometry = (function() {
     evaluateBezier: evaluateBezier,
     generateInterpolatingBeziers: generateInterpolatingBeziers,
     hitTestCurveSegment: hitTestCurveSegment,
-    matMulNew: matMulNew,
-    matMulVec: matMulVec,
-    matMulVecNew: matMulVecNew,
-    matMulPt: matMulPt,
-    matMulPtNew: matMulPtNew,
     getCos: getCos,
     compareCosines: compareCosines,
     binarySearch: binarySearch,
