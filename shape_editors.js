@@ -177,7 +177,7 @@ var editingModel = (function() {
     },
 
     isVisible: function(item) {
-      return this._visible.contains(item);
+      return this._visible.has(item);
     },
   }
 
@@ -202,7 +202,7 @@ var editingModel = (function() {
     instance.model = model;
     instance.board = model.root;
 
-    instance._visible = new HashSet(model.dataModel.getId);
+    instance._visible = new Set();
     instance.open(instance.board.items[0]);
 
     model.editingModel = instance;
