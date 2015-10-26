@@ -191,130 +191,13 @@ PriorityQueue.prototype = {
 }
 
 //------------------------------------------------------------------------------
-// Hash sets.
-
-function HashSet(getIdFn) {
-  this.inner_ = {};
-  this.length = 0;
-  // getIdFn converts elements to keys in the inner_ hashtable.
-  if (getIdFn)
-    this.getIdFn_ = getIdFn;
-}
-
-HashSet.prototype = {
-  // Default: identity function.
-  getIdFn_: function(obj) {
-    return obj;
-  },
-
-  empty: function() {
-    return this.length === 0;
-  },
-
-  contains: function(element) {
-    var id = this.getIdFn_(element);
-    return this.inner_.hasOwnProperty(id);
-  },
-
-  add: function(element) {
-    var id = this.getIdFn_(element);
-    if (this.inner_.hasOwnProperty(id))
-      return false;
-    // TODO no need to store the element itself.
-    this.inner_[id] = element;
-    this.length += 1;
-    return true;
-  },
-
-  remove: function(element) {
-    var id = this.getIdFn_(element);
-    if (this.inner_.hasOwnProperty(id)) {
-      delete this.inner_[id];
-      this.length -= 1;
-      return element;
-    }
-    return null;
-  },
-
-  clear: function() {
-    this.inner_ = {};
-    this.length = 0;
-  },
-
-  forEach: function(fn) {
-    for (var id in this.inner_)
-      fn(this.inner_[id]);
-  },
-
-  toArray: function() {
-    var result = [];
-    for (var id in this.inner_)
-      result.push(this.inner_[id]);
-    return result;
-  }
-}
-
-//------------------------------------------------------------------------------
-// Hash maps.
-
-function HashMap() {
-  this.inner_ = {};
-  this.length = 0;
-}
-
-HashMap.prototype = {
-  empty: function() {
-    return this.length === 0;
-  },
-
-  contains: function(key) {
-    return this.inner_.hasOwnProperty(key);
-  },
-
-  find: function(key) {
-    return this.contains(key) ? this.inner_[key] : null;
-  },
-
-  add: function(key, value) {
-    var added = !this.contains(key);
-    if (added) {
-      this.length += 1;
-    }
-    this.inner_[key] = value;
-    return added;
-  },
-
-  remove: function(key) {
-    delete this.inner_[key];
-    this.length -= 1;
-  },
-
-  clear: function() {
-    this.inner_ = {};
-    this.length = 0;
-  },
-
-  forEach: function(fn) {
-    for (var key in this.inner_) {
-      fn(key, this.inner_[key]);
-    }
-  },
-}
-
-//------------------------------------------------------------------------------
 // Set that orders elements by the order in which they were added. Note that
 // adding an element already in the set makes it the most recently added.
 
-function SelectionSet(getKeyFn) {
+function SelectionSet() {
   this.list_ = new LinkedList();
-  if (!getKeyFn) {
-    getKeyFn = function(obj) {  // Identity fn.
-      return obj;
-    };
-  }
-  this.hash_map_ = new HashMap();
+  this.map_ = new Map();
   this.length = 0;
-  this.getKeyFn = getKeyFn;
 }
 
 SelectionSet.prototype = {
@@ -323,8 +206,7 @@ SelectionSet.prototype = {
   },
 
   contains: function(element) {
-    var key = this.getKeyFn(element);
-    return key && this.hash_map_.contains(key);
+    return this.map_.has(element);
   },
 
   lastSelected: function() {
@@ -332,24 +214,22 @@ SelectionSet.prototype = {
   },
 
   add: function(element) {
-    var key = this.getKeyFn(element);
-    var node = this.hash_map_.find(key);
+    var node = this.map_.get(element);
     if (node) {
       this.list_.remove(node);
       this.list_.pushFront(node);
     } else {
       node = this.list_.pushFront(element);
-      this.hash_map_.add(key, node);
+      this.map_.set(element, node);
       this.length += 1;
     }
     return true;
   },
 
   remove: function(element) {
-    var key = this.getKeyFn(element);
-    var node = this.hash_map_.find(key);
+    var node = this.map_.get(element);
     if (node) {
-      this.hash_map_.remove(key);
+      this.map_.delete(element);
       this.list_.remove(node);
       this.length -= 1;
       return true;
@@ -366,7 +246,7 @@ SelectionSet.prototype = {
 
   clear: function() {
     this.list_.clear();
-    this.hash_map_.clear();
+    this.map_.clear();
     this.length = 0;
   },
 

@@ -76,7 +76,7 @@ var editingModel = (function() {
 
     getConnectedConnections: function (items, copying) {
       var model = this.model,
-          itemsAndChildren = new HashSet(this.model.dataModel.getId);
+          itemsAndChildren = new Set();
       items.forEach(function(item) {
         visit(item, isContainable, function(item) {
           itemsAndChildren.add(item);
@@ -84,8 +84,8 @@ var editingModel = (function() {
       });
       var connections = [];
       visit(this.statechart, isConnection, function(item) {
-        var contains1 = itemsAndChildren.contains(item._srcId);
-        var contains2 = itemsAndChildren.contains(item._dstId);
+        var contains1 = itemsAndChildren.has(item._srcId);
+        var contains2 = itemsAndChildren.has(item._dstId);
         if (copying) {
           if (contains1 && contains2)
             connections.push(item);
@@ -140,7 +140,7 @@ var editingModel = (function() {
           statechart = this.statechart;
 
       items.forEach(function(item) {
-        var copy = map.find(dataModel.getId(item));
+        var copy = map.get(dataModel.getId(item));
         if (isContainable(copy)) {
           var toGlobal = transformableModel.getToParent(item, statechart);
           geometry.matMulPt(copy, toGlobal);

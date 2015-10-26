@@ -309,8 +309,8 @@ test("referencingModel", function() {
 
   // unresolvable id causes ref to be set to 'null'.
   model.observableModel.changeValue(child2, 'refId', 88);
-  deepEqual(child2._refId, null);
-  deepEqual(model.referencingModel.resolveId(child2.refId), null);
+  deepEqual(child2._refId, undefined);
+  deepEqual(model.referencingModel.resolveId(child2.refId), undefined);
 });
 
 // Hierarchical model unit tests.

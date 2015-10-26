@@ -314,7 +314,7 @@ var transactionModel = (function () {
         ops: [],
       };
       this.transaction = transaction;
-      this.changedItems = new HashMap();
+      this.changedItems = new Map();
 
       this.onBeginTransaction(transaction);
       this.onEvent('transactionBegan', function (handler) {
@@ -374,8 +374,7 @@ var transactionModel = (function () {
       var changedItems = this.changedItems;
       if (!changedItems)
         return;
-      var dataModel = this.model.dataModel,
-          changedItem = changedItems.find(dataModel.getId(item));
+      var changedItem = changedItems.get(item);
       return changedItem ? changedItem.snapshot : item;
     },
 
@@ -433,9 +432,8 @@ var transactionModel = (function () {
       } else {
         // Coalesce value changes. Only record them if this is the first time
         // we've observed the (item, attr) change.
-        var id = dataModel.getId(item),
-            changedItems = this.changedItems,
-            changedItem = changedItems.find(id),
+        var changedItems = this.changedItems,
+            changedItem = changedItems.get(item),
             snapshot, oldValue;
         if (changedItem) {
           snapshot = changedItem.snapshot;
@@ -446,7 +444,7 @@ var transactionModel = (function () {
           // we receive attribute changes for it.
           snapshot = Object.create(item);
           changedItem = { item: item, snapshot: snapshot };
-          changedItems.add(id, changedItem);
+          changedItems.set(item, changedItem);
         }
         if (!oldValue) {
           snapshot[attr] = change.oldValue;
@@ -553,7 +551,7 @@ var referencingModel = (function () {
 
     // Resolves an id to a target item if possible.
     resolveId: function (id) {
-      return this.targets_.find(id);
+      return this.targets_.get(id);
     },
 
     // Resolves a reference to a target item if possible.
@@ -571,7 +569,7 @@ var referencingModel = (function () {
       dataModel.visitSubtree(item, function (item) {
         var id = dataModel.getId(item);
         if (id)
-          self.targets_.add(id, item);
+          self.targets_.set(id, item);
       });
       dataModel.visitSubtree(item, function (item) {
         dataModel.visitReferences(item, function (item, attr) {
@@ -586,7 +584,7 @@ var referencingModel = (function () {
       dataModel.visitSubtree(item, function (item) {
         var id = dataModel.getId(item);
         if (id)
-          self.targets_.remove(id);
+          self.targets_.delete(id);
       });
     },
 
@@ -635,7 +633,7 @@ var referencingModel = (function () {
         instance.onChanged_(change);
       });
     }
-    instance.targets_ = new HashMap();
+    instance.targets_ = new Map();
     instance.addTargets_(model.dataModel.getRoot());
 
     model.referencingModel = instance;
@@ -768,7 +766,7 @@ var selectionModel = (function () {
 
     var instance = Object.create(proto);
     instance.model = model;
-    instance.selection = new SelectionSet(model.dataModel.getId);
+    instance.selection = new SelectionSet();
 
     model.selectionModel = instance;
     return instance;
@@ -803,7 +801,7 @@ var instancingModel = (function () {
         dataModel.initialize(copy);
         if (map) {
           var id = dataModel.getId(item);
-          map.add(id, copy);
+          map.set(id, copy);
         }
       }
       return copy;
@@ -822,7 +820,7 @@ var instancingModel = (function () {
           for (var attr in copy) {
             if (dataModel.isReference(copy, attr)) {
               var originalId = copy[attr];
-              var newCopy = map.find(originalId);
+              var newCopy = map.get(originalId);
               var newId = dataModel.getId(newCopy);
               copy[attr] = newId;
             }
@@ -893,7 +891,7 @@ var editingModel = (function () {
 
     doCopy: function () {
       var model = this.model, selectionModel = model.selectionModel,
-          map = new HashMap(),
+          map = new Map(),
           copies = this.copyItems(selectionModel.contents(), map);
       this.setScrap(copies);
       return copies;
@@ -909,7 +907,7 @@ var editingModel = (function () {
       var model = this.model, selectionModel = model.selectionModel,
           transactionModel = model.transactionModel;
       transactionModel.beginTransaction("Paste scrap");
-      var map = new HashMap(),
+      var map = new Map(),
           items = this.copyItems(this.getScrap(), map);
       selectionModel.clear();
       this.addItems(items);

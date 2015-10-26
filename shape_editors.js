@@ -97,7 +97,7 @@ var editingModel = (function() {
 
       items.forEach(function(item) {
         // TODO detach copy
-        var copy = map.find(dataModel.getId(item));
+        var copy = map.get(dataModel.getId(item));
         var toGlobal = transformableModel.getToParent(item, board);
         geometry.matMulPt(copy, toGlobal);
       });
