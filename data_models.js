@@ -359,7 +359,6 @@ var transactionModel = (function () {
       var length = ops.length;
       for (var i = length - 1; i >= 0; i--) {
         ops[i].undo();
-        console.log(ops[i].change)
       }
     },
 
@@ -368,8 +367,9 @@ var transactionModel = (function () {
       // Roll forward changes.
       var ops = transaction.ops;
       var length = ops.length;
-      for (var i = 0; i < length; i++)
+      for (var i = 0; i < length; i++) {
         ops[i].redo();
+      }
     },
 
     getSnapshot: function(item) {
@@ -1253,24 +1253,39 @@ var dependencyModel = (function () {
 // in an 'invalid' state until reset() is called.
 var invalidatingModel = (function () {
   var proto = {
-    isValid: function(item) {
-      return !!item._valid;
+    isInvalid: function(item) {
+      return this._invalid.has(item);
     },
-    setValid: function (item, valid) {
-      item._valid = valid;
+
+    hasInvalid: function() {
+      return this._invalid.size > 0;
     },
-    reset: function() {
+
+    invalidate: function (item) {
+      this._invalid.add(item);
+    },
+
+    invalidateAll: function(valid) {
       var self = this,
           dataModel = this.model.dataModel, root = dataModel.getRoot();
       dataModel.visitSubtree(root, function(item) {
-        self.setValid(item, true);
+        self.invalidate(item);
       });
     },
+
+    reset: function (item) {
+      this._invalid.delete(item);
+    },
+
+    resetAll: function() {
+      this._invalid.clear();
+    },
+
     onChanged_: function (change) {
       var self = this, item = change.item,
           dependents = this.model.dependencyModel.getDependents(item);
-      self.setValid(item, false);
-      dependents.forEach(function(item) { self.setValid(item, false) });
+      self.invalidate(item);
+      dependents.forEach(function(item) { self.invalidate(item) });
     },
   }
 
@@ -1287,6 +1302,8 @@ var invalidatingModel = (function () {
     model.observableModel.addHandler('changed', function (change) {
       instance.onChanged_(change);
     });
+
+    instance._invalid = new Set();
 
     model.invalidatingModel = instance;
     return instance;

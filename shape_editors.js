@@ -502,7 +502,11 @@ Editor.prototype.initialize = function(canvasController) {
   model.dataModel.initialize();
 
   this._visible = new Set();
+
+  palette.invalidatingModel.invalidateAll();
   this.updateGeometry(palette);
+
+  model.invalidatingModel.invalidateAll();
   this.updateGeometry(model);
 }
 
@@ -516,7 +520,8 @@ Editor.prototype.addTemporaryItem = function(item) {
 }
 
 Editor.prototype.removeTemporaryItem = function(item) {
-  return this.model.observableModel.changeValue(this.board, 'temporary', null);
+  if (this.getTemporaryItem())
+    return this.model.observableModel.changeValue(this.board, 'temporary', null);
 }
 
 Editor.prototype.getTemporaryItem = function() {
@@ -723,7 +728,6 @@ Editor.prototype.onBeginDrag = function(p0) {
       model.editingModel.reduceSelection();
 
     model.transactionModel.beginTransaction(drag.name);
-
     if (newItem) {
       drag.item = newItem;
       model.dataModel.initialize(newItem);
@@ -1254,10 +1258,10 @@ Editor.prototype.updateGeometry = function(model) {
       visible.add(item);
     }
 
-    if (invalidatingModel.isValid(item))
+    if (!invalidatingModel.isInvalid(item))
       return;
 
-    invalidatingModel.setValid(item, true);
+    invalidatingModel.reset(item);
 
     switch (item.type) {
       case 'disk':
