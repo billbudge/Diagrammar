@@ -26,6 +26,10 @@ function reverseVisit(item, itemFn) {
   itemFn(item);
 }
 
+function isBoard(item) {
+  return item.type === 'board';
+}
+
 function isGroup(item) {
   return item.type === 'group';
 }
@@ -44,7 +48,7 @@ function isEdgeItem(item) {
 }
 
 function canAddItem(item, parent) {
-  return (isGroup(parent) && isGroupItem(item)) ||
+  return (isGroupItem(item) && (isGroup(parent) || isBoard(parent))) ||
          (isEdge(parent) && isEdgeItem(item));
 }
 
@@ -165,8 +169,6 @@ var editingModel = (function() {
     dataModels.transactionHistory.extend(model);
     dataModels.instancingModel.extend(model);
     dataModels.editingModel.extend(model);
-    dataModels.invalidatingModel.extend(model);
-    dataModels.openingModel.extend(model);
 
     var instance = Object.create(model.editingModel);
     instance.prototype = Object.getPrototypeOf(instance);
@@ -176,8 +178,6 @@ var editingModel = (function() {
     instance.model = model;
     instance.board = model.root;
 
-    instance.model.openingModel.open(instance.board.items[0]);
-
     model.editingModel = instance;
     return instance;
   }
@@ -185,6 +185,113 @@ var editingModel = (function() {
   return {
     extend: extend,
   }
+})();
+
+//------------------------------------------------------------------------------
+
+var invalidatingModel = (function () {
+  var proto = {
+    isInvalid: function(item) {
+      return this._invalid.has(item);
+    },
+
+    invalidate: function (item) {
+      var model = this.model,
+          hierarchicalModel = model.hierarchicalModel,
+          parent = hierarchicalModel.getParent(item),
+          invalid = this._invalid;
+      invalid.add(item);
+      switch (item.type) {
+        case 'disk':
+          invalid.add(parent);
+          break;
+        case 'point':
+          invalid.add(parent);
+          if (parent.attached)
+            invalid.add(hierarchicalModel.getParent(parent));
+          break;
+        case 'edge':
+          if (item.attached)
+            invalid.add(parent);
+          break;
+        case 'group':
+          break;
+      }
+      this._invalid.add(item);
+    },
+
+    invalidateAll: function(valid) {
+      var self = this,
+          dataModel = this.model.dataModel,
+          invalid = this._invalid;
+      dataModel.visitSubtree(dataModel.getRoot(), function(item) {
+        invalid.add(item);
+      });
+    },
+
+    reset: function (item) {
+      this._invalid.delete(item);
+    },
+
+    resetAll: function() {
+      this._invalid.clear();
+    },
+
+    onChanged_: function (change) {
+      var self = this,
+          item = change.item,
+          model = this.model,
+          dataModel = model.dataModel,
+          hierarchicalModel = model.hierarchicalModel;
+      switch (change.type) {
+        case 'change':
+          var newValue = item[change.attr];
+          if (dataModel.isItem(newValue))
+            this.invalidate(newValue);
+          else
+            this.invalidate(item);
+          break;
+        case 'insert':
+          var newValue = item[change.attr][change.index];
+          if (dataModel.isItem(newValue))
+            this.invalidate(newValue);
+          else
+            this.invalidate(item);
+          // Invalidate the item's subtree.
+          dataModel.visitSubtree(item, function(subItem) {
+            self._invalid.add(subItem);
+          });
+          break;
+        case 'remove':
+          this.invalidate(item);
+          break;
+      }
+    },
+  }
+
+  function extend(model) {
+    if (model.invalidatingModel)
+      return model.invalidatingModel;
+
+    dataModels.dataModel.extend(model);
+    dataModels.observableModel.extend(model);
+    dataModels.hierarchicalModel.extend(model);
+
+    var instance = Object.create(proto);
+    instance.model = model;
+    model.observableModel.addHandler('changed', function (change) {
+      instance.onChanged_(change);
+    });
+
+    instance._invalid = new Set();
+
+    model.invalidatingModel = instance;
+    return instance;
+  }
+
+  return {
+    extend: extend,
+  };
 })();
 
 //------------------------------------------------------------------------------
@@ -367,7 +474,7 @@ Renderer.prototype.hitTest = function(item, p, tol, mode) {
         } else if (hitKnobby(1, 0, knobbyRadius, localP)) {
           hitInfo.resizer = true;
         } else {
-          return null;
+          hitInfo = null;
         }
       }
       break;
@@ -493,21 +600,22 @@ Editor.prototype.initialize = function(canvasController) {
   dataModels.observableModel.extend(palette);
   dataModels.hierarchicalModel.extend(palette);
   dataModels.transformableModel.extend(palette);
-  dataModels.invalidatingModel.extend(palette);
+  invalidatingModel.extend(palette);
   palette.dataModel.addInitializer(initialize);
   palette.dataModel.initialize();
+  palette.invalidatingModel.invalidateAll();
+
+  dataModels.openingModel.extend(model);
+  model.openingModel.open(this.board.items[0]);
 
   editingModel.extend(model);
+  invalidatingModel.extend(model);
+
   model.dataModel.addInitializer(initialize);
   model.dataModel.initialize();
+  model.invalidatingModel.invalidateAll();
 
   this._visible = new Set();
-
-  palette.invalidatingModel.invalidateAll();
-  this.updateGeometry(palette);
-
-  model.invalidatingModel.invalidateAll();
-  this.updateGeometry(model);
 }
 
 Editor.prototype.isPaletteItem = function(item) {
@@ -537,6 +645,8 @@ Editor.prototype.draw = function() {
       editingModel = model.editingModel,
       palette = this.palette;
 
+  this.updateGeometry(model);
+  this.updateVisibility(model);
   renderer.beginDraw(model, ctx);
   canvasController.applyTransform();
   visit(this.board, function(item) {
@@ -551,6 +661,7 @@ Editor.prototype.draw = function() {
     renderer.drawItem(this.hotTrackInfo.item, hotTrackMode);
   renderer.endDraw();
 
+  this.updateGeometry(palette);
   renderer.beginDraw(palette, ctx);
   ctx.fillStyle = renderer.theme.altBgColor;
   ctx.fillRect(palette.root.x, palette.root.y, 160, 300);
@@ -588,11 +699,6 @@ Editor.prototype.hitTest = function(p) {
     pushInfo(renderer.hitTest(item, p, tol, normalMode));
   });
 
-  // TODO figure this out
-  // this.model.selectionModel.forEach(function(item) {
-  //   pushInfo(renderer.hitTest(item, cp, tol, highlightMode));
-  // });
-
   reverseVisit(this.board, function(item) {
     if (visible.has(item))
       pushInfo(renderer.hitTest(item, cp, cTol, normalMode));
@@ -606,6 +712,7 @@ function isUnselected(hitInfo, model) {
 }
 
 Editor.prototype.getFirstHit = function(hitList, filterFn) {
+  // TODO items which are selected should have preference.
   if (hitList) {
     var model = this.model, length = hitList.length;
     for (var i = 0; i < length; i++) {
@@ -654,7 +761,6 @@ Editor.prototype.onDoubleClick = function(p) {
       model.selectionModel.add(mouseHitInfo.item);
 
     model.openingModel.open(mouseHitInfo.item);
-    this.updateGeometry(model);
   }
   return mouseHitInfo != null;
 }
@@ -738,6 +844,7 @@ Editor.prototype.onBeginDrag = function(p0) {
 
     if (drag.type == 'moveSelection') {
       // Update centers of any affected groups.
+      // TODO top level fn for strict mode.
       function update(item) {
         if (isGroup(item)) {
           item._center = self.getStableCenter(item);
@@ -960,11 +1067,11 @@ Editor.prototype.onDrag = function(p0, p) {
       break;
   }
   this.hotTrackInfo = (hitInfo && hitInfo.item !== this.board) ? hitInfo : null;
-  this.updateGeometry(model);
 }
 
 Editor.prototype.onEndDrag = function(p) {
-  var drag = this.drag,
+  var self = this,
+      drag = this.drag,
       model = this.model,
       board = this.board,
       dataModel = model.dataModel,
@@ -972,8 +1079,7 @@ Editor.prototype.onEndDrag = function(p) {
       transactionModel = model.transactionModel,
       selectionModel = model.selectionModel,
       editingModel = model.editingModel,
-      newItem = this.removeTemporaryItem()
-      self = this;
+      newItem = this.removeTemporaryItem();
   if (newItem) {
     // Clone the new item, since we're about to roll back the transaction. We
     // do this to collapse all of the edits into a single insert operation.
@@ -1024,6 +1130,7 @@ Editor.prototype.onEndDrag = function(p) {
         dataModel.initialize(edge);
         newItem = edge;
       }
+
       if (newItem.type === 'point') {
         var index = hitInfo.p1 ? 0 : hitInfo.p2 ? parent.items.length : hitInfo.index;
         editingModel.addPoint(newItem, parent, index);
@@ -1052,8 +1159,35 @@ Editor.prototype.onEndDrag = function(p) {
   this.drag = null;
   this.mouseHitInfo = null;
   this.hotTrackInfo = null;
+}
 
-  this.updateGeometry(model);
+// Update item visibility.
+Editor.prototype.updateVisibility = function(model) {
+  var root = model.root,
+      hierarchicalModel = model.hierarchicalModel,
+      openItem = model.openingModel.openItem(),
+      visible = this._visible;
+
+  // Update paths for primitive hull items and form hulls
+  function update(item) {
+    // Update visibility of internal items based on the open item.
+    if (item.type === 'disk') {
+      if (hierarchicalModel.getParent(item) === openItem)
+        visible.add(item);
+    } else if (item.type == 'edge') {
+      if (!item.attached || hierarchicalModel.getParent(item) === openItem)
+        visible.add(item);
+    } else if (item.type === 'point') {
+      var edge = hierarchicalModel.getParent(item);
+      if (edge === openItem || hierarchicalModel.getParent(edge) === openItem)
+        visible.add(item);
+    } else {
+      visible.add(item);
+    }
+  }
+
+  visible.clear();
+  visit(root, update);
 }
 
 // // Calculate auto-rotation using parent hull.
@@ -1169,8 +1303,7 @@ function sampleBeziers(beziers, error) {
 
 Editor.prototype.updateAttachedEdge = function(edge, parent, attachments) {
   // Make the control point array for the curve.
-  var self = this,
-      cps = edge.items,
+  var cps = edge.items,
       points = [{ x: 0, y: 0 }, { x: 0, y: 0 }].concat(cps);
   points.push({ x: 1, y: 0 });
   points.push({ x: 1, y: 0 });
@@ -1178,6 +1311,7 @@ Editor.prototype.updateAttachedEdge = function(edge, parent, attachments) {
       first = points[0], last = points[pLength - 1];
 
   // Update x, y, dx, and dy for attachment.
+  this.updateAttachedEdgeAngles(edge);
   var a1 = edge._a1, a2 = edge._a2;
   this.updateAttachedEdgePositions(edge);
   this.updateEdge(edge);
@@ -1234,30 +1368,10 @@ Editor.prototype.updateGeometry = function(model) {
       hierarchicalModel = model.hierarchicalModel,
       transformableModel = model.transformableModel,
       referencingModel = model.referencingModel,
-      invalidatingModel = model.invalidatingModel,
-      openingModel = model.openingModel,
-      openItem = openingModel? model.openingModel.openItem() : null,
-      visible = this._visible;
-
-  this._visible.clear();
+      invalidatingModel = model.invalidatingModel;
 
   // Update paths for primitive hull items and form hulls
   function update(item) {
-    // Update visibility of internal items based on the open item.
-    if (item.type === 'disk') {
-      if (hierarchicalModel.getParent(item) === openItem)
-        visible.add(item);
-    } else if (item.type == 'edge') {
-      if (!item.attached || hierarchicalModel.getParent(item) === openItem)
-        visible.add(item);
-    } else if (item.type === 'point') {
-      var edge = hierarchicalModel.getParent(item);
-      if (edge === openItem || hierarchicalModel.getParent(edge) === openItem)
-        visible.add(item);
-    } else {
-      visible.add(item);
-    }
-
     if (!invalidatingModel.isInvalid(item))
       return;
 
@@ -1287,7 +1401,6 @@ Editor.prototype.updateGeometry = function(model) {
       case 'group':
         // Transform points from subItems into parent space.
         var points = [], subItems = item.items;
-
         subItems.forEach(function(subItem) {
           // HACK for now, only disks contribute to hull.
           if (item.type == 'group' && subItem.type !== 'disk')
@@ -1327,9 +1440,7 @@ Editor.prototype.updateGeometry = function(model) {
 
         var attachments = [];
         subItems.forEach(function(subItem) {
-          if (subItem.type == 'edge') {
-            if (!subItem.attached)
-              return;
+          if (subItem.type == 'edge' && subItem.attached) {
             self.updateAttachedEdge(subItem, item, attachments);
           }
         });
@@ -1500,7 +1611,6 @@ Editor.prototype.onKeyDown = function(e) {
     }
   }
 
-  this.updateGeometry(model);
   return handled;
 }
 

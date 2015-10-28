@@ -36,27 +36,6 @@ var statechartEditor = new statecharts.Editor(statechartModel),
 var editorName = 'shapes',
     editor;
 
-  // function rotateArray(a, k) {
-  //   function reverse(a, i0, i1) {
-  //     while (i0 < i1) {
-  //       var temp = a[i0];
-  //       a[i0] = a[i1];
-  //       a[i1] = temp;
-  //       i0++;
-  //       i1--;
-  //     }
-  //   }
-  //   var length = a.length;
-  //   reverse(a, 0, k - 1);
-  //   reverse(a, k, length - 1);
-  //   reverse(a, 0, length - 1);
-  // }
-
-  // var array = [0, 1, 2, 3, 4, 5, 6, 7];
-  // rotateArray(array, 7);
-  // console.log(array)
-
-
 function startEditor() {
   switch (editorName) {
     case 'statecharts':
@@ -112,7 +91,7 @@ canvas.addEventListener("touchmove", onMouseMove);
 canvas.addEventListener('dblclick', onDoubleClick);
 
 document.addEventListener('keydown', function(e) {
-  if (e.keyCode == 81) {  // 'q'
+  if (e.keyCode == 85) {  // 'u'
     editorName = (editorName == 'statecharts' ? 'shapes' : 'statecharts');
     startEditor();
   }

@@ -1212,110 +1212,6 @@ var transformableModel = (function () {
 
 //------------------------------------------------------------------------------
 
-// A simple dependency model based on the model's hierarchy, where parents
-// depend on their descendants.
-var dependencyModel = (function () {
-  var proto = {
-    getDependents: function(item) {
-      var hierarchicalModel = this.model.hierarchicalModel,
-          ancestor = hierarchicalModel.getParent(item),
-          dependents = [];
-      while (ancestor) {
-        dependents.push(ancestor);
-        ancestor = hierarchicalModel.getParent(ancestor);
-      }
-      return dependents;
-    },
-  }
-
-  function extend(model) {
-    if (model.dependencyModel)
-      return model.dependencyModel;
-
-    hierarchicalModel.extend(model);
-
-    var instance = Object.create(proto);
-    instance.model = model;
-
-    model.dependencyModel = instance;
-    return instance;
-  }
-
-  return {
-    extend: extend,
-  };
-})();
-
-//------------------------------------------------------------------------------
-
-// A simple model for efficient updating of a model with dependencies. When an
-// item changes, it and its dependents are marked as not valid. Items start out
-// in an 'invalid' state until reset() is called.
-var invalidatingModel = (function () {
-  var proto = {
-    isInvalid: function(item) {
-      return this._invalid.has(item);
-    },
-
-    hasInvalid: function() {
-      return this._invalid.size > 0;
-    },
-
-    invalidate: function (item) {
-      this._invalid.add(item);
-    },
-
-    invalidateAll: function(valid) {
-      var self = this,
-          dataModel = this.model.dataModel, root = dataModel.getRoot();
-      dataModel.visitSubtree(root, function(item) {
-        self.invalidate(item);
-      });
-    },
-
-    reset: function (item) {
-      this._invalid.delete(item);
-    },
-
-    resetAll: function() {
-      this._invalid.clear();
-    },
-
-    onChanged_: function (change) {
-      var self = this, item = change.item,
-          dependents = this.model.dependencyModel.getDependents(item);
-      self.invalidate(item);
-      dependents.forEach(function(item) { self.invalidate(item) });
-    },
-  }
-
-  function extend(model) {
-    if (model.invalidatingModel)
-      return model.invalidatingModel;
-
-    dataModel.extend(model);
-    dependencyModel.extend(model);
-    observableModel.extend(model);
-
-    var instance = Object.create(proto);
-    instance.model = model;
-    model.observableModel.addHandler('changed', function (change) {
-      instance.onChanged_(change);
-    });
-
-    instance._invalid = new Set();
-
-    model.invalidatingModel = instance;
-    return instance;
-  }
-
-  return {
-    extend: extend,
-  };
-})();
-
-//------------------------------------------------------------------------------
-
 // A model for maintaining a single 'open' item.
 var openingModel = (function () {
   var proto = {
@@ -1414,8 +1310,6 @@ var openingModel = (function () {
     editingModel: editingModel,
     hierarchicalModel: hierarchicalModel,
     transformableModel: transformableModel,
-    dependencyModel: dependencyModel,
-    invalidatingModel: invalidatingModel,
     openingModel: openingModel,
   }
 })();
