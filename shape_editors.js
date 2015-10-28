@@ -152,33 +152,6 @@ var editingModel = (function() {
       }
       this.model.observableModel.insertElement(edge, 'items', index, point);
     },
-
-    open: function(openItem) {
-      var visible = this._visible;
-      visible.clear();
-
-      if (openItem) {
-        var model = this.model, hierarchicalModel = model.hierarchicalModel;
-        visit(model.root, function(item) {
-          if (item.type === 'disk') {
-            if (hierarchicalModel.getParent(item) !== openItem)
-              return;
-          } else if (item.type == 'edge') {
-            if (item.attached && hierarchicalModel.getParent(item) !== openItem)
-              return;
-          } else if (item.type === 'point') {
-            var edge = hierarchicalModel.getParent(item);
-            if (edge !== openItem && hierarchicalModel.getParent(edge) !== openItem)
-              return;
-          }
-          visible.add(item);
-        });
-      }
-    },
-
-    isVisible: function(item) {
-      return this._visible.has(item);
-    },
   }
 
   function extend(model) {
@@ -193,6 +166,7 @@ var editingModel = (function() {
     dataModels.instancingModel.extend(model);
     dataModels.editingModel.extend(model);
     dataModels.invalidatingModel.extend(model);
+    dataModels.openingModel.extend(model);
 
     var instance = Object.create(model.editingModel);
     instance.prototype = Object.getPrototypeOf(instance);
@@ -202,8 +176,7 @@ var editingModel = (function() {
     instance.model = model;
     instance.board = model.root;
 
-    instance._visible = new Set();
-    instance.open(instance.board.items[0]);
+    instance.model.openingModel.open(instance.board.items[0]);
 
     model.editingModel = instance;
     return instance;
@@ -467,7 +440,8 @@ function Editor(model, renderer) {
 }
 
 Editor.prototype.initialize = function(canvasController) {
-  var model = this.model;
+  var self = this,
+      model = this.model;
 
   this.canvasController = canvasController;
   this.canvas = canvasController.canvas;
@@ -508,15 +482,26 @@ Editor.prototype.initialize = function(canvasController) {
     }
   }
 
+  function initialize(item) {
+    if (item.type == 'edge') {
+      self.updateAttachedEdgeAngles(item);
+    } else if (item.type == 'group') {
+      item._center = self.getStableCenter(item);
+    }
+  }
+
   dataModels.observableModel.extend(palette);
   dataModels.hierarchicalModel.extend(palette);
   dataModels.transformableModel.extend(palette);
   dataModels.invalidatingModel.extend(palette);
+  palette.dataModel.addInitializer(initialize);
   palette.dataModel.initialize();
 
   editingModel.extend(model);
+  model.dataModel.addInitializer(initialize);
   model.dataModel.initialize();
 
+  this._visible = new Set();
   this.updateGeometry(palette);
   this.updateGeometry(model);
 }
@@ -539,7 +524,8 @@ Editor.prototype.getTemporaryItem = function() {
 }
 
 Editor.prototype.draw = function() {
-  var renderer = this.renderer, ctx = this.ctx,
+  var visible = this._visible,
+      renderer = this.renderer, ctx = this.ctx,
       canvasController = this.canvasController,
       model = this.model,
       hierarchicalModel = model.hierarchicalModel,
@@ -549,7 +535,7 @@ Editor.prototype.draw = function() {
   renderer.beginDraw(model, ctx);
   canvasController.applyTransform();
   visit(this.board, function(item) {
-    if (editingModel.isVisible(item))
+    if (visible.has(item))
       renderer.drawItem(item, normalMode);
   });
 
@@ -578,7 +564,8 @@ Editor.prototype.draw = function() {
 }
 
 Editor.prototype.hitTest = function(p) {
-  var renderer = this.renderer,
+  var visible = this._visible,
+      renderer = this.renderer,
       canvasController = this.canvasController,
       cp = canvasController.viewToCanvas(p),
       scale = canvasController.scale,
@@ -602,7 +589,7 @@ Editor.prototype.hitTest = function(p) {
   // });
 
   reverseVisit(this.board, function(item) {
-    if (editingModel.isVisible(item))
+    if (visible.has(item))
       pushInfo(renderer.hitTest(item, cp, cTol, normalMode));
   });
   return hitList;
@@ -661,7 +648,8 @@ Editor.prototype.onDoubleClick = function(p) {
     if (!this.isPaletteItem(mouseHitInfo.item))
       model.selectionModel.add(mouseHitInfo.item);
 
-    model.editingModel.open(mouseHitInfo.item);
+    model.openingModel.open(mouseHitInfo.item);
+    this.updateGeometry(model);
   }
   return mouseHitInfo != null;
 }
@@ -837,21 +825,19 @@ Editor.prototype.updateAttachedEdgePositions = function(edge) {
     observableModel.changeValue(edge, 'dy', dy);
 }
 
-Editor.prototype.projectToParentHull = function(item, p) {
+Editor.prototype.getAngleWRTParent = function(item, p) {
   var model = this.model,
       parent = model.hierarchicalModel.getParent(item);
   if (parent && parent.type == 'group') {
-    var hull = parent._path,
-        pProj = geometry.projectPointToConvexHull(hull, p),
-        center = parent._center,
-        angle = geometry.getAngle(pProj.x - center.x, pProj.y - center.y);
+    var center = parent._center,
+        angle = geometry.getAngle(p.x - center.x, p.y - center.y);
     return angle;
   }
 }
 
 Editor.prototype.updateAttachedEdgeAngles = function(edge) {
-  var a1 = this.projectToParentHull(edge, edge),
-      a2 = this.projectToParentHull(edge, { x: edge.x + edge.dx, y: edge.y + edge.dy }),
+  var a1 = this.getAngleWRTParent(edge, edge),
+      a2 = this.getAngleWRTParent(edge, { x: edge.x + edge.dx, y: edge.y + edge.dy }),
       da = a2 - a1,
       flipped = (da > 0 && da < Math.PI) || (da < 0 && da < -Math.PI);
   edge._a1 = a1;
@@ -926,7 +912,7 @@ Editor.prototype.onDrag = function(p0, p) {
 
     case 'p1':
       if (dragItem.attached) {
-        dragItem._a1 = self.projectToParentHull(dragItem, drags.parentMouse);
+        dragItem._a1 = self.getAngleWRTParent(dragItem, drags.parentMouse);
         self.updateAttachedEdgePositions(dragItem);
       } else {
         var snapshot = transactionModel.getSnapshot(dragItem),
@@ -941,7 +927,7 @@ Editor.prototype.onDrag = function(p0, p) {
 
     case 'p2':
       if (dragItem.attached) {
-        dragItem._a2 = self.projectToParentHull(dragItem, drags.parentMouse);
+        dragItem._a2 = self.getAngleWRTParent(dragItem, drags.parentMouse);
         self.updateAttachedEdgePositions(dragItem);
       } else {
         var snapshot = transactionModel.getSnapshot(dragItem),
@@ -1050,6 +1036,7 @@ Editor.prototype.onEndDrag = function(p) {
             // Attach edge and initialize the angular locations of its ends.
             observableModel.changeValue(item, 'attached', true);
             self.updateAttachedEdgeAngles(dragItem);
+            self.updateAttachedEdgePositions(dragItem);
           }
         }
       });
@@ -1188,8 +1175,6 @@ Editor.prototype.updateAttachedEdge = function(edge, parent, attachments) {
 
   // Update x, y, dx, and dy for attachment.
   var a1 = edge._a1, a2 = edge._a2;
-  if (edge._a1 === undefined || edge._a2 === undefined)
-    this.updateAttachedEdgeAngles(edge);
   this.updateAttachedEdgePositions(edge);
   this.updateEdge(edge);
   var hull = parent._path,
@@ -1245,12 +1230,33 @@ Editor.prototype.updateGeometry = function(model) {
       hierarchicalModel = model.hierarchicalModel,
       transformableModel = model.transformableModel,
       referencingModel = model.referencingModel,
-      invalidatingModel = model.invalidatingModel;
+      invalidatingModel = model.invalidatingModel,
+      openingModel = model.openingModel,
+      openItem = openingModel? model.openingModel.openItem() : null,
+      visible = this._visible;
+
+  this._visible.clear();
 
   // Update paths for primitive hull items and form hulls
   function update(item) {
+    // Update visibility of internal items based on the open item.
+    if (item.type === 'disk') {
+      if (hierarchicalModel.getParent(item) === openItem)
+        visible.add(item);
+    } else if (item.type == 'edge') {
+      if (!item.attached || hierarchicalModel.getParent(item) === openItem)
+        visible.add(item);
+    } else if (item.type === 'point') {
+      var edge = hierarchicalModel.getParent(item);
+      if (edge === openItem || hierarchicalModel.getParent(edge) === openItem)
+        visible.add(item);
+    } else {
+      visible.add(item);
+    }
+
     if (invalidatingModel.isValid(item))
       return;
+
     invalidatingModel.setValid(item, true);
 
     switch (item.type) {
@@ -1295,8 +1301,6 @@ Editor.prototype.updateGeometry = function(model) {
               center = item._center,
               segments = [],
               extents = geometry.getExtents(hull);
-          if (!center)
-            item._center = center = self.getStableCenter(item);
           geometry.annotateConvexHull(hull, center);
           // geometry.visitHullEdges(hull, function(p0, p1, i0, i1) {
           //   if (p0.item != p1.item)
@@ -1443,15 +1447,15 @@ Editor.prototype.onKeyDown = function(e) {
         if (transactionHistory.getUndo()) {
           selectionModel.clear();
           transactionHistory.undo();
-          handled = true;
         }
+        handled = true;
         break;
       case 89:  // 'y'
         if (transactionHistory.getRedo()) {
           selectionModel.clear();
           transactionHistory.redo();
-          handled = true;
         }
+        handled = true;
         break;
       case 88:  // 'x'
         editingModel.doCut();
@@ -1464,8 +1468,8 @@ Editor.prototype.onKeyDown = function(e) {
       case 86:  // 'v'
         if (editingModel.getScrap()) {
           editingModel.doPaste();
-          handled = true;
         }
+        handled = true;
         break;
       case 69:  // 'e'
         var pathData = this.exportPaths(board);

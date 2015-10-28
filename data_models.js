@@ -357,8 +357,10 @@ var transactionModel = (function () {
       // Roll back changes.
       var ops = transaction.ops;
       var length = ops.length;
-      for (var i = length - 1; i >= 0; i--)
+      for (var i = length - 1; i >= 0; i--) {
         ops[i].undo();
+        console.log(ops[i].change)
+      }
     },
 
     // Redoes the changes in the transaction.
@@ -1297,6 +1299,57 @@ var invalidatingModel = (function () {
 
 //------------------------------------------------------------------------------
 
+// A model for maintaining a single 'open' item.
+var openingModel = (function () {
+  var proto = {
+    open: function(item) {
+      this._openItem = item;
+    },
+    openItem: function() {
+      return this._openItem;
+    },
+    clear: function() {
+      this._openItem = undefined;
+    },
+    onChanged_: function (change) {
+      var item = change.item,
+          attr = change.attr,
+          dataModel = this.model.dataModel;
+      switch (change.type) {
+        case 'change':
+        case 'remove':
+          var oldValue = change.oldValue;
+          if (dataModel.isItem(oldValue) && oldValue === this._openItem)
+            this.clear();
+          break;
+      }
+    },
+  }
+
+  function extend(model) {
+    if (model.openingModel)
+      return model.openingModel;
+
+    dataModel.extend(model);
+    observableModel.extend(model);
+
+    var instance = Object.create(proto);
+    instance.model = model;
+    model.observableModel.addHandler('changed', function (change) {
+      instance.onChanged_(change);
+    });
+
+    model.openingModel = instance;
+    return instance;
+  }
+
+  return {
+    extend: extend,
+  };
+})();
+
+//------------------------------------------------------------------------------
+
 // var myModel = (function () {
 //   var proto = {
 //     foo: function (item) {
@@ -1346,5 +1399,6 @@ var invalidatingModel = (function () {
     transformableModel: transformableModel,
     dependencyModel: dependencyModel,
     invalidatingModel: invalidatingModel,
+    openingModel: openingModel,
   }
 })();
