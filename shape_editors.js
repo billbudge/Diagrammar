@@ -814,6 +814,20 @@ Editor.prototype.onBeginDrag = function(p0) {
         break;
     }
   }
+
+  // Update centers of any affected groups.
+  function updateCenters(item) {
+    if (isGroup(item)) {
+      item._center = self.getStableCenter(item);
+      // Attached edges should update their angles to the new group center.
+      item.items.forEach(function(subItem) {
+        if (isEdge(subItem) && subItem.attached) {
+          self.updateAttachedEdgeAngles(subItem);
+        }
+      });
+    }
+  }
+
   this.drag = drag;
   if (drag) {
     if (drag.type === 'moveSelection')
@@ -829,20 +843,7 @@ Editor.prototype.onBeginDrag = function(p0) {
     }
 
     if (drag.type == 'moveSelection') {
-      // Update centers of any affected groups.
-      // TODO top level fn for strict mode.
-      function update(item) {
-        if (isGroup(item)) {
-          item._center = self.getStableCenter(item);
-          // Attached edges should update their angles to the new group center.
-          item.items.forEach(function(subItem) {
-            if (isEdge(subItem) && subItem.attached) {
-              self.updateAttachedEdgeAngles(subItem);
-            }
-          });
-        }
-      }
-      visit(model.root, update);
+      visit(model.root, updateCenters);
     }
   }
 }
