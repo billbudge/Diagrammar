@@ -1178,20 +1178,6 @@ Editor.prototype.updateVisibility = function(model) {
   visit(root, update);
 }
 
-// // Calculate auto-rotation using parent hull.
-// Editor.prototype.autoRotateBezier = function(item) {
-//   var model = this.model,
-//       parent = model.hierarchicalModel.getParent(item),
-//       p = { x: item.x, y: item.y };
-//   if (parent.type == 'group' && parent.op == 'hull') {
-//     var hull = parent._paths[0];
-//     var i0 = findClosestPathSegment(hull, p);
-//     var i1 = (i0 < hull.length - 1) ? i0 + 1 : 0;
-//     var t = getTurn(hull[i0].x - hull[i1].x, hull[i0].y - hull[i1].y);
-//     model.observableModel.changeValue(item, 'rotation', t * 2 * Math.PI);
-//   }
-// }
-
 // Updates edge based on dx and dy.
 Editor.prototype.updateEdge = function(edge) {
   var transformableModel = this.model.transformableModel,
