@@ -198,26 +198,12 @@ var invalidatingModel = (function () {
     invalidate: function (item) {
       var model = this.model,
           hierarchicalModel = model.hierarchicalModel,
-          parent = hierarchicalModel.getParent(item),
-          invalid = this._invalid;
-      invalid.add(item);
-      switch (item.type) {
-        case 'disk':
-          invalid.add(parent);
-          break;
-        case 'point':
-          invalid.add(parent);
-          if (parent.attached)
-            invalid.add(hierarchicalModel.getParent(parent));
-          break;
-        case 'edge':
-          if (item.attached)
-            invalid.add(parent);
-          break;
-        case 'group':
-          break;
+          invalid = this._invalid,
+          ancestor = item;
+      while (ancestor) {
+        invalid.add(ancestor);
+        ancestor = hierarchicalModel.getParent(ancestor);
       }
-      this._invalid.add(item);
     },
 
     invalidateAll: function(valid) {
@@ -1110,6 +1096,7 @@ Editor.prototype.onEndDrag = function(p) {
         newItem.x = 0;
         newItem.y = 0;
         newItem = group;
+        model.openingModel.open(newItem);
       } else if (isEdgeItem(newItem) && !isEdge(parent)) {
         // Items that can't be added without being wrapped in an edge.
         var edge = {
@@ -1129,6 +1116,7 @@ Editor.prototype.onEndDrag = function(p) {
         dataModel.assignId(edge);
         dataModel.initialize(edge);
         newItem = edge;
+        model.openingModel.open(newItem);
       }
 
       if (newItem.type === 'point') {
@@ -1403,7 +1391,7 @@ Editor.prototype.updateGeometry = function(model) {
         var points = [], subItems = item.items;
         subItems.forEach(function(subItem) {
           // HACK for now, only disks contribute to hull.
-          if (item.type == 'group' && subItem.type !== 'disk')
+          if (item.type == 'group' && (subItem.type !== 'disk' && subItem.type !== 'group'))
             return;
           var path = subItem._path;
           var localTransform = transformableModel.getLocal(subItem);
