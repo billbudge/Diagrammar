@@ -1,5 +1,9 @@
 // Collections.
 
+var diagrammar = diagrammar || {};
+
+diagrammar.collections = (function() {
+
 'use strict';
 
 //------------------------------------------------------------------------------
@@ -262,3 +266,15 @@ SelectionSet.prototype = {
     });
   },
 }
+
+return {
+  LinkedListNode: LinkedListNode,
+  LinkedList: LinkedList,
+
+  PriorityQueue: PriorityQueue,
+
+  SelectionSet: SelectionSet,
+};
+
+})();  // diagrammar.collections
+

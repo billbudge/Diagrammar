@@ -141,7 +141,7 @@ var eventMixin = (function () {
   function addHandler(event, handler) {
     var list = this[event];
     if (!list)
-      list = this[event] = new LinkedList();
+      list = this[event] = new diagrammar.collections.LinkedList();
     list.pushBack(handler);
   }
 
@@ -768,7 +768,7 @@ var selectionModel = (function () {
 
     var instance = Object.create(proto);
     instance.model = model;
-    instance.selection = new SelectionSet();
+    instance.selection = new diagrammar.collections.SelectionSet();
 
     model.selectionModel = instance;
     return instance;

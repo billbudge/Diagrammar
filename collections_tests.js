@@ -14,14 +14,14 @@ function listStringify(list) {
 }
 
 test("LinkedList constructor", function() {
-  var list = new LinkedList();
+  var list = new diagrammar.collections.LinkedList();
   deepEqual(0, list.length);
   ok(list.empty());
   deepEqual('', listStringify(list));
 });
 
 test("LinkedList pushBack", function() {
-  var list = new LinkedList();
+  var list = new diagrammar.collections.LinkedList();
   var node1 = list.pushBack('a');
   deepEqual(list.front, node1);
   deepEqual(list.back, node1);
@@ -33,7 +33,7 @@ test("LinkedList pushBack", function() {
 });
 
 test("LinkedList pushFront", function() {
-  var list = new LinkedList();
+  var list = new diagrammar.collections.LinkedList();
   var node1 = list.pushFront('a');
   deepEqual(list.front, node1);
   deepEqual(list.back, node1);
@@ -45,7 +45,7 @@ test("LinkedList pushFront", function() {
 });
 
 test("LinkedList insertAfter", function() {
-  var list = new LinkedList();
+  var list = new diagrammar.collections.LinkedList();
   var node1 = list.insertAfter('a');
   deepEqual(list.front, node1);
   deepEqual(list.back, node1);
@@ -57,7 +57,7 @@ test("LinkedList insertAfter", function() {
 });
 
 test("LinkedList insertBefore", function() {
-  var list = new LinkedList();
+  var list = new diagrammar.collections.LinkedList();
   var node1 = list.insertBefore('a');
   deepEqual(list.front, node1);
   deepEqual(list.back, node1);
@@ -69,7 +69,7 @@ test("LinkedList insertBefore", function() {
 });
 
 test("LinkedList remove", function() {
-  var list = new LinkedList();
+  var list = new diagrammar.collections.LinkedList();
   var node1 = list.pushBack('a');
   var node2 = list.pushBack('b');
   var node3 = list.pushBack('c');
@@ -95,7 +95,7 @@ test("LinkedList remove", function() {
 });
 
 test("LinkedList clear", function() {
-  var list = new LinkedList();
+  var list = new diagrammar.collections.LinkedList();
   var node1 = list.pushBack();
   var node2 = list.pushBack();
   list.clear();
@@ -104,7 +104,7 @@ test("LinkedList clear", function() {
 });
 
 test("LinkedList map and mapReverse", function() {
-  var list = new LinkedList();
+  var list = new diagrammar.collections.LinkedList();
   var node1 = list.pushBack('a');
   var node2 = list.pushBack('b');
   var node3 = list.pushBack('c');
@@ -122,7 +122,7 @@ test("LinkedList map and mapReverse", function() {
 });
 
 test("LinkedList find", function() {
-  var list = new LinkedList();
+  var list = new diagrammar.collections.LinkedList();
   var node1 = list.pushBack('a');
   var node2 = list.pushBack('b');
 
@@ -153,20 +153,20 @@ function priorityQueueContents(queue) {
 }
 
 test("PriorityQueue constructor", function() {
-  var queue = new PriorityQueue(pqCompareFn);
+  var queue = new diagrammar.collections.PriorityQueue(pqCompareFn);
   ok(queue.empty());
 
-  queue = new PriorityQueue(pqCompareFn, [1, 0, 2, 3]);
+  queue = new diagrammar.collections.PriorityQueue(pqCompareFn, [1, 0, 2, 3]);
   ok(!queue.empty());
   priorityQueueContents(queue, 3, 2, 1, 0);
 });
 
 test("PriorityQueue push", function() {
-  var queue = new PriorityQueue(pqCompareFn);
+  var queue = new diagrammar.collections.PriorityQueue(pqCompareFn);
   ok(queue.empty());
   deepEqual(queue.pop(), null);
 
-  queue = new PriorityQueue(pqCompareFn);
+  queue = new diagrammar.collections.PriorityQueue(pqCompareFn);
   queue.push(0);
   queue.push(2);
   queue.push(1);
@@ -186,7 +186,7 @@ function selectionSetStringify(selectionSet) {
 }
 
 test("SelectionSet constructor", function() {
-  var selectionSet = new SelectionSet();
+  var selectionSet = new diagrammar.collections.SelectionSet();
   deepEqual(selectionSet.length, 0);
   ok(selectionSet.empty());
   deepEqual(selectionSet.lastSelected(), null);
@@ -194,7 +194,7 @@ test("SelectionSet constructor", function() {
 });
 
 test("SelectionSet add", function() {
-  var selectionSet = new SelectionSet();
+  var selectionSet = new diagrammar.collections.SelectionSet();
   selectionSet.add('a');
   selectionSet.add('b');
   deepEqual(selectionSet.length, 2);
@@ -207,7 +207,7 @@ test("SelectionSet add", function() {
 });
 
 test("SelectionSet remove", function() {
-  var selectionSet = new SelectionSet();
+  var selectionSet = new diagrammar.collections.SelectionSet();
   selectionSet.add('a');
   selectionSet.add('b');
   selectionSet.add('c');
@@ -225,7 +225,7 @@ test("SelectionSet remove", function() {
 });
 
 test("SelectionSet toggle", function() {
-  var selectionSet = new SelectionSet();
+  var selectionSet = new diagrammar.collections.SelectionSet();
   selectionSet.toggle('a');
   deepEqual(selectionSet.length, 1);
   deepEqual(selectionSet.lastSelected(), 'a');
@@ -235,7 +235,7 @@ test("SelectionSet toggle", function() {
 });
 
 test("SelectionSet map", function() {
-  var selectionSet = new SelectionSet();
+  var selectionSet = new diagrammar.collections.SelectionSet();
   selectionSet.add('a');
   selectionSet.add('b');
 

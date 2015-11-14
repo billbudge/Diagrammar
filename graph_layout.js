@@ -88,7 +88,7 @@ var graphLayout = (function() {
 
     // Create adjacency lists from arrays.
     graph.forEach(function(v) {
-      v._adjList = new LinkedList();
+      v._adjList = new diagrammar.collections.LinkedList();
       v.adj.forEach(function(w) {
         v._adjList.pushBack(w);
       });
@@ -112,7 +112,7 @@ var graphLayout = (function() {
   }
 
   function rankVertices(graph) {
-    var queue = new LinkedList();
+    var queue = new diagrammar.collections.LinkedList();
     graph.forEach(function(v) {
       v._rank = 0;
       queue.pushBack(v);

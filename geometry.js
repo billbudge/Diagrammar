@@ -194,7 +194,7 @@ var geometry = (function() {
   }
 
   function hitTestCurveSegment(p1, p2, p3, p4, p, tolerance) {
-    var beziers = new LinkedList();
+    var beziers = new diagrammar.collections.LinkedList();
     beziers.pushFront([p1, p2, p3, p4]);
     var dMin = Number.MAX_VALUE;
     var closestX, closestY;
@@ -667,7 +667,7 @@ function AddEndCap(list, leftNode, rightNode) {
 }
 
 function smoothPaths(clipperPath) {
-  var list = new LinkedList();
+  var list = new diagrammar.collections.LinkedList();
   // Circular next, prev.
   function cnext(node) {
     return node.next || list.front;
@@ -680,7 +680,7 @@ function smoothPaths(clipperPath) {
     list.pushBack({ x: pi.x, y: pi.y });
   }
 
-  var queue = new PriorityQueue(compare_angles);
+  var queue = new diagrammar.collections.PriorityQueue(compare_angles);
   list.map(function(node) {
     var cos = getCos(node.value, cprev(node).value, node.value, cnext(node).value);
     if (cos < .9)
