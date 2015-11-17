@@ -130,6 +130,49 @@ test("LinkedList find", function() {
 });
 
 //------------------------------------------------------------------------------
+// SimpleQueue tests.
+
+test("SimpleQueue basic operation", function() {
+  var q = new diagrammar.collections.SimpleQueue();
+  q.enqueue(1);
+  q.enqueue(2);
+  q.enqueue(3);
+  equal(q.dequeue(), 1);
+  ok(q.empty() === false);
+  q.enqueue(4);
+  ok(q.dequeue() === 2);
+  var a = q.flush();
+  strictEqual(q.empty(), true);
+  strictEqual(a.length, 2);
+  strictEqual(a.shift(), 3);
+  strictEqual(a.shift(), 4);
+});
+
+var qLength = 1e5;
+
+test("SimpleQueue enqueue a lot", function() {
+  var q = new diagrammar.collections.SimpleQueue();
+  var i, limit = qLength;
+  for (i = 0; i < limit; i++) {
+    q.enqueue(i);
+  }
+  expect(0);
+});
+
+test("SimpleQueue enqueue and dequeue a lot", function() {
+  var q = new diagrammar.collections.SimpleQueue();
+  var i, limit = qLength;
+  for (i = 0; i < limit; i++) {
+    q.enqueue(i);
+  }
+  for (i = 0; i < limit; i++) {
+    q.dequeue();
+  }
+  expect(0);
+});
+
+
+//------------------------------------------------------------------------------
 // PriorityQueue tests.
 
 function pqCompareFn(a, b) {
