@@ -133,19 +133,10 @@ test("LinkedList find", function() {
 // Queue tests, for both SimpleQueue and Queue.
 
 (function() {
-var useSimpleQueue = false;
-var qLength = 1e5;
-
-var createQueue = function() {
-	if (useSimpleQueue) {
-		return new diagrammar.collections.SimpleQueue();
-	} else {
-		return new diagrammar.collections.Queue();
-	}
-};
+	var qLength = 1e5;
 
 test("Queue basic operation", function() {
-	var q = createQueue();
+	var q = new diagrammar.collections.Queue();
 	var a;
     strictEqual(q.empty(), true);
     q.enqueue(1);
@@ -163,11 +154,12 @@ test("Queue basic operation", function() {
 });
 
 test("Queue error operations", function() {
-	strictEqual(createQueue().dequeue(), undefined);
+	var q = new diagrammar.collections.Queue();
+	strictEqual(q.dequeue(), undefined);
 });
 
 test("Queue 100 by 10s", function() {
-  var q = createQueue();
+  var q = new diagrammar.collections.Queue();
   var i, j;
   for (i = 0; i < 10; i++) {
 	  for (j = 0; j < 10; j++) {
@@ -180,7 +172,7 @@ test("Queue 100 by 10s", function() {
 });
 
 test("Queue enqueue a lot", function() {
-  var q = createQueue();
+  var q = new diagrammar.collections.Queue();
   var i, limit = qLength;
   for (i = 0; i < limit; i++) {
     q.enqueue(i);
@@ -189,7 +181,7 @@ test("Queue enqueue a lot", function() {
 });
 
 test("Queue enqueue and dequeue a lot", function() {
-  var q = createQueue();
+  var q = new diagrammar.collections.Queue();
   var i, limit = qLength;
   for (i = 0; i < limit; i++) {
     q.enqueue(i);
