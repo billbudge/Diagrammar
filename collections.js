@@ -125,40 +125,40 @@ LinkedList.prototype.find = function(value) {
 // The head of the queue is at the beginning of the backing array.
 
 function Queue() {
-	this.head_ = 0;
-	this.headLimit_ = 1000;
-	this.sliceMin_ = 10;
-	this.q_ = [];
+  this.head_ = 0;
+  this.headLimit_ = 1000;
+  this.sliceMin_ = 10;
+  this.q_ = [];
 }
 
 Queue.prototype = {
-    enqueue: function(item) {
-      this.q_.push(item);
-      return this;
-    },
+  enqueue: function(item) {
+    this.q_.push(item);
+    return this;
+  },
 
-    dequeue: function() {
-      var result = this.q_[this.head_];
-      delete this.q_[this.head_];
-      this.head_ = this.head_ + 1;
-      if (this.head_ >= this.headLimit_ ||
-          this.head_ > this.sliceMin_ && this.head_ > (this.q_.length - this.head_)) {
-        this.q_ = this.q_.slice(this.head_);
-        this.head_ = 0;
-      }
-      return result;
-    },
-
-    empty: function() {
-      return this.q_.length === this.head_;
-    },
-
-    clear: function() {
-      var result = this.q_.slice(this.head_);
-      this.q_ = [];
+  dequeue: function() {
+    var result = this.q_[this.head_];
+    delete this.q_[this.head_];
+    this.head_ = this.head_ + 1;
+    if (this.head_ >= this.headLimit_ ||
+        this.head_ > this.sliceMin_ && this.head_ > (this.q_.length - this.head_)) {
+      this.q_ = this.q_.slice(this.head_);
       this.head_ = 0;
-      return result;
     }
+    return result;
+  },
+
+  empty: function() {
+    return this.q_.length === this.head_;
+  },
+
+  clear: function() {
+    var result = this.q_.slice(this.head_);
+    this.q_ = [];
+    this.head_ = 0;
+    return result;
+  }
 };
 
 //------------------------------------------------------------------------------
@@ -309,10 +309,12 @@ SelectionSet.prototype = {
 };
 
 return {
-  LinkedList: LinkedList,
   LinkedListNode: LinkedListNode,
-  PriorityQueue: PriorityQueue,
+  LinkedList: LinkedList,
+
   Queue: Queue,
+  PriorityQueue: PriorityQueue,
+
   SelectionSet: SelectionSet,
 };
 
