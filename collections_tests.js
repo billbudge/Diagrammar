@@ -138,7 +138,7 @@ test("LinkedList find", function() {
 test("Queue basic operation", function() {
   var q = new diagrammar.collections.Queue();
   var a;
-  strictEqual(q.empty(), true);
+  ok(q.empty());
   q.enqueue(1);
   q.enqueue(2);
   q.enqueue(3);
@@ -146,11 +146,8 @@ test("Queue basic operation", function() {
   strictEqual(q.empty(), false);
   q.enqueue(4);
   strictEqual(q.dequeue(), 2);
-  a = q.clear();
+  q.clear();
   strictEqual(q.empty(), true);
-  strictEqual(a.length, 2);
-  strictEqual(a.shift(), 3);
-  strictEqual(a.shift(), 4);
 });
 
 test("Queue error operations", function() {

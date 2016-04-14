@@ -21,7 +21,7 @@ function LinkedList() {
 }
 
 LinkedList.prototype.empty = function() {
-  return this.length == 0;
+  return this.length == 0;  // use === ?
 };
 
 LinkedList.prototype.pushBack = function(value) {
@@ -122,42 +122,51 @@ LinkedList.prototype.find = function(value) {
 
 //------------------------------------------------------------------------------
 // Queue, a simple queue implementation.
-// The head of the queue is at the beginning of the backing array.
+// The end of the queue is at the end of the backing array.
+// The head of the queue is indicated by head_, limited by
+// headLimit_.
 
 function Queue() {
-  this.head_ = 0;
-  this.headLimit_ = 1000;
-  this.sliceMin_ = 10;
+  this.length = 0;
   this.q_ = [];
+  // Index past unused portion.
+  this.head_ = 0;
+  // Size limit for unused portion.
+  this.headLimit_ = 1000;
+  // Minimum size needed to throw out unused portion.
+  this.sliceMin_ = 10;
 }
 
 Queue.prototype = {
   enqueue: function(item) {
     this.q_.push(item);
+    this.length = this.length +1;
     return this;
   },
-
+  
   dequeue: function() {
-    var result = this.q_[this.head_];
-    delete this.q_[this.head_];
-    this.head_ = this.head_ + 1;
-    if (this.head_ >= this.headLimit_ ||
-        this.head_ > this.sliceMin_ && this.head_ > (this.q_.length - this.head_)) {
-      this.q_ = this.q_.slice(this.head_);
-      this.head_ = 0;
+    var result;
+    if (this.length > 0) {
+      this.length = this.length - 1;
+      result = this.q_[this.head_];
+      this.head_ = this.head_ + 1;
+      if (this.head_ >= this.headLimit_
+          || this.head_ > this.sliceMin_ && this.head_ > this.length) {
+        this.q_ = this.q_.slice(this.head_);
+        this.head_ = 0;
+      }
     }
     return result;
   },
 
   empty: function() {
-    return this.q_.length === this.head_;
+    return this.length === 0;
   },
 
   clear: function() {
-    var result = this.q_.slice(this.head_);
     this.q_ = [];
     this.head_ = 0;
-    return result;
+    this.length = 0;
   }
 };
 
