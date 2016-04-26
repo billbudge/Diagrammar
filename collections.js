@@ -127,7 +127,6 @@ LinkedList.prototype.find = function(value) {
 // headLimit_.
 
 function Queue() {
-  this.length = 0;
   this.q_ = [];
   // Index past unused portion.
   this.head_ = 0;
@@ -140,14 +139,12 @@ function Queue() {
 Queue.prototype = {
   enqueue: function(item) {
     this.q_.push(item);
-    this.length = this.length +1;
     return this;
   },
   
   dequeue: function() {
     var result;
-    if (this.length > 0) {
-      this.length = this.length - 1;
+    if (!this.empty()) {
       result = this.q_[this.head_];
       this.head_ = this.head_ + 1;
       if (this.head_ >= this.headLimit_
@@ -160,13 +157,12 @@ Queue.prototype = {
   },
 
   empty: function() {
-    return this.length === 0;
+    return this.q_.length - this.head_ === 0;
   },
 
   clear: function() {
     this.q_ = [];
     this.head_ = 0;
-    this.length = 0;
   }
 };
 
