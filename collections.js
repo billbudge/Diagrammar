@@ -21,7 +21,7 @@ function LinkedList() {
 }
 
 LinkedList.prototype.empty = function() {
-  return this.length == 0;  // use === ?
+  return this.length == 0;
 };
 
 LinkedList.prototype.pushBack = function(value) {
@@ -146,7 +146,7 @@ Queue.prototype = {
     var result;
     if (!this.empty()) {
       result = this.q_[this.head_];
-      this.head_ = this.head_ + 1;
+      this.head_++;
       if (this.head_ >= this.headLimit_
           || this.head_ > this.sliceMin_ && this.head_ > this.length) {
         this.q_ = this.q_.slice(this.head_);
