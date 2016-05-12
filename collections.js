@@ -22,25 +22,25 @@ function LinkedList() {
 
 LinkedList.prototype.empty = function() {
   return this.length == 0;
-}
+};
 
 LinkedList.prototype.pushBack = function(value) {
   return this.insertAfter(value, null);
-}
+};
 
 LinkedList.prototype.pushFront = function(value) {
   return this.insertBefore(value, null);
-}
+};
 
 LinkedList.prototype.popBack = function() {
   var node = this.back;
   return node ? this.remove(node) : null;
-}
+};
 
 LinkedList.prototype.popFront = function() {
   var node = this.front;
   return node ? this.remove(node) : null;
-}
+};
 
 LinkedList.prototype.remove = function(node) {
   if (node.next)
@@ -55,7 +55,7 @@ LinkedList.prototype.remove = function(node) {
   node.next = node.prev = null;
   this.length -= 1;
   return node;
-}
+};
 
 LinkedList.prototype.insertAfter = function(value, prev) {
   var node = (value instanceof LinkedListNode) ? value : new LinkedListNode(value);
@@ -64,7 +64,7 @@ LinkedList.prototype.insertAfter = function(value, prev) {
   var next = prev ? prev.next : null;
   this.insert_(node, prev, next);
   return node;
-}
+};
 
 LinkedList.prototype.insertBefore = function(value, next) {
   var node = (value instanceof LinkedListNode) ? value : new LinkedListNode(value);
@@ -73,7 +73,7 @@ LinkedList.prototype.insertBefore = function(value, next) {
   var prev = next ? next.prev : null;
   this.insert_(node, prev, next);
   return node;
-}
+};
 
 LinkedList.prototype.insert_ = function(node, prev, next) {
   if (prev)
@@ -87,12 +87,12 @@ LinkedList.prototype.insert_ = function(node, prev, next) {
   node.prev = prev;
   node.next = next;
   this.length += 1;
-}
+};
 
 LinkedList.prototype.clear = function() {
   this.front = this.back = null;
   this.length = 0;
-}
+};
 
 LinkedList.prototype.forEach = function(fn) {
   var node = this.front;
@@ -100,7 +100,7 @@ LinkedList.prototype.forEach = function(fn) {
     fn(node.value);
     node = node.next;
   }
-}
+};
 
 LinkedList.prototype.forEachReverse = function(fn) {
   var node = this.back;
@@ -108,7 +108,7 @@ LinkedList.prototype.forEachReverse = function(fn) {
     fn(node.value);
     node = node.prev;
   }
-}
+};
 
 LinkedList.prototype.find = function(value) {
   var node = this.front;
@@ -118,7 +118,53 @@ LinkedList.prototype.find = function(value) {
     node = node.next;
   }
   return null;
+};
+
+//------------------------------------------------------------------------------
+// Queue, a simple queue implementation.
+// The end of the queue is at the end of the backing array.
+// The head of the queue is indicated by head_, limited by
+// headLimit_.
+
+function Queue() {
+  this.q_ = [];
+  // Index past unused portion.
+  this.head_ = 0;
+  // Size limit for unused portion.
+  this.headLimit_ = 1000;
+  // Minimum size needed to throw out unused portion.
+  this.sliceMin_ = 10;
 }
+
+Queue.prototype = {
+  enqueue: function(item) {
+    this.q_.push(item);
+    return this;
+  },
+  
+  dequeue: function() {
+    var result;
+    if (!this.empty()) {
+      result = this.q_[this.head_];
+      this.head_++;
+      if (this.head_ >= this.headLimit_
+          || this.head_ > this.sliceMin_ && this.head_ > this.length) {
+        this.q_ = this.q_.slice(this.head_);
+        this.head_ = 0;
+      }
+    }
+    return result;
+  },
+
+  empty: function() {
+    return this.q_.length - this.head_ === 0;
+  },
+
+  clear: function() {
+    this.q_ = [];
+    this.head_ = 0;
+  }
+};
 
 //------------------------------------------------------------------------------
 // Priority Queue.
@@ -192,7 +238,7 @@ PriorityQueue.prototype = {
       i = parentIndex;
     }
   }
-}
+};
 
 //------------------------------------------------------------------------------
 // Set that orders elements by the order in which they were added. Note that
@@ -265,12 +311,13 @@ SelectionSet.prototype = {
       fn(item);
     });
   },
-}
+};
 
 return {
   LinkedListNode: LinkedListNode,
   LinkedList: LinkedList,
 
+  Queue: Queue,
   PriorityQueue: PriorityQueue,
 
   SelectionSet: SelectionSet,

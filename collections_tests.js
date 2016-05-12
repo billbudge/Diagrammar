@@ -130,6 +130,68 @@ test("LinkedList find", function() {
 });
 
 //------------------------------------------------------------------------------
+// Queue tests, for both SimpleQueue and Queue.
+
+(function() {
+  var qLength = 1e5;
+
+test("Queue basic operation", function() {
+  var q = new diagrammar.collections.Queue();
+  var a;
+  ok(q.empty());
+  q.enqueue(1);
+  q.enqueue(2);
+  q.enqueue(3);
+  strictEqual(q.dequeue(), 1);
+  strictEqual(q.empty(), false);
+  q.enqueue(4);
+  strictEqual(q.dequeue(), 2);
+  q.clear();
+  strictEqual(q.empty(), true);
+});
+
+test("Queue error operations", function() {
+  var q = new diagrammar.collections.Queue();
+  strictEqual(q.dequeue(), undefined);
+});
+
+test("Queue 100 by 10s", function() {
+  var q = new diagrammar.collections.Queue();
+  var i, j;
+  for (i = 0; i < 10; i++) {
+    for (j = 0; j < 10; j++) {
+      q.enqueue(j);
+    }
+    for (j = 0; j < 10; j++) {
+      strictEqual(q.dequeue(), j);
+    }
+  }
+});
+
+test("Queue enqueue a lot", function() {
+  var q = new diagrammar.collections.Queue();
+  var i, limit = qLength;
+  for (i = 0; i < limit; i++) {
+    q.enqueue(i);
+  }
+  expect(0);
+});
+
+test("Queue enqueue and dequeue a lot", function() {
+  var q = new diagrammar.collections.Queue();
+  var i, limit = qLength;
+  for (i = 0; i < limit; i++) {
+    q.enqueue(i);
+  }
+  for (i = 0; i < limit; i++) {
+    q.dequeue();
+  }
+  expect(0);
+});
+
+}());
+
+//------------------------------------------------------------------------------
 // PriorityQueue tests.
 
 function pqCompareFn(a, b) {
