@@ -14,10 +14,89 @@
   <script src="diagrams.js"></script>
   <script src="shape_editors.js"></script>
   <script src="statecharts.js"></script>
+  <script src="circuits.js"></script>
   <script src="third_party/clipper.js"></script>
 
 <script type="text/javascript" language="JavaScript">
 'use strict';
+
+// function fib(n) {
+//   let next = 1, current = 0;
+//   for (let i = 0; i < n; i++) {
+//     let temp = next;
+//     next += current;
+//     current = temp;
+//   }
+//   return current;
+// }
+
+// console.log(fib(0), fib(1), fib(2), fib(3), fib(4), fib(5), fib(6), fib(7), fib(8));
+
+// function partition(a, lo, hi) {
+//   let p = a[lo], i = lo - 1, j = hi + 1;
+//   while (true) {
+//     do {i++} while (a[i] < p);
+//     do {j--} while (a[j] > p);
+//     if (i >= j) return j;
+//     let temp = a[i];
+//     a[i] = a[j];
+//     a[j] = temp;
+//   }
+// }
+
+// function p(a, i, j) {
+//   let p = a[i];
+//   while (1) {
+//     while (a[i] < p) i++;
+//     while (a[j] > p) j--;
+//     if (i >= j) return j;
+//     [a[i], a[j]] = [a[j], a[i]];
+//     i++; j--;
+//   }
+// }
+// function q(a, i, j) {
+//   if (i >= j) return;
+//   let k = p(a, i, j);
+//   q(a, i, k);
+//   q(a, k + 1, j);
+// }
+
+// function qsort(a) {
+//   q(a, 0, a.length - 1);
+// }
+
+// function bubble_sort(a) {
+//   for (let i = a.length - 1; i > 0; i--) {
+//     for (let j = 0; j < i; j++) {
+//       if (a[j] > a[j + 1]) {
+//         let temp = a[j];
+//         a[j] = a[j + 1];
+//         a[j + 1] = temp;
+//       }
+//     }
+//   }
+// }
+
+// for (let i = 0; i < 10000; i++) {
+//   let array = [];
+//   for (let j = 0; j < 50; j++) {
+//     array.push(Math.random() * 1000);
+//   }
+//   qsort(array);
+//       // console.log(array);
+//   for (let j = 0; j < 19; j++) {
+//     if (array[j] > array[j+1]) {
+//       console.log("fail");
+//       break;
+//     }
+//   }
+// }
+// console.log("sorted 10000");
+
+
+// let random_array = [4, 4, 4, 4, 4, 4, 4];
+// qsort(random_array);
+// console.log(random_array);
 
 var canvas = document.getElementById('test_canvas');
 var ctx = canvas.getContext('2d');
@@ -25,21 +104,26 @@ var ctx = canvas.getContext('2d');
 var theme = diagrams.theme.createBlueprint(),
     canvasController = new diagrams.CanvasController(canvas, ctx, theme),
     statechartModel = { root: statechart_data },
+    circuitModel = { root: circuit_data },
     shapeModel = { root: shape_data };
 
 document.bgColor = theme.bgColor;
 
 var statechartEditor = new statecharts.Editor(statechartModel),
+    circuitEditor = new circuits.Editor(circuitModel),
     panZoomLayer = new diagrams.CanvasPanZoomLayer(),
     shapeEditor = new shapes.Editor(shapeModel);
 
-var editorName = 'shapes',
+var editorName = 'circuits',
     editor;
 
 function startEditor() {
   switch (editorName) {
     case 'statecharts':
       editor = statechartEditor;
+      break;
+    case 'circuits':
+      editor = circuitEditor;
       break;
     case 'shapes':
       editor = shapeEditor;
@@ -92,7 +176,17 @@ canvas.addEventListener('dblclick', onDoubleClick);
 
 document.addEventListener('keydown', function(e) {
   if (e.keyCode == 85) {  // 'u'
-    editorName = (editorName == 'statecharts' ? 'shapes' : 'statecharts');
+    switch (editorName) {
+      case 'shapes':
+        editorName = 'circuits';
+        break;
+      case 'circuits':
+        editorName = 'statecharts';
+        break;
+      case 'statecharts':
+        editorName = 'shapes';
+        break;
+    }
     startEditor();
   }
   canvasController.onKeyDown(e);
