@@ -238,10 +238,6 @@ var normalMode = 1,
 function Renderer(theme) {
   this.theme = theme || diagrams.theme.create();
 
-  this.radius = 8;
-  this.textIndent = 8;
-  this.textLeading = 6;
-  this.arrowSize = 8;
   this.knobbyRadius = 4;
   this.padding = 8;
 }
@@ -277,7 +273,7 @@ Renderer.prototype.pinToPoint = function(item, pin, input) {
       x = rect.x, y = rect.y, w = rect.w, h = rect.h,
       textSize = this.theme.fontSize,
       offset = pin._height / 2;
-  // Circuit.
+  // Element.
   if (input) {
     pin = item._master.inputs[pin];
   } else {
@@ -299,9 +295,10 @@ function drawPrimitivePin(renderer, x, y) {
   renderer.ctx.strokeRect(x, y, d, d);
 }
 
-const spacing = 4;
+let spacing = 6;
+let shrink = 0.8, inv_shrink = 1 / shrink;
 
-// Compute sizes for a circuit element.
+// Compute sizes for an element master.
 Renderer.prototype.layoutMaster = function(master) {
   let ctx = this.ctx, theme = this.theme,
       textSize = theme.fontSize, name = master.name,
@@ -309,16 +306,23 @@ Renderer.prototype.layoutMaster = function(master) {
       height = 0, width = 0;
   if (name) {
     width = spacing + ctx.measureText(name).width;
-    height += textSize + spacing;
+    height += textSize + spacing / 2;
   }
   let yIn = height, wIn = 0;
   for (let i = 0; i < inputs.length; i++) {
     let pin = inputs[i];
     this.layoutPin(pin);
-    pin._y = yIn;
-    let name = pin.name, w = pin._width, h = pin._height + spacing;
+    pin._y = yIn + spacing / 2;
+    let name = pin.name, w = pin._width, h = pin._height + spacing / 2;
     if (name) {
-      h = Math.max(h, textSize);
+      let offset = Math.abs(h - textSize) / 2;
+      pin._baseline = yIn + textSize;
+      if (textSize > h) {
+        pin._y += offset;
+        h = textSize;
+      } else {
+        pin._baseline += offset;
+      }
       w += spacing + ctx.measureText(name).width;
     }
     yIn += h;
@@ -328,19 +332,25 @@ Renderer.prototype.layoutMaster = function(master) {
   for (let i = 0; i < outputs.length; i++) {
     let pin = outputs[i];
     this.layoutPin(pin);
-    pin._y = yOut;
-    let name = pin.name, w = pin._width, h = pin._height;
+    pin._y = yOut + spacing / 2;
+    let name = pin.name, w = pin._width, h = pin._height + spacing / 2;
     if (name) {
-      h = Math.max(h, textSize);
+      let offset = Math.abs(h - textSize) / 2;
+      pin._baseline = yOut + textSize;
+      if (textSize > h) {
+        pin._y += offset;
+        h = textSize;
+      } else {
+        pin._baseline += offset;
+      }
       w += spacing + ctx.measureText(name).width;
     }
     yOut += h;
     wOut = Math.max(wOut, w);
   }
 
-  master._width = Math.max(width, wIn + spacing + wOut);
-  master._height = Math.max(height, yIn, yOut);
-  // Return master, which now has width and height.
+  master._width = Math.max(width, wIn + 2 * spacing + wOut);
+  master._height = Math.max(yIn, yOut) + spacing / 2;
   return master;
 }
 
@@ -350,75 +360,79 @@ Renderer.prototype.layoutPin = function(pin) {
   } else if (pin.type == 'element') {
     let master = pin._master;
     this.layoutMaster(master);
-    pin._width = master._width;
-    pin._height = master._height;
+    pin._width = master._width * shrink;
+    pin._height = master._height * shrink;
   }
 }
 
 Renderer.prototype.drawMaster = function(master, x, y, mode) {
   var self = this, ctx = this.ctx, theme = this.theme,
-      w = master._width, h = master._height, spacing = 4;
+      width = master._width, height = master._height;
   switch (mode) {
     case normalMode:
       let textSize = theme.fontSize, knobbyRadius = this.knobbyRadius,
           name = master.name,
           inputs = master.inputs, outputs = master.outputs;
       ctx.fillStyle = theme.bgColor;
-      ctx.fillRect(x, y, w, h);
+      ctx.fillRect(x, y, width, height);
       ctx.strokeStyle = theme.strokeColor;
       ctx.lineWidth = 0.5;
-      ctx.strokeRect(x, y, w, h);
+      ctx.strokeRect(x, y, width, height);
       ctx.fillStyle = theme.textColor;
+      ctx.textBaseline = 'bottom';
       if (name) {
         ctx.textAlign = 'center';
-        ctx.fillText(name, x + w / 2, y + textSize);
+        ctx.fillText(name, x + width / 2, y + textSize);
       }
-      ctx.textAlign = 'left';
-      inputs.forEach(function(input, i) {
-        let name = input.name, top = y + input._y;
-        self.drawPin(input, x, top, mode);
-        if (name)
-          ctx.fillText(name, x + input._width + spacing, top + textSize);
+      inputs.forEach(function(pin, i) {
+        let name = pin.name;
+        self.drawPin(pin, x, y + pin._y, mode);
+        if (name) {
+          ctx.textAlign = 'left';
+          ctx.fillText(name, x + pin._width + spacing, y + pin._baseline);
+        }
       });
-      ctx.textAlign = 'right';
-      outputs.forEach(function(output, i) {
-        let name = output.name, top = y + output._y;
-        self.drawPin(output, x + w - output._width, top, mode);
-        if (name)
-          ctx.fillText(name, x + w - output._width - spacing, top + textSize);
+      outputs.forEach(function(pin, i) {
+        let name = pin.name, left = x + width - pin._width;
+        self.drawPin(pin, left, y + pin._y, mode);
+        if (name) {
+          ctx.textAlign = 'right';
+          ctx.fillText(name, left - spacing, y + pin._baseline);
+        }
       });
       break;
     case highlightMode:
       ctx.strokeStyle = theme.highlightColor;
       ctx.lineWidth = 2;
-      ctx.strokeRect(x, y, w, h);
+      ctx.strokeRect(x, y, width, height);
       break;
     case hotTrackMode:
       ctx.strokeStyle = theme.hotTrackColor;
       ctx.lineWidth = 2;
-      ctx.strokeRect(x, y, w, h);
+      ctx.strokeRect(x, y, width, height);
       break;
   }
 }
 
 Renderer.prototype.drawPin = function(pin, x, y, mode) {
-  let self = this;
   if (pin.type == 'bool') {
-    drawPrimitivePin(self, x, y);
+    drawPrimitivePin(this, x, y);
   } else if (pin.type == 'element') {
     let master = pin._master;
-    self.drawMaster(master, x, y, mode);
+    this.ctx.scale(shrink, shrink);
+    this.drawMaster(master, inv_shrink * x, inv_shrink * y, mode);
+    this.ctx.scale(inv_shrink, inv_shrink);
   }
 }
 
-Renderer.prototype.hitTestCircuit = function(circuit, p, tol, mode) {
-  var rect = this.getItemRect(circuit),
-      x = rect.x, y = rect.y, w = rect.w, h = rect.h,
-      hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol);
+Renderer.prototype.hitTestElement = function(element, p, tol, mode) {
+  var rect = this.getItemRect(element),
+      x = rect.x, y = rect.y, width = rect.w, height = rect.h,
+      hitInfo = diagrams.hitTestRect(x, y, width, height, p, tol);
   if (hitInfo) {
     var textSize = this.theme.fontSize,
         knobbyRadius = this.knobbyRadius,
-        master = circuit._master,
+        master = element._master,
         inputs = master.inputs, outputs = master.outputs,
         self = this;
     inputs.forEach(function(input, i) {
@@ -427,7 +441,8 @@ Renderer.prototype.hitTestCircuit = function(circuit, p, tol, mode) {
       //TODO should return here.
     });
     outputs.forEach(function(output, i) {
-      if (diagrams.hitTestRect(x + w, y + output._y, output._width, output._height, p, tol))
+      if (diagrams.hitTestRect(x + width - output._width,
+          y + output._y, output._width, output._height, p, tol))
         hitInfo.output = i;
     });
   }
@@ -496,7 +511,7 @@ Renderer.prototype.hitTest = function(item, p, tol, mode) {
   var hitInfo;
   switch (item.type) {
     case 'element':
-      hitInfo = this.hitTestCircuit(item, p, tol, mode);
+      hitInfo = this.hitTestElement(item, p, tol, mode);
       break;
     case 'wire':
       hitInfo = this.hitTestWire(item, p, tol, mode);
@@ -543,36 +558,41 @@ function Editor(model, renderer) {
   this.hitTolerance = 8;
 
   var circuitMasters = this.circuitMasters = {
-    f1: {
-      name: 'f1',
+    swap: {
+      name: 'swap',
       type: 'element',
       inputs: [
-        { name: 'x', type: 'bool' },
-        { name: 'y', type: 'bool' },
-        { name: 'f', type: 'element', master: 'f2' },
+        { name: 'a', type: 'element', master: 'mem' },
+        { name: 'b', type: 'element', master: 'mem' },
       ],
       outputs: [
-        { name: 'q', type: 'bool' },
+        { name: 'a\'', type: 'element', master: 'mem' },
+        { name: 'b\'', type: 'element', master: 'mem' },
       ],
     },
-    f2: {
-      name: 'f2',
+    mem: {
       type: 'element',
       inputs: [
-        { name: 'x', type: 'bool' },
-        { name: 'y', type: 'bool' },
       ],
       outputs: [
-        { name: 'q', type: 'bool' },
+        { type: 'bool', master: 'load' },
+        { type: 'element', master: 'store' },
+      ],
+    },
+    store: {
+      type: 'element',
+      inputs: [
+        { type: 'bool' },
+      ],
+      outputs: [
+        { type: 'bool' },
       ],
     },
     logic: {
-      type: 'element',
+      type: 'element',  // TODO should be type 'master'
       inputs: [
-        { name: '', type: 'bool' },
-        { name: '', type: 'bool' },
-        { name: '', type: 'bool' },
-        { name: '', type: 'bool' },
+        { name: 'a', type: 'bool' },
+        { name: 'b', type: 'bool' },
       ],
       outputs: [
         { name: 'and', type: 'bool' },
@@ -593,7 +613,7 @@ function Editor(model, renderer) {
           type: 'element',
           x: 16,
           y: 16,
-          master: 'f1',
+          master: 'swap',
         },
         {
           type: 'element',
@@ -645,6 +665,7 @@ Editor.prototype.initialize = function(canvasController) {
   var renderer = this.renderer, ctx = this.ctx;
   renderer.beginDraw(this.palette, ctx);
   for (var master in this.circuitMasters) {
+    console.log(master);
     let m = this.circuitMasters[master];
     renderer.layoutMaster(m);
   }
@@ -1096,10 +1117,10 @@ var circuit_data = {
   "name": "Example",
   "items": [
     {
-      "type": "circuit",
+      "type": "element",
       "x": 294.3640677170017,
       "y": 362.60454734008107,
-      "master": "f1",
+      "master": "swap",
       "id": 1017
     }
   ]
