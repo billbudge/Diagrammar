@@ -4,13 +4,12 @@
 
 var circuits = (function() {
 
-// Utilities.
 function isContainer(item) {
   return item.type == 'diagram';
 }
 
 function isConnectable(item) {
-  return item.type == 'element';
+  return item.type == 'element' || item.type == 'value' || item.type == 'signature';
 }
 
 function isDiagram(item) {
@@ -260,6 +259,14 @@ Renderer.prototype.getItemRect = function(item) {
   var transform = this.transformableModel.getAbsolute(item),
       x = transform[4], y = transform[5], w, h;
   switch (item.type) {
+    case 'value':
+      w = 16;
+      h = 16;
+      break;
+    case 'signature':
+      w = item._width;
+      h = item._height;
+      break;
     case 'element':
       w = item._master._width;
       h = item._master._height;
@@ -290,13 +297,15 @@ Renderer.prototype.pinToPoint = function(item, pin, input) {
   }
 }
 
-function drawPrimitivePin(renderer, x, y) {
+function drawValue(renderer, x, y) {
   var r = renderer.knobbyRadius, d = 2 * r;
   renderer.ctx.strokeRect(x, y, d, d);
 }
 
 let spacing = 6;
 let shrink = 0.8, inv_shrink = 1 / shrink;
+let minMasterWidth = 16;
+let minMasterHeight = 16;
 
 // Compute sizes for an element master.
 Renderer.prototype.layoutMaster = function(master) {
@@ -349,19 +358,18 @@ Renderer.prototype.layoutMaster = function(master) {
     wOut = Math.max(wOut, w);
   }
 
-  master._width = Math.max(width, wIn + 2 * spacing + wOut);
-  master._height = Math.max(yIn, yOut) + spacing / 2;
+  master._width = Math.max(width, wIn + 2 * spacing + wOut, minMasterWidth);
+  master._height = Math.max(yIn, yOut, minMasterHeight) + spacing / 2;
   return master;
 }
 
 Renderer.prototype.layoutPin = function(pin) {
-  if (pin.type == 'bool') {
+  if (pin.type == 'value') {
     pin._width = pin._height = 2 * this.knobbyRadius;
   } else if (pin.type == 'element') {
-    let master = pin._master;
-    this.layoutMaster(master);
-    pin._width = master._width * shrink;
-    pin._height = master._height * shrink;
+    this.layoutMaster(pin._master);
+    pin._width = pin._master._width * shrink;
+    pin._height = pin._master._height * shrink;
   }
 }
 
@@ -415,8 +423,8 @@ Renderer.prototype.drawMaster = function(master, x, y, mode) {
 }
 
 Renderer.prototype.drawPin = function(pin, x, y, mode) {
-  if (pin.type == 'bool') {
-    drawPrimitivePin(this, x, y);
+  if (pin.type == 'value') {
+    drawValue(this, x, y);
   } else if (pin.type == 'element') {
     let master = pin._master;
     this.ctx.scale(shrink, shrink);
@@ -495,21 +503,35 @@ Renderer.prototype.layout = function(item) {
 }
 
 Renderer.prototype.draw = function(item, mode) {
+  let rect;
   switch (item.type) {
+    case 'value':
+      rect = this.getItemRect(item);
+      drawValue(this, rect.x, rect.y);
+      break;
+    case 'signature':
+      rect = this.getItemRect(item);
+      this.drawMaster(item, rect.x, rect.y, mode);
+      break;
     case 'element':
-      let rect = this.getItemRect(item);
+      rect = this.getItemRect(item);
       this.drawMaster(item._master, rect.x, rect.y, mode);
       break;
     case 'wire':
       this.drawWire(item, mode);
       break;
-      break;
   }
 }
 
 Renderer.prototype.hitTest = function(item, p, tol, mode) {
-  var hitInfo;
+  let hitInfo, rect;
   switch (item.type) {
+    // Simple bounding rect check for value, function.
+    case 'value':
+    case 'signature':
+      rect = this.getItemRect(item);
+      hitInfo = diagrams.hitTestRect(rect.x, rect.y, rect.w, rect.h, p, tol);
+      break;
     case 'element':
       hitInfo = this.hitTestElement(item, p, tol, mode);
       break;
@@ -557,51 +579,31 @@ function Editor(model, renderer) {
 
   this.hitTolerance = 8;
 
-  var circuitMasters = this.circuitMasters = {
-    swap: {
+  let masters = new Map();
+  this.masters = masters;
+
+  masters.set('swap', {
       name: 'swap',
       type: 'element',
       inputs: [
-        { name: 'a', type: 'element', master: 'mem' },
-        { name: 'b', type: 'element', master: 'mem' },
+        { name: 'a', type: 'element', master: '[,v[v,v]]' },
+        { name: 'b', type: 'element', master: '[,v[v,v]]' },
       ],
       outputs: [
-        { name: 'a\'', type: 'element', master: 'mem' },
-        { name: 'b\'', type: 'element', master: 'mem' },
+        { name: 'a\'', type: 'element', master: '[,v[v,v]]' },
+        { name: 'b\'', type: 'element', master: '[,v[v,v]]' },
       ],
-    },
-    mem: {
+    });
+  masters.set('mem', {
+      name: 'mem',
       type: 'element',
       inputs: [
       ],
       outputs: [
-        { type: 'bool', master: 'load' },
-        { type: 'element', master: 'store' },
+        { type: 'value' },
+        { type: 'element', master: '[v,v]' },
       ],
-    },
-    store: {
-      type: 'element',
-      inputs: [
-        { type: 'bool' },
-      ],
-      outputs: [
-        { type: 'bool' },
-      ],
-    },
-    logic: {
-      type: 'element',  // TODO should be type 'master'
-      inputs: [
-        { name: 'a', type: 'bool' },
-        { name: 'b', type: 'bool' },
-      ],
-      outputs: [
-        { name: 'and', type: 'bool' },
-        { name: 'or', type: 'bool' },
-        { name: 'nand', type: 'bool' },
-        { name: 'nor', type: 'bool' },
-      ],
-    },
-  };
+    });
 
   var palette = this.palette = {
     root: {
@@ -609,38 +611,119 @@ function Editor(model, renderer) {
       x: 0,
       y: 0,
       items: [
+        { type: 'value',
+          x: 16, y: 16
+        },
+        // { type: 'signature',
+        //   x: 48, y: 16,
+        //   inputs: {
+        //     items: [],
+        //   },
+        //   outputs: {
+        //     items: [],
+        //   },
+        // },
         {
           type: 'element',
           x: 16,
-          y: 16,
+          y: 48,
           master: 'swap',
         },
         {
           type: 'element',
           x: 16,
-          y: 128,
-          master: 'logic',
+          y: 132,
+          master: 'mem',
         },
       ],
     }
   }
 
-  // TODO cleanup initialization of circuitMasters (make it a model?)
+  function encodeSignature(item) {
+    if (item.type == 'value') return 'v';
+    if (item.type == 'element') {
+      let result = '[';
+      item.inputs.forEach(function(input) {
+        result += encodeSignature(input);
+      });
+      result += ',';
+      item.outputs.forEach(function(output) {
+        result += encodeSignature(output);
+      });
+      result += ']';
+      return result;
+    }
+  }
+
+  // Decodes and atomizes signature objects into master map.
+  function decodeSignature(s) {
+    let j = 0;
+    // close over s, j to avoid extra return values.
+    function decode() {
+      let i = j;
+      if (s[j] == 'v') {
+        j++;
+        return { type: 'value' };
+      }
+      if (s[j] == '[') {
+        let inputs = [], outputs = [];
+        j++;
+        while (s[j] != ',') {
+          inputs.push(decode());
+        }
+        j++;
+        while (s[j] != ']') {
+          outputs.push(decode());
+        }
+        j++;
+        let sig = s.substring(i, j);
+        let master = masters.get(sig);
+        if (!master) {
+          console.log(sig);
+          master = {
+            type: 'element',  // master
+            signature: sig,
+            inputs: inputs,
+            outputs: outputs,
+          };
+          masters.set(sig, master);
+        }
+        return {
+          type: 'element',
+          master: sig,
+          _master: master,
+        };
+      }
+    }
+    return decode();
+  }
+
+  masters.forEach(function(master, name) {
+    master.inputs.forEach(function(input) {
+      if (input.type == 'element') {
+        input._master = decodeSignature(input.master)._master;
+      }
+    });
+    master.outputs.forEach(function(output) {
+      if (output.type == 'element') {
+        output._master = decodeSignature(output.master)._master;
+      }
+    });
+    console.log(master);
+  });
+
+  // TODO cleanup initialization of masters (make it a model?)
   function initialize(item) {
     if (item.type == 'element') {
       // Only initialize once.
       if (item._master === undefined) {
-        item._master = circuitMasters[item.master];
+        item._master = masters.get(item.master);
         if (item.inputs)
           item.inputs.forEach(initialize);
         if (item.outputs)
           item.outputs.forEach(initialize);
       }
     }
-  }
-
-  for (let master in circuitMasters) {
-    initialize(circuitMasters[master]);
   }
 
   editingModel.extend(model);
@@ -664,11 +747,9 @@ Editor.prototype.initialize = function(canvasController) {
     this.renderer = new Renderer(canvasController.theme);
   var renderer = this.renderer, ctx = this.ctx;
   renderer.beginDraw(this.palette, ctx);
-  for (var master in this.circuitMasters) {
-    console.log(master);
-    let m = this.circuitMasters[master];
-    renderer.layoutMaster(m);
-  }
+  this.masters.forEach(function(master, name) {
+    renderer.layoutMaster(master);
+  })
   renderer.endDraw();
 }
 
@@ -854,6 +935,8 @@ Editor.prototype.onBeginDrag = function(p0) {
     };
   } else {
     switch (type) {
+      case 'value':
+      case 'signature':
       case 'element':
         drag = { type: 'moveSelection', name: 'Move selection' };
         break;
@@ -1116,12 +1199,5 @@ var circuit_data = {
   "height": 430.60454734008107,
   "name": "Example",
   "items": [
-    {
-      "type": "element",
-      "x": 294.3640677170017,
-      "y": 362.60454734008107,
-      "master": "swap",
-      "id": 1017
-    }
   ]
 }
