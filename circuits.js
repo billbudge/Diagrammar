@@ -9,23 +9,23 @@ function isContainer(item) {
 }
 
 function isConnectable(item) {
-  return item.type == 'element' || item.type == 'value' || item.type == 'signature';
-}
-
-function isDiagram(item) {
-  return item.type == 'diagram';
-}
-
-function isElement(item) {
   return item.type == 'element';
-}
-
-function isWire(item) {
-  return item.type == 'wire';
 }
 
 function isConnection(item) {
   return item.type == 'wire';
+}
+
+function isJunction(item) {
+  return item.type == 'element' && item.master == '$';
+}
+
+function needsLayout(item) {
+  return isConnection(item) || isJunction(item);
+}
+
+function isDiagram(item) {
+  return item.type == 'diagram';
 }
 
 function visit(item, filterFn, itemFn) {
@@ -135,7 +135,7 @@ var editingModel = (function() {
       var selectionModel = this.model.selectionModel;
       this.reduceSelection();
       selectionModel.contents().forEach(function(item) {
-        if (!isElement(item))
+        if (!isConnectable(item))
           selectionModel.remove(item);
       });
       this.prototype.doCopy.call(this);
@@ -154,7 +154,7 @@ var editingModel = (function() {
     doPaste: function() {
       this.getScrap().forEach(function(item) {
         // Offset pastes so the user can see them.
-        if (isElement(item)) {
+        if (isConnectable(item)) {
           item.x += 16;
           item.y += 16;
         }
@@ -167,11 +167,11 @@ var editingModel = (function() {
     },
 
     addItem: function(item, parent) {
-      var model = this.model, hierarchicalModel = model.hierarchicalModel,
+      let model = this.model, hierarchicalModel = model.hierarchicalModel,
           oldParent = hierarchicalModel.getParent(item);
       if (oldParent === parent)
         return;
-      var transformableModel = model.transformableModel,
+      let transformableModel = model.transformableModel,
           toParent = transformableModel.getToParent(item, parent);
       geometry.matMulPt(item, toParent);
       var itemToAdd = item;
@@ -188,14 +188,50 @@ var editingModel = (function() {
       return itemToAdd;
     },
 
-    layout: function(diagram, renderer) {
-      // var self = this;
-      // reverseVisit(diagram, isContainer, function(item) {
-      //   if (isState(item))
-      //     self.layoutState(item, renderer);
-      //   else if (isStatechart(item))
-      //     self.layoutStatechart(item, renderer);
-      // });
+    setInputJunction: function(junction, input) {
+      let model = this.model, observableModel = model.observableModel;
+      // Replace the first input with a pin to match output.
+      observableModel.removeElement(junction, 'outputs', 0);
+      observableModel.insertElement(junction, 'outputs', 0, Object.assign({}, input));
+    },
+
+    setOutputJunction: function(junction, output, expand) {
+      let model = this.model, observableModel = model.observableModel;
+      // Replace the first input with a pin to match output.
+      observableModel.removeElement(junction, 'inputs', 0);
+      observableModel.insertElement(junction, 'inputs', 0, Object.assign({}, output));
+
+      if (expand) {
+        // Add the expanded pin's inputs and outputs.
+        let master = output._master;
+        if (master) {
+          master.inputs.forEach(function(input) {
+            observableModel.insertElement(
+              junction, 'inputs', junction.inputs.length, Object.assign({}, input));
+          });
+          master.outputs.forEach(function(output) {
+            observableModel.insertElement(
+              junction, 'outputs', junction.outputs.length, Object.assign({}, output));
+          });
+        } else {
+          // Single output value.
+          observableModel.insertElement(
+            junction, 'outputs', junction.outputs.length, Object.assign({}, output));
+        }
+      }
+    },
+
+    makeClosure: function(element) {
+      let master = element._master;
+      let connections = getConnectedConnections([element], false);
+      // Get element's un-connected input indices.
+      let connectedPins = new Set();
+      connections.forEach(function(wire) {
+        if (wire._dstId === element) {
+          inputs.add(wire.dstPin);
+        }
+      });
+
     },
   }
 
@@ -258,15 +294,8 @@ Renderer.prototype.endDraw = function() {
 Renderer.prototype.getItemRect = function(item) {
   var transform = this.transformableModel.getAbsolute(item),
       x = transform[4], y = transform[5], w, h;
+  // TODO update
   switch (item.type) {
-    case 'value':
-      w = 16;
-      h = 16;
-      break;
-    case 'signature':
-      w = item._width;
-      h = item._height;
-      break;
     case 'element':
       w = item._master._width;
       h = item._master._height;
@@ -298,14 +327,15 @@ Renderer.prototype.pinToPoint = function(item, pin, input) {
 }
 
 function drawValue(renderer, x, y) {
-  var r = renderer.knobbyRadius, d = 2 * r;
-  renderer.ctx.strokeRect(x, y, d, d);
+  var ctx = renderer.ctx, r = renderer.knobbyRadius, d = 2 * r;
+  ctx.lineWidth = 0.5;
+  ctx.strokeRect(x, y, d, d);
 }
 
-let spacing = 6;
-let shrink = 0.8, inv_shrink = 1 / shrink;
-let minMasterWidth = 16;
-let minMasterHeight = 16;
+const spacing = 6;
+const shrink = 0.8, inv_shrink = 1 / shrink;
+const minMasterWidth = 16;
+const minMasterHeight = 16;
 
 // Compute sizes for an element master.
 Renderer.prototype.layoutMaster = function(master) {
@@ -364,9 +394,9 @@ Renderer.prototype.layoutMaster = function(master) {
 }
 
 Renderer.prototype.layoutPin = function(pin) {
-  if (pin.type == 'value') {
+  if (pin.type == 'v') {
     pin._width = pin._height = 2 * this.knobbyRadius;
-  } else if (pin.type == 'element') {
+  } else {
     this.layoutMaster(pin._master);
     pin._width = pin._master._width * shrink;
     pin._height = pin._master._height * shrink;
@@ -378,8 +408,7 @@ Renderer.prototype.drawMaster = function(master, x, y, mode) {
       width = master._width, height = master._height;
   switch (mode) {
     case normalMode:
-      let textSize = theme.fontSize, knobbyRadius = this.knobbyRadius,
-          name = master.name,
+      let textSize = theme.fontSize, name = master.name,
           inputs = master.inputs, outputs = master.outputs;
       ctx.fillStyle = theme.bgColor;
       ctx.fillRect(x, y, width, height);
@@ -400,7 +429,7 @@ Renderer.prototype.drawMaster = function(master, x, y, mode) {
           ctx.fillText(name, x + pin._width + spacing, y + pin._baseline);
         }
       });
-      outputs.forEach(function(pin, i) {
+      outputs.forEach(function(pin) {
         let name = pin.name, left = x + width - pin._width;
         self.drawPin(pin, left, y + pin._y, mode);
         if (name) {
@@ -423,9 +452,9 @@ Renderer.prototype.drawMaster = function(master, x, y, mode) {
 }
 
 Renderer.prototype.drawPin = function(pin, x, y, mode) {
-  if (pin.type == 'value') {
+  if (pin.type == 'v') {
     drawValue(this, x, y);
-  } else if (pin.type == 'element') {
+  } else {
     let master = pin._master;
     this.ctx.scale(shrink, shrink);
     this.drawMaster(master, inv_shrink * x, inv_shrink * y, mode);
@@ -438,15 +467,12 @@ Renderer.prototype.hitTestElement = function(element, p, tol, mode) {
       x = rect.x, y = rect.y, width = rect.w, height = rect.h,
       hitInfo = diagrams.hitTestRect(x, y, width, height, p, tol);
   if (hitInfo) {
-    var textSize = this.theme.fontSize,
-        knobbyRadius = this.knobbyRadius,
-        master = element._master,
+    var master = element._master,
         inputs = master.inputs, outputs = master.outputs,
         self = this;
     inputs.forEach(function(input, i) {
       if (diagrams.hitTestRect(x, y + input._y, input._width, input._height, p, tol))
         hitInfo.input = i;
-      //TODO should return here.
     });
     outputs.forEach(function(output, i) {
       if (diagrams.hitTestRect(x + width - output._width,
@@ -499,20 +525,17 @@ Renderer.prototype.layout = function(item) {
     case 'wire':
       this.layoutWire(item);
       break;
+    case 'element':
+      if (item.master == '$') {
+        this.layoutMaster(item);
+      }
+      break;
   }
 }
 
 Renderer.prototype.draw = function(item, mode) {
   let rect;
   switch (item.type) {
-    case 'value':
-      rect = this.getItemRect(item);
-      drawValue(this, rect.x, rect.y);
-      break;
-    case 'signature':
-      rect = this.getItemRect(item);
-      this.drawMaster(item, rect.x, rect.y, mode);
-      break;
     case 'element':
       rect = this.getItemRect(item);
       this.drawMaster(item._master, rect.x, rect.y, mode);
@@ -526,12 +549,6 @@ Renderer.prototype.draw = function(item, mode) {
 Renderer.prototype.hitTest = function(item, p, tol, mode) {
   let hitInfo, rect;
   switch (item.type) {
-    // Simple bounding rect check for value, function.
-    case 'value':
-    case 'signature':
-      rect = this.getItemRect(item);
-      hitInfo = diagrams.hitTestRect(rect.x, rect.y, rect.w, rect.h, p, tol);
-      break;
     case 'element':
       hitInfo = this.hitTestElement(item, p, tol, mode);
       break;
@@ -539,7 +556,7 @@ Renderer.prototype.hitTest = function(item, p, tol, mode) {
       hitInfo = this.hitTestWire(item, p, tol, mode);
       break;
   }
-  if (hitInfo)
+  if (hitInfo && !hitInfo.item)
     hitInfo.item = item;
   return hitInfo;
 }
@@ -586,22 +603,35 @@ function Editor(model, renderer) {
       name: 'swap',
       type: 'element',
       inputs: [
-        { name: 'a', type: 'element', master: '[,v[v,v]]' },
-        { name: 'b', type: 'element', master: '[,v[v,v]]' },
+        { name: 'a', type: '[v[[v,v],v],]' },
+        { name: 'b', type: '[,v[v,v]]' },
       ],
       outputs: [
-        { name: 'a\'', type: 'element', master: '[,v[v,v]]' },
-        { name: 'b\'', type: 'element', master: '[,v[v,v]]' },
+        { name: 'a\'', type: '[,v[v,v]]' },
+        { name: 'b\'', type: '[,v[v,v]]' },
       ],
     });
-  masters.set('mem', {
-      name: 'mem',
+  masters.set('g', {
+      name: 'g',
       type: 'element',
       inputs: [
+        { type: 'v' },
+        { type: 'v' },
+
       ],
       outputs: [
-        { type: 'value' },
-        { type: 'element', master: '[v,v]' },
+        { type: '[v,v]' },
+      ],
+    });
+  masters.set('f', {
+      name: 'f',
+      type: 'element',
+      inputs: [
+        { type: 'v' },
+        { type: 'v' },
+      ],
+      outputs: [
+        { type: 'v' },
       ],
     });
 
@@ -611,59 +641,78 @@ function Editor(model, renderer) {
       x: 0,
       y: 0,
       items: [
-        { type: 'value',
-          x: 16, y: 16
+        { type: 'element',
+          x: 16, y: 16,
+          master: '$',
+          junction: 'input',
+          inputs: [],
+          outputs: [
+            { type: 'v' },
+          ],
         },
-        // { type: 'signature',
-        //   x: 48, y: 16,
-        //   inputs: {
-        //     items: [],
-        //   },
-        //   outputs: {
-        //     items: [],
-        //   },
-        // },
+        { type: 'element',
+          x: 48, y: 16,
+          master: '$',
+          junction: 'output',
+          inputs: [
+            { type: 'v' },
+          ],
+          outputs: [],
+        },
+        { type: 'element',
+          x: 80, y: 16,
+          master: '$',
+          junction: 'expander',
+          inputs: [
+            { type: 'v' },
+          ],
+          outputs: [],
+        },
         {
           type: 'element',
-          x: 16,
-          y: 48,
+          x: 16, y: 56,
           master: 'swap',
         },
         {
           type: 'element',
-          x: 16,
-          y: 132,
-          master: 'mem',
+          x: 16, y: 140,
+          master: 'f',
+        },
+        {
+          type: 'element',
+          x: 64, y: 140,
+          master: 'g',
         },
       ],
     }
   }
 
-  function encodeSignature(item) {
+  function encodePinType(item) {
+    // TODO update this
     if (item.type == 'value') return 'v';
-    if (item.type == 'element') {
+    if (item.type == 'signature') {
       let result = '[';
-      item.inputs.forEach(function(input) {
-        result += encodeSignature(input);
+      item._master.inputs.forEach(function(input) {
+        result += encodePinType(input);
       });
       result += ',';
-      item.outputs.forEach(function(output) {
-        result += encodeSignature(output);
+      item._master.outputs.forEach(function(input) {
+        result += encodePinType(input);
       });
       result += ']';
       return result;
     }
   }
 
-  // Decodes and atomizes signature objects into master map.
-  function decodeSignature(s) {
+  // Decodes and atomizes pin types into master map.
+  function decodePinType(s) {
     let j = 0;
     // close over s, j to avoid extra return values.
     function decode() {
       let i = j;
       if (s[j] == 'v') {
         j++;
-        return { type: 'value' };
+        return { type: 'v' };
       }
       if (s[j] == '[') {
         let inputs = [], outputs = [];
@@ -676,52 +725,54 @@ function Editor(model, renderer) {
           outputs.push(decode());
         }
         j++;
-        let sig = s.substring(i, j);
-        let master = masters.get(sig);
+        let type = s.substring(i, j);
+        let master = masters.get(type);
         if (!master) {
-          console.log(sig);
           master = {
-            type: 'element',  // master
-            signature: sig,
+            type: type,
             inputs: inputs,
             outputs: outputs,
           };
-          masters.set(sig, master);
+          console.log(type, master);
+          masters.set(type, master);
         }
         return {
-          type: 'element',
-          master: sig,
+          type: type,
           _master: master,
         };
       }
     }
     return decode();
   }
+  this.decodePinType = decodePinType;  // TODO clean these up
 
+  // Initialize all built in masters and types.
   masters.forEach(function(master, name) {
-    master.inputs.forEach(function(input) {
-      if (input.type == 'element') {
-        input._master = decodeSignature(input.master)._master;
-      }
-    });
-    master.outputs.forEach(function(output) {
-      if (output.type == 'element') {
-        output._master = decodeSignature(output.master)._master;
-      }
-    });
+    let inputs = master.inputs, outputs = master.outputs;
+    for (let i = 0; i < inputs.length; i++)
+      inputs[i] = decodePinType(inputs[i].type);
+    for (let i = 0; i < outputs.length; i++)
+      outputs[i] = decodePinType(outputs[i].type);
     console.log(master);
   });
 
-  // TODO cleanup initialization of masters (make it a model?)
+  // Initialize items in models (e.g. palette and documents).
   function initialize(item) {
     if (item.type == 'element') {
       // Only initialize once.
-      if (item._master === undefined) {
-        item._master = masters.get(item.master);
-        if (item.inputs)
-          item.inputs.forEach(initialize);
-        if (item.outputs)
-          item.outputs.forEach(initialize);
+      if (!item._master) {
+        if (item.master == '$') {
+          // Self master (junction).
+          // TODO combine with master init above.
+          let inputs = item.inputs, outputs = item.outputs;
+          for (let i = 0; i < inputs.length; i++)
+            inputs[i] = decodePinType(inputs[i].type);
+          for (let i = 0; i < outputs.length; i++)
+            outputs[i] = decodePinType(outputs[i].type);
+          item._master = item;
+        } else {
+          item._master = masters.get(item.master);
+        }
       }
     }
   }
@@ -749,7 +800,13 @@ Editor.prototype.initialize = function(canvasController) {
   renderer.beginDraw(this.palette, ctx);
   this.masters.forEach(function(master, name) {
     renderer.layoutMaster(master);
-  })
+  });
+  // TODO clean this up
+  this.palette.root.items.forEach(function(item) {
+    if (item.master == '$') {
+      renderer.layoutMaster(item);
+    }
+  });
   renderer.endDraw();
 }
 
@@ -776,7 +833,7 @@ Editor.prototype.draw = function() {
       ctx = this.ctx, canvasController = this.canvasController;
   renderer.beginDraw(model, ctx);
   canvasController.applyTransform();
-  visit(diagram, isConnection, function(item) {
+  visit(diagram, needsLayout, function(item) {
     renderer.layout(item);
   });
 
@@ -806,7 +863,7 @@ Editor.prototype.draw = function() {
   if (temporary) {
     renderer.beginDraw(model, ctx);
     canvasController.applyTransform();
-    if (isConnection(temporary))
+    if (needsLayout(temporary))
       renderer.layout(temporary);
     renderer.draw(temporary, normalMode);
     renderer.endDraw();
@@ -900,11 +957,11 @@ Editor.prototype.onClick = function(p) {
 }
 
 Editor.prototype.onBeginDrag = function(p0) {
-  var mouseHitInfo = this.mouseHitInfo,
-      canvasController = this.canvasController;
+  let mouseHitInfo = this.mouseHitInfo;
   if (!mouseHitInfo)
     return false;
-  var dragItem = mouseHitInfo.item, type = dragItem.type,
+  let canvasController = this.canvasController,
+      dragItem = mouseHitInfo.item, type = dragItem.type,
       model = this.model,
       newItem, drag;
   if (this.isPaletteItem(dragItem)) {
@@ -914,12 +971,28 @@ Editor.prototype.onBeginDrag = function(p0) {
       name: 'Add new ' + dragItem.type,
       isNewItem: true,
     }
-    var cp = canvasController.viewToCanvas(newItem);
+    let cp = canvasController.viewToCanvas(newItem);
     newItem.x = cp.x;
     newItem.y = cp.y;
+  } else if (mouseHitInfo.input !== undefined) {
+    // Wire from input pin.
+    let circuitId = model.dataModel.getId(dragItem),
+        cp0 = canvasController.viewToCanvas(p0);
+    // Start the new wire as connecting the dst element to itself.
+    newItem = {
+      type: 'wire',
+      dstId: circuitId,
+      dstPin: mouseHitInfo.input,
+      _p2: cp0,
+    };
+    drag = {
+      type: 'connectingW1',
+      name: 'Add new wire',
+      isNewItem: true,
+    };
   } else if (mouseHitInfo.output !== undefined) {
-    // We can only create a wire from an output pin for now.
-    var circuitId = model.dataModel.getId(dragItem),
+    // Wire from output pin.
+    let circuitId = model.dataModel.getId(dragItem),
         cp0 = canvasController.viewToCanvas(p0);
     // Start the new wire as connecting the src element to itself.
     newItem = {
@@ -935,8 +1008,6 @@ Editor.prototype.onBeginDrag = function(p0) {
     };
   } else {
     switch (type) {
-      case 'value':
-      case 'signature':
       case 'element':
         drag = { type: 'moveSelection', name: 'Move selection' };
         break;
@@ -1074,16 +1145,28 @@ Editor.prototype.onEndDrag = function(p) {
     }
   }
 
-  var renderer = this.renderer;
-  renderer.beginDraw(model, this.ctx);
-  editingModel.layout(this.diagram, renderer);
-  renderer.endDraw();
+  // var renderer = this.renderer;
+  // renderer.beginDraw(model, this.ctx);
+  // editingModel.layout(this.diagram, renderer);
+  // renderer.endDraw();
 
-  // If dragItem is a disconnected wire, delete it.
-  if (isWire(dragItem)) {
+  if (isConnection(dragItem)) {
+    // If dragItem is a disconnected wire, delete it.
     if (!dragItem.srcId || !dragItem.dstId) {
       editingModel.deleteItem(dragItem);
       selectionModel.remove(dragItem);
+    } else {
+      // Adjust pins for junction elements.
+      let referencingModel = model.referencingModel,
+      srcItem = referencingModel.resolveReference(dragItem, 'srcId'),
+      dstItem = referencingModel.resolveReference(dragItem, 'dstId');
+      if (isJunction(srcItem)) {
+        let dstPin = dstItem._master.inputs[dragItem.dstPin];
+        editingModel.setInputJunction(srcItem, dstPin);
+      } else if (isJunction(dstItem)) {
+        let srcPin = srcItem._master.outputs[dragItem.srcPin];
+        editingModel.setOutputJunction(dstItem, srcPin, dstItem.junction == 'expander');
+      }
     }
   }
 
