@@ -16,12 +16,16 @@ function isConnection(item) {
   return item.type == 'wire';
 }
 
-function isJunction(item) {
+function isImmediate(item) {
   return item.type == 'element' && item.master == '$';
 }
 
+function isJunction(item) {
+  return item.type == 'element' && item.junction != undefined;
+}
+
 function needsLayout(item) {
-  return isConnection(item) || isJunction(item);
+  return isConnection(item) || isImmediate(item);
 }
 
 function isDiagram(item) {
@@ -221,17 +225,63 @@ var editingModel = (function() {
       }
     },
 
-    makeClosure: function(element) {
+    makeClosureJunction: function(element) {
       let master = element._master;
-      let connections = getConnectedConnections([element], false);
-      // Get element's un-connected input indices.
+      let connections = this.getConnectedConnections([element], false);
+      // Get indices of element's disconnected inputs.
       let connectedPins = new Set();
       connections.forEach(function(wire) {
         if (wire._dstId === element) {
-          inputs.add(wire.dstPin);
+          connectedPins.add(wire.dstPin);
         }
       });
+      // The element's disconnected inputs become the new function's inputs.
+      // The connected inputs remain on the element.
+      let fnType = '[', inputs = [];
+      // Create a map from old input to new input.
+      let inputMap = new Map();
+      master.inputs.forEach(function(input, i) {
+        if (!connectedPins.has(i)) {
+          fnType += input.type;
+        } else {
+          inputMap.set(i, inputs.length);
+          inputs.push({ type: input.type });
+        }
+      });
+      fnType += ',';
+      // The element's outputs become the new function's outputs.
+      master.outputs.forEach(function(output) {
+        fnType += output.type;
+      });
+      fnType += ']';
+      console.log(fnType);
+      // Add the closure fn to outputs.
+      let outputs = [{ type: fnType }];
 
+      // Now make changes to the data model.
+      let model = this.model, observableModel = model.observableModel;
+      // Remap connected wires to the new pins.
+      connections.forEach(function(wire) {
+        if (wire._dstId === element) {
+          observableModel.changeValue(wire, 'dstPin', inputMap.get(wire.dstPin));
+        }
+      });
+      // Change element master if necessary.
+      this.setAttr(element, 'inputs', inputs);
+      this.setAttr(element, 'outputs', outputs);
+      // Set master to trigger re-initialization.
+      this.setAttr(element, 'master', '$');
+    },
+    doClosure: function() {
+      let self = this, selectionModel = this.model.selectionModel,
+          transactionModel = this.model.transactionModel;
+      this.reduceSelection();
+      transactionModel.beginTransaction('closure');
+      selectionModel.contents().forEach(function(item) {
+        if (isConnectable(item))
+          self.makeClosureJunction(item);
+      });
+      transactionModel.endTransaction();
     },
   }
 
@@ -687,22 +737,22 @@ function Editor(model, renderer) {
     }
   }
 
-  function encodePinType(item) {
-    // TODO update this
-    if (item.type == 'value') return 'v';
-    if (item.type == 'signature') {
-      let result = '[';
-      item._master.inputs.forEach(function(input) {
-        result += encodePinType(input);
-      });
-      result += ',';
-      item._master.outputs.forEach(function(input) {
-        result += encodePinType(input);
-      });
-      result += ']';
-      return result;
-    }
-  }
+  // function encodePinType(item) {
+  //   // TODO update this
+  //   if (item.type == 'v') return 'v';
+  //   if (item.type == 'signature') {
+  //     let result = '[';
+  //     item._master.inputs.forEach(function(input) {
+  //       result += encodePinType(input);
+  //     });
+  //     result += ',';
+  //     item._master.outputs.forEach(function(input) {
+  //       result += encodePinType(input);
+  //     });
+  //     result += ']';
+  //     return result;
+  //   }
+  // }
 
   // Decodes and atomizes pin types into master map.
   function decodePinType(s) {
@@ -746,14 +796,18 @@ function Editor(model, renderer) {
   }
   this.decodePinType = decodePinType;  // TODO clean these up
 
-  // Initialize all built in masters and types.
-  masters.forEach(function(master, name) {
+  function initializePins(master) {
     let inputs = master.inputs, outputs = master.outputs;
     for (let i = 0; i < inputs.length; i++)
       inputs[i] = decodePinType(inputs[i].type);
     for (let i = 0; i < outputs.length; i++)
       outputs[i] = decodePinType(outputs[i].type);
-    console.log(master);
+  }
+
+  // Initialize the built in masters.
+  masters.forEach(function(master, name) {
+    initializePins(master);
+    console.log(name, master);
   });
 
   // Initialize items in models (e.g. palette and documents).
@@ -763,12 +817,7 @@ function Editor(model, renderer) {
       if (!item._master) {
         if (item.master == '$') {
           // Self master (junction).
-          // TODO combine with master init above.
-          let inputs = item.inputs, outputs = item.outputs;
-          for (let i = 0; i < inputs.length; i++)
-            inputs[i] = decodePinType(inputs[i].type);
-          for (let i = 0; i < outputs.length; i++)
-            outputs[i] = decodePinType(outputs[i].type);
+          initializePins(item);
           item._master = item;
         } else {
           item._master = masters.get(item.master);
@@ -787,6 +836,16 @@ function Editor(model, renderer) {
 
   model.dataModel.addInitializer(initialize);
   model.dataModel.initialize();
+
+  // Track changes fields that require re-initialization.
+  model.observableModel.addHandler('changed', function (change) {
+    if (change.attr == 'master') {
+      let item = change.item;
+      item._master = undefined;
+      initialize(item);
+      console.log(item);
+    }
+  });
 }
 
 Editor.prototype.initialize = function(canvasController) {
@@ -1241,6 +1300,9 @@ Editor.prototype.onKeyDown = function(e) {
           return true;
         }
         return false;
+      case 75:  // 'k'
+        editingModel.doClosure();
+        return true;
       case 83:  // 's'
         var text = JSON.stringify(
           diagram,
@@ -1282,5 +1344,40 @@ var circuit_data = {
   "height": 430.60454734008107,
   "name": "Example",
   "items": [
+    {
+      "type": "element",
+      "x": 303,
+      "y": 133,
+      "master": "f",
+      "id": 1003
+    },
+    {
+      "type": "element",
+      "x": 206,
+      "y": 99,
+      "master": "f",
+      "id": 1005
+    },
+    {
+      "type": "wire",
+      "srcId": 1005,
+      "srcPin": 0,
+      "dstId": 1003,
+      "dstPin": 0,
+      "id": 1006,
+      "x": null,
+      "y": null
+    }
   ]
 }
+// {
+//   "type": "diagram",
+//   "id": 1001,
+//   "x": 0,
+//   "y": 0,
+//   "width": 853,
+//   "height": 430.60454734008107,
+//   "name": "Example",
+//   "items": [
+//   ]
+// }
