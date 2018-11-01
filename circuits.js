@@ -315,7 +315,6 @@ var editingModel = (function() {
       // Add the closure fn as the first input.
       let inputs = Array.from(master.inputs), outputs = Array.from(master.outputs);
       inputs.unshift({ type: fnType });
-      console.log(inputs, master.inputs);
 
       // Now make changes to the data model.
       let model = this.model, observableModel = model.observableModel;
@@ -344,7 +343,7 @@ var editingModel = (function() {
       transactionModel.endTransaction();
     },
 
-    doGroup: function() {
+    doGroup: function(elementOnly) {
       let self = this, diagram = this.diagram, model = this.model,
           dataModel = model.dataModel,
           selectionModel = model.selectionModel,
@@ -382,13 +381,13 @@ var editingModel = (function() {
         }
         self.deleteItem(item);
       });
-      incoming.forEach(function(item) {
-        observableModel.changeValue(item, 'dstPin', inputs.length);
-        inputs.push({ type: item._srcId.outputs[item.srcPin].type });
+      incoming.forEach(function(wire) {
+        observableModel.changeValue(wire, 'dstPin', inputs.length);
+        inputs.push({ type: wire._srcId._master.outputs[wire.srcPin].type });
       });
-      outgoing.forEach(function(item) {
-        observableModel.changeValue(item, 'srcPin', outputs.length);
-        inputs.push({ type: item._dstId.inputs[item.dstPin].type });
+      outgoing.forEach(function(wire) {
+        observableModel.changeValue(wire, 'srcPin', outputs.length);
+        outputs.push({ type: wire._dstId._master.inputs[wire.dstPin].type });
       });
       // Create the new group element.
       let groupElement = {
@@ -401,18 +400,17 @@ var editingModel = (function() {
         // 'groupItems' is part of data model but not traversed in editor.
         groupItems: groupItems,
       };
-      // Delete the group items.
       this.newItem(groupElement);
       this.addItem(groupElement, diagram);
       selectionModel.set(groupElement);
 
       // Remap the external connections.
       let id = dataModel.getId(groupElement);
-      incoming.forEach(function(item) {
-        observableModel.changeValue(item, 'dstId', id);
+      incoming.forEach(function(wire) {
+        observableModel.changeValue(wire, 'dstId', id);
       });
-      outgoing.forEach(function(item) {
-        observableModel.changeValue(item, 'srcId', id);
+      outgoing.forEach(function(wire) {
+        observableModel.changeValue(wire, 'srcId', id);
       });
 
       transactionModel.endTransaction();
@@ -1051,14 +1049,15 @@ Editor.prototype.draw = function() {
       ctx = this.ctx, canvasController = this.canvasController;
   renderer.beginDraw(model, ctx);
   canvasController.applyTransform();
-  visit(diagram, needsLayout, function(item) {
-    renderer.layout(item);
-  });
 
   visit(diagram, isConnectable, function(item) {
+    if (needsLayout(item))
+      renderer.layout(item);
     renderer.draw(item, normalMode);
   });
   visit(diagram, isConnection, function(item) {
+    if (needsLayout(item))
+      renderer.layout(item);
     renderer.draw(item, normalMode);
   });
 
@@ -1466,7 +1465,7 @@ Editor.prototype.onKeyDown = function(e) {
         editingModel.doAbstract();
         return true;
       case 71:  // 'g'
-        editingModel.doGroup();
+        editingModel.doGroup(shiftKey);
         return true;
       case 83:  // 's'
         var text = JSON.stringify(
