@@ -272,6 +272,7 @@ var editingModel = (function() {
       // Set master to trigger re-initialization.
       this.setAttr(element, 'master', '$');
     },
+
     doClosure: function() {
       let self = this, selectionModel = this.model.selectionModel,
           transactionModel = this.model.transactionModel;
@@ -646,44 +647,51 @@ function Editor(model, renderer) {
 
   this.hitTolerance = 8;
 
-  let masters = new Map();
-  this.masters = masters;
+  let masterMap = new Map();
+  this.masterMap = masterMap;
 
-  masters.set('swap', {
-      name: 'swap',
-      type: 'element',
-      inputs: [
-        { name: 'a', type: '[v[[v,v],v],]' },
-        { name: 'b', type: '[,v[v,v]]' },
-      ],
-      outputs: [
-        { name: 'a\'', type: '[,v[v,v]]' },
-        { name: 'b\'', type: '[,v[v,v]]' },
-      ],
-    });
-  masters.set('g', {
-      name: 'g',
-      type: 'element',
-      inputs: [
-        { type: 'v' },
-        { type: 'v' },
+  let unaryOps = ['!', '~', '-' ];
+  let binaryOps = ['+', '-', '*', '/', '%', '==', '!=', '<', '<=', '>', '>=',
+                   '|', '&', '||', '&&'];
+  let ternaryOps = ['?'];
 
-      ],
-      outputs: [
-        { type: '[v,v]' },
-      ],
-    });
-  masters.set('f', {
-      name: 'f',
+  unaryOps.forEach(function(op) {
+    masterMap.set(op, {
+      name: op,
       type: 'element',
       inputs: [
         { type: 'v' },
-        { type: 'v' },
       ],
       outputs: [
         { type: 'v' },
-      ],
+      ]
     });
+  });
+  binaryOps.forEach(function(op) {
+    masterMap.set(op, {
+      name: op,
+      type: 'element',
+      inputs: [
+        { name: 'a', type: 'v' },
+        { name: 'b', type: 'v' },
+      ],
+      outputs: [
+        { type: 'v' },
+      ]
+    });
+  });
+  masterMap.set('?', {
+      name: '?',
+      type: 'element',
+      inputs: [
+        { name: 'c', type: 'v' },
+        { name: 'a', type: 'v' },
+        { name: 'b', type: 'v' },
+      ],
+      outputs: [
+        { type: 'v' },
+      ]
+  });
 
   var palette = this.palette = {
     root: {
@@ -721,17 +729,17 @@ function Editor(model, renderer) {
         {
           type: 'element',
           x: 16, y: 56,
-          master: 'swap',
+          master: '?',
         },
         {
           type: 'element',
           x: 16, y: 140,
-          master: 'f',
+          master: '>',
         },
         {
           type: 'element',
           x: 64, y: 140,
-          master: 'g',
+          master: '+',
         },
       ],
     }
@@ -776,7 +784,7 @@ function Editor(model, renderer) {
         }
         j++;
         let type = s.substring(i, j);
-        let master = masters.get(type);
+        let master = masterMap.get(type);
         if (!master) {
           master = {
             type: type,
@@ -784,7 +792,7 @@ function Editor(model, renderer) {
             outputs: outputs,
           };
           console.log(type, master);
-          masters.set(type, master);
+          masterMap.set(type, master);
         }
         return {
           type: type,
@@ -805,7 +813,7 @@ function Editor(model, renderer) {
   }
 
   // Initialize the built in masters.
-  masters.forEach(function(master, name) {
+  masterMap.forEach(function(master, name) {
     initializePins(master);
     console.log(name, master);
   });
@@ -820,7 +828,7 @@ function Editor(model, renderer) {
           initializePins(item);
           item._master = item;
         } else {
-          item._master = masters.get(item.master);
+          item._master = masterMap.get(item.master);
         }
       }
     }
@@ -839,6 +847,7 @@ function Editor(model, renderer) {
 
   // Track changes fields that require re-initialization.
   model.observableModel.addHandler('changed', function (change) {
+    console.log('change', change);
     if (change.attr == 'master') {
       let item = change.item;
       item._master = undefined;
@@ -857,7 +866,7 @@ Editor.prototype.initialize = function(canvasController) {
     this.renderer = new Renderer(canvasController.theme);
   var renderer = this.renderer, ctx = this.ctx;
   renderer.beginDraw(this.palette, ctx);
-  this.masters.forEach(function(master, name) {
+  this.masterMap.forEach(function(master, name) {
     renderer.layoutMaster(master);
   });
   // TODO clean this up
@@ -867,6 +876,20 @@ Editor.prototype.initialize = function(canvasController) {
     }
   });
   renderer.endDraw();
+
+  // // Create an instance of every master.
+  // let x = 160, y = 160, model = this.model, diagram = this.diagram;
+  // this.masterMap.forEach(function(master) {
+  //   let item = {
+  //     type: 'element',
+  //     master: master.name,
+  //     x: x,
+  //     y: y,
+  //   };
+  //   model.editingModel.addItem(item, diagram);
+  //   model.dataModel.initialize(item);
+  //   x += 48;
+  // });
 }
 
 Editor.prototype.isPaletteItem = function(item) {
@@ -1346,30 +1369,115 @@ var circuit_data = {
   "items": [
     {
       "type": "element",
-      "x": 303,
-      "y": 133,
-      "master": "f",
-      "id": 1003
+      "master": "!",
+      "x": 70,
+      "y": 346
     },
     {
       "type": "element",
-      "x": 206,
-      "y": 99,
-      "master": "f",
-      "id": 1005
+      "master": "~",
+      "x": 118,
+      "y": 346
     },
     {
-      "type": "wire",
-      "srcId": 1005,
-      "srcPin": 0,
-      "dstId": 1003,
-      "dstPin": 0,
-      "id": 1006,
-      "x": null,
-      "y": null
+      "type": "element",
+      "master": "-",
+      "x": 166,
+      "y": 346
+    },
+    {
+      "type": "element",
+      "master": "+",
+      "x": 214,
+      "y": 346
+    },
+    {
+      "type": "element",
+      "master": "*",
+      "x": 262,
+      "y": 346
+    },
+    {
+      "type": "element",
+      "master": "/",
+      "x": 310,
+      "y": 346
+    },
+    {
+      "type": "element",
+      "master": "%",
+      "x": 358,
+      "y": 346
+    },
+    {
+      "type": "element",
+      "master": "==",
+      "x": 406,
+      "y": 346
+    },
+    {
+      "type": "element",
+      "master": "!=",
+      "x": 454,
+      "y": 346
+    },
+    {
+      "type": "element",
+      "master": "<",
+      "x": 72,
+      "y": 408
+    },
+    {
+      "type": "element",
+      "master": "<=",
+      "x": 120,
+      "y": 408
+    },
+    {
+      "type": "element",
+      "master": ">",
+      "x": 168,
+      "y": 408
+    },
+    {
+      "type": "element",
+      "master": ">=",
+      "x": 216,
+      "y": 408
+    },
+    {
+      "type": "element",
+      "master": "|",
+      "x": 264,
+      "y": 408
+    },
+    {
+      "type": "element",
+      "master": "&",
+      "x": 312,
+      "y": 408
+    },
+    {
+      "type": "element",
+      "master": "||",
+      "x": 360,
+      "y": 408
+    },
+    {
+      "type": "element",
+      "master": "&&",
+      "x": 408,
+      "y": 408
+    },
+    {
+      "type": "element",
+      "master": "?",
+      "x": 456,
+      "y": 408
     }
   ]
 }
+
 // {
 //   "type": "diagram",
 //   "id": 1001,
