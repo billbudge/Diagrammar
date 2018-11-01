@@ -21,7 +21,15 @@ function isImmediate(item) {
 }
 
 function isJunction(item) {
-  return item.type == 'element' && item.junction != undefined;
+  return item.type == 'element' && item.junction;
+}
+
+function isInputJunction(item) {
+  return item.type == 'element' && item.junction == 'input';
+}
+
+function isOutputJunction(item) {
+  return item.type == 'element' && item.junction == 'output';
 }
 
 function needsLayout(item) {
@@ -61,22 +69,22 @@ function reverseVisit(item, filterFn, itemFn) {
 var editingModel = (function() {
   var functions = {
     reduceSelection: function () {
-      var model = this.model;
+      let model = this.model;
       model.selectionModel.set(model.hierarchicalModel.reduceSelection());
     },
 
     getConnectedConnections: function (items, copying) {
-      var model = this.model,
+      let model = this.model,
           itemsAndChildren = new Set();
       items.forEach(function(item) {
         visit(item, isConnectable, function(item) {
           itemsAndChildren.add(item);
         });
       });
-      var connections = [];
+      let connections = [];
       visit(this.diagram, isConnection, function(item) {
-        var contains1 = itemsAndChildren.has(item._srcId);
-        var contains2 = itemsAndChildren.has(item._dstId);
+        let contains1 = itemsAndChildren.has(item._srcId),
+            contains2 = itemsAndChildren.has(item._dstId);
         if (copying) {
           if (contains1 && contains2)
             connections.push(item);
@@ -87,30 +95,33 @@ var editingModel = (function() {
       return connections;
     },
 
+    newItem: function(item) {
+      let dataModel = this.model.dataModel;
+      dataModel.assignId(item);
+      dataModel.initialize(item);
+    },
+
     deleteItem: function(item) {
-      var model = this.model,
+      let model = this.model,
           hierarchicalModel = model.hierarchicalModel,
           parent = hierarchicalModel.getParent(item);
       if (parent) {
-        var items = parent.items,
-            length = items.length;
-        for (var i = 0; i < length; i++) {
-          var subItem = items[i];
-          if (subItem === item) {
-            model.observableModel.removeElement(parent, 'items', i);
-            break;
-          }
-        }
+        let items = parent.items,
+            index = items.indexOf(item);
+        if (index >= 0)
+          model.observableModel.removeElement(parent, 'items', index);
       }
     },
 
     deleteItems: function(items) {
-      this.getConnectedConnections(items, false).forEach(function(item) {
-        this.deleteItem(item);
-      }, this);
+      let self = this,
+          connections = this.getConnectedConnections(items, false);
+      connections.forEach(function(connection) {
+        self.deleteItem(connection);
+      });
       items.forEach(function(item) {
-        this.deleteItem(item);
-      }, this);
+        self.deleteItem(item);
+      });
     },
 
     doDelete: function() {
@@ -119,16 +130,16 @@ var editingModel = (function() {
     },
 
     copyItems: function(items, map) {
-      var model = this.model, dataModel = model.dataModel,
+      let model = this.model, dataModel = model.dataModel,
           transformableModel = model.transformableModel,
           connected = this.getConnectedConnections(items, true),
           copies = this.prototype.copyItems(items.concat(connected), map),
           diagram = this.diagram;
 
       items.forEach(function(item) {
-        var copy = map.get(dataModel.getId(item));
+        let copy = map.get(dataModel.getId(item));
         if (isConnectable(copy)) {
-          var toGlobal = transformableModel.getToParent(item, diagram);
+          let toGlobal = transformableModel.getToParent(item, diagram);
           geometry.matMulPt(copy, toGlobal);
         }
       });
@@ -136,7 +147,7 @@ var editingModel = (function() {
     },
 
     doCopy: function() {
-      var selectionModel = this.model.selectionModel;
+      let selectionModel = this.model.selectionModel;
       this.reduceSelection();
       selectionModel.contents().forEach(function(item) {
         if (!isConnectable(item))
@@ -225,7 +236,7 @@ var editingModel = (function() {
       }
     },
 
-    makeClosureJunction: function(element) {
+    makeClosure: function(element) {
       let master = element._master;
       let connections = this.getConnectedConnections([element], false);
       // Get indices of element's disconnected inputs.
@@ -254,23 +265,23 @@ var editingModel = (function() {
         fnType += output.type;
       });
       fnType += ']';
-      console.log(fnType);
+      console.log('closure', fnType);
       // Add the closure fn to outputs.
       let outputs = [{ type: fnType }];
 
       // Now make changes to the data model.
       let model = this.model, observableModel = model.observableModel;
-      // Remap connected wires to the new pins.
+      // Remap connected wires to the new input pins.
       connections.forEach(function(wire) {
         if (wire._dstId === element) {
           observableModel.changeValue(wire, 'dstPin', inputMap.get(wire.dstPin));
         }
       });
-      // Change element master if necessary.
+      // Remaster element.
       this.setAttr(element, 'inputs', inputs);
       this.setAttr(element, 'outputs', outputs);
-      // Set master to trigger re-initialization.
       this.setAttr(element, 'master', '$');
+      this.model.dataModel.initialize(element);
     },
 
     doClosure: function() {
@@ -280,8 +291,130 @@ var editingModel = (function() {
       transactionModel.beginTransaction('closure');
       selectionModel.contents().forEach(function(item) {
         if (isConnectable(item))
-          self.makeClosureJunction(item);
+          self.makeClosure(item);
       });
+      transactionModel.endTransaction();
+    },
+
+    makeAbstract: function(element) {
+      let master = element._master;
+      let connections = this.getConnectedConnections([element], false);
+
+      // The abstract function type is just the type of the element.
+      let fnType = '[';
+      // Create a map from old input to new input.
+      master.inputs.forEach(function(input, i) {
+        fnType += input.type;
+      });
+      fnType += ',';
+      master.outputs.forEach(function(output) {
+        fnType += output.type;
+      });
+      fnType += ']';
+      console.log('abstract', fnType);
+      // Add the closure fn as the first input.
+      let inputs = Array.from(master.inputs), outputs = Array.from(master.outputs);
+      inputs.unshift({ type: fnType });
+      console.log(inputs, master.inputs);
+
+      // Now make changes to the data model.
+      let model = this.model, observableModel = model.observableModel;
+      // Remap connected wires to the new input pins.
+      connections.forEach(function(wire) {
+        if (wire._dstId === element) {
+          observableModel.changeValue(wire, 'dstPin', wire.dstPin + 1);
+        }
+      });
+      // Remaster element.
+      this.setAttr(element, 'inputs', inputs);
+      this.setAttr(element, 'outputs', outputs);
+      this.setAttr(element, 'master', '$');
+      this.model.dataModel.initialize(element);
+    },
+
+    doAbstract: function() {
+      let self = this, selectionModel = this.model.selectionModel,
+          transactionModel = this.model.transactionModel;
+      this.reduceSelection();
+      transactionModel.beginTransaction('abstract');
+      selectionModel.contents().forEach(function(item) {
+        if (isConnectable(item))
+          self.makeAbstract(item);
+      });
+      transactionModel.endTransaction();
+    },
+
+    doGroup: function() {
+      let self = this, diagram = this.diagram, model = this.model,
+          dataModel = model.dataModel,
+          selectionModel = model.selectionModel,
+          observableModel = model.observableModel,
+          transactionModel = model.transactionModel;
+      this.reduceSelection();
+      transactionModel.beginTransaction('group');
+
+      let connections = this.getConnectedConnections(selectionModel.contents(), false);
+      let incoming = [], outgoing = [];
+      // Separate connections into incoming, outgoing, and internal. Adjust
+      // selection to contain only elements and internal connections.
+      connections.forEach(function(connection) {
+        let src = connection._srcId, dst = connection._dstId;
+        if (!selectionModel.contains(src)) {
+          selectionModel.remove(connection);
+          incoming.push(connection);
+        } else if (!selectionModel.contains(dst)) {
+          selectionModel.remove(connection);
+          outgoing.push(connection);
+        } else {
+          selectionModel.add(connection);
+        }
+      });
+      let groupItems = selectionModel.contents();
+      // Input pins are all input junctions, plus any input pins connecting to
+      // outside |elements|. Likewise, output pins are all output junctions plus
+      // any output pins connecting to outside |elements|.
+      let inputs = [], outputs = [];
+      groupItems.forEach(function(item) {
+        if (isInputJunction(item)) {
+          inputs.push({ type: item.outputs[0].type });
+        } else if (isOutputJunction(item)) {
+          outputs.push({ type: item.inputs[0].type });
+        }
+        self.deleteItem(item);
+      });
+      incoming.forEach(function(item) {
+        observableModel.changeValue(item, 'dstPin', inputs.length);
+        inputs.push({ type: item._srcId.outputs[item.srcPin].type });
+      });
+      outgoing.forEach(function(item) {
+        observableModel.changeValue(item, 'srcPin', outputs.length);
+        inputs.push({ type: item._dstId.inputs[item.dstPin].type });
+      });
+      // Create the new group element.
+      let groupElement = {
+        type: 'element',
+        master: '$',
+        x: 160,
+        y: 160,
+        inputs: inputs,
+        outputs: outputs,
+        // 'groupItems' is part of data model but not traversed in editor.
+        groupItems: groupItems,
+      };
+      // Delete the group items.
+      this.newItem(groupElement);
+      this.addItem(groupElement, diagram);
+      selectionModel.set(groupElement);
+
+      // Remap the external connections.
+      let id = dataModel.getId(groupElement);
+      incoming.forEach(function(item) {
+        observableModel.changeValue(item, 'dstId', id);
+      });
+      outgoing.forEach(function(item) {
+        observableModel.changeValue(item, 'srcId', id);
+      });
+
       transactionModel.endTransaction();
     },
   }
@@ -397,6 +530,8 @@ Renderer.prototype.layoutMaster = function(master) {
   if (name) {
     width = spacing + ctx.measureText(name).width;
     height += textSize + spacing / 2;
+  } else {
+    height += spacing;
   }
   let yIn = height, wIn = 0;
   for (let i = 0; i < inputs.length; i++) {
@@ -522,12 +657,12 @@ Renderer.prototype.hitTestElement = function(element, p, tol, mode) {
         inputs = master.inputs, outputs = master.outputs,
         self = this;
     inputs.forEach(function(input, i) {
-      if (diagrams.hitTestRect(x, y + input._y, input._width, input._height, p, tol))
+      if (diagrams.hitTestRect(x, y + input._y, input._width, input._height, p, 0))
         hitInfo.input = i;
     });
     outputs.forEach(function(output, i) {
       if (diagrams.hitTestRect(x + width - output._width,
-          y + output._y, output._width, output._height, p, tol))
+          y + output._y, output._width, output._height, p, 0))
         hitInfo.output = i;
     });
   }
@@ -680,6 +815,7 @@ function Editor(model, renderer) {
       ]
     });
   });
+  // Just one ternary op for now.
   masterMap.set('?', {
       name: '?',
       type: 'element',
@@ -815,14 +951,14 @@ function Editor(model, renderer) {
   // Initialize the built in masters.
   masterMap.forEach(function(master, name) {
     initializePins(master);
-    console.log(name, master);
+    // console.log(name, master);
   });
 
   // Initialize items in models (e.g. palette and documents).
   function initialize(item) {
     if (item.type == 'element') {
       // Only initialize once.
-      if (!item._master) {
+      // if (!item._master) {
         if (item.master == '$') {
           // Self master (junction).
           initializePins(item);
@@ -830,7 +966,7 @@ function Editor(model, renderer) {
         } else {
           item._master = masterMap.get(item.master);
         }
-      }
+      // }
     }
   }
 
@@ -847,12 +983,10 @@ function Editor(model, renderer) {
 
   // Track changes fields that require re-initialization.
   model.observableModel.addHandler('changed', function (change) {
-    console.log('change', change);
     if (change.attr == 'master') {
       let item = change.item;
       item._master = undefined;
       initialize(item);
-      console.log(item);
     }
   });
 }
@@ -877,19 +1011,21 @@ Editor.prototype.initialize = function(canvasController) {
   });
   renderer.endDraw();
 
-  // // Create an instance of every master.
-  // let x = 160, y = 160, model = this.model, diagram = this.diagram;
-  // this.masterMap.forEach(function(master) {
-  //   let item = {
-  //     type: 'element',
-  //     master: master.name,
-  //     x: x,
-  //     y: y,
-  //   };
-  //   model.editingModel.addItem(item, diagram);
-  //   model.dataModel.initialize(item);
-  //   x += 48;
-  // });
+  // Create an instance of every master.
+  // TODO make palette awesome.
+  let x = 160, y = 320, model = this.model, diagram = this.diagram;
+  this.masterMap.forEach(function(master) {
+    let item = {
+      type: 'element',
+      master: master.name,
+      x: x,
+      y: y,
+    };
+
+    model.editingModel.newItem(item);
+    model.editingModel.addItem(item, diagram);
+    x += 48;
+  });
 }
 
 Editor.prototype.isPaletteItem = function(item) {
@@ -1326,6 +1462,12 @@ Editor.prototype.onKeyDown = function(e) {
       case 75:  // 'k'
         editingModel.doClosure();
         return true;
+      case 76:  // 'l'
+        editingModel.doAbstract();
+        return true;
+      case 71:  // 'g'
+        editingModel.doGroup();
+        return true;
       case 83:  // 's'
         var text = JSON.stringify(
           diagram,
@@ -1358,7 +1500,8 @@ return {
 })();
 
 
-var circuit_data = {
+var circuit_data =
+{
   "type": "diagram",
   "id": 1001,
   "x": 0,
@@ -1367,125 +1510,5 @@ var circuit_data = {
   "height": 430.60454734008107,
   "name": "Example",
   "items": [
-    {
-      "type": "element",
-      "master": "!",
-      "x": 70,
-      "y": 346
-    },
-    {
-      "type": "element",
-      "master": "~",
-      "x": 118,
-      "y": 346
-    },
-    {
-      "type": "element",
-      "master": "-",
-      "x": 166,
-      "y": 346
-    },
-    {
-      "type": "element",
-      "master": "+",
-      "x": 214,
-      "y": 346
-    },
-    {
-      "type": "element",
-      "master": "*",
-      "x": 262,
-      "y": 346
-    },
-    {
-      "type": "element",
-      "master": "/",
-      "x": 310,
-      "y": 346
-    },
-    {
-      "type": "element",
-      "master": "%",
-      "x": 358,
-      "y": 346
-    },
-    {
-      "type": "element",
-      "master": "==",
-      "x": 406,
-      "y": 346
-    },
-    {
-      "type": "element",
-      "master": "!=",
-      "x": 454,
-      "y": 346
-    },
-    {
-      "type": "element",
-      "master": "<",
-      "x": 72,
-      "y": 408
-    },
-    {
-      "type": "element",
-      "master": "<=",
-      "x": 120,
-      "y": 408
-    },
-    {
-      "type": "element",
-      "master": ">",
-      "x": 168,
-      "y": 408
-    },
-    {
-      "type": "element",
-      "master": ">=",
-      "x": 216,
-      "y": 408
-    },
-    {
-      "type": "element",
-      "master": "|",
-      "x": 264,
-      "y": 408
-    },
-    {
-      "type": "element",
-      "master": "&",
-      "x": 312,
-      "y": 408
-    },
-    {
-      "type": "element",
-      "master": "||",
-      "x": 360,
-      "y": 408
-    },
-    {
-      "type": "element",
-      "master": "&&",
-      "x": 408,
-      "y": 408
-    },
-    {
-      "type": "element",
-      "master": "?",
-      "x": 456,
-      "y": 408
-    }
   ]
 }
-
-// {
-//   "type": "diagram",
-//   "id": 1001,
-//   "x": 0,
-//   "y": 0,
-//   "width": 853,
-//   "height": 430.60454734008107,
-//   "name": "Example",
-//   "items": [
-//   ]
-// }
