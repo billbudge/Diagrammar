@@ -306,6 +306,27 @@ function measureNameValuePairs(pairs, gap, ctx) {
 
 //------------------------------------------------------------------------------
 
+function TextInputController(textInput, theme) {
+  this.textInput = textInput;
+  this.theme = theme || diagrams.theme.create();
+  let self = this;
+  textInput.addEventListener('change', function(event) {
+    if (self.changeHandler)
+      self.changeHandler(self.textInput.value);
+  });
+}
+
+TextInputController.prototype.start = function(text, changeHandler) {
+  this.textInput.value = text;
+  this.changeHandler = changeHandler;
+}
+
+TextInputController.prototype.clear = function() {
+  this.changeHandler = null;
+}
+
+//------------------------------------------------------------------------------
+
 function CanvasController(canvas, ctx, theme) {
   this.canvas = canvas;
   this.ctx = ctx || canvas.getContext('2d');
@@ -674,6 +695,7 @@ return {
   CanvasController: CanvasController,
   CanvasPanZoomLayer: CanvasPanZoomLayer,
   CanvasMultiselectLayer: CanvasMultiselectLayer,
+  TextInputController: TextInputController,
 
   theme: theme,
 }

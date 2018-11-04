@@ -2,9 +2,11 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>PCS Sandbox</title>
+  <title>Sandbox</title>
 </head>
 <body>
+
+<input type="text" id="text_input" size="20">
 
 <canvas id="test_canvas"></canvas>
 
@@ -98,11 +100,15 @@
 // qsort(random_array);
 // console.log(random_array);
 
-var canvas = document.getElementById('test_canvas');
-var ctx = canvas.getContext('2d');
+let canvas = document.getElementById('test_canvas');
+let ctx = canvas.getContext('2d');
 
-var theme = diagrams.theme.create(),  // createBlueprint
+let textBox = document.getElementById('text_input');
+
+let theme = diagrams.theme.create(),  // or createBlueprint
     canvasController = new diagrams.CanvasController(canvas, ctx, theme),
+    // TODO text editing layer?
+    textInputController = new diagrams.TextInputController(text_input, theme),
     statechartModel = { root: statechart_data },
     circuitModel = { root: circuit_data },
     shapeModel = { root: shape_data };
@@ -110,7 +116,7 @@ var theme = diagrams.theme.create(),  // createBlueprint
 document.bgColor = theme.bgColor;
 
 var statechartEditor = new statecharts.Editor(statechartModel),
-    circuitEditor = new circuits.Editor(circuitModel),
+    circuitEditor = new circuits.Editor(circuitModel, textInputController),
     panZoomLayer = new diagrams.CanvasPanZoomLayer(),
     shapeEditor = new shapes.Editor(shapeModel);
 

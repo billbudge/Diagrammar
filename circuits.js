@@ -24,6 +24,10 @@ function isJunction(item) {
   return item.type == 'element' && item.junction;
 }
 
+function isOpenJunction(item) {
+  return isJunction(item) && !item.connected;
+}
+
 function isInputJunction(item) {
   return item.type == 'element' && item.junction == 'input';
 }
@@ -207,33 +211,39 @@ var editingModel = (function() {
       let model = this.model, observableModel = model.observableModel;
       // Replace the first input with a pin to match output.
       observableModel.removeElement(junction, 'outputs', 0);
-      observableModel.insertElement(junction, 'outputs', 0, Object.assign({}, input));
+      observableModel.insertElement(junction, 'outputs', 0, { type: input.type });
+      // Once junction is connected, don't allow further adaptation.
+      model.observableModel.changeValue(junction, 'connected', true);
+      model.dataModel.initialize(junction);
     },
 
-    setOutputJunction: function(junction, output, expand) {
+    setOutputJunction: function(junction, output) {
       let model = this.model, observableModel = model.observableModel;
       // Replace the first input with a pin to match output.
       observableModel.removeElement(junction, 'inputs', 0);
-      observableModel.insertElement(junction, 'inputs', 0, Object.assign({}, output));
+      observableModel.insertElement(junction, 'inputs', 0, { type: output.type });
 
-      if (expand) {
+      if (junction.junction == 'expander') {
         // Add the expanded pin's inputs and outputs.
         let master = output._master;
         if (master) {
           master.inputs.forEach(function(input) {
             observableModel.insertElement(
-              junction, 'inputs', junction.inputs.length, Object.assign({}, input));
+              junction, 'inputs', junction.inputs.length, { type: input.type });
           });
           master.outputs.forEach(function(output) {
             observableModel.insertElement(
-              junction, 'outputs', junction.outputs.length, Object.assign({}, output));
+              junction, 'outputs', junction.outputs.length, { type: output.type });
           });
         } else {
           // Single output value.
           observableModel.insertElement(
-            junction, 'outputs', junction.outputs.length, Object.assign({}, output));
+            junction, 'outputs', junction.outputs.length, { type: output.type });
         }
       }
+      // Once junction is connected, don't allow further adaptation.
+      model.observableModel.changeValue(junction, 'connected', true);
+      model.dataModel.initialize(junction);
     },
 
     makeClosure: function(element) {
@@ -375,18 +385,23 @@ var editingModel = (function() {
       let inputs = [], outputs = [];
       groupItems.forEach(function(item) {
         if (isInputJunction(item)) {
-          inputs.push({ type: item.outputs[0].type });
+          let pin = item.outputs[0];
+          inputs.push({ type: pin.type, name: item.name });
         } else if (isOutputJunction(item)) {
-          outputs.push({ type: item.inputs[0].type });
+          let pin = item.inputs[0];
+          outputs.push({ type: pin.type, name: item.name });
         }
-        self.deleteItem(item);
+        if (!elementOnly)
+          self.deleteItem(item);
       });
       incoming.forEach(function(wire) {
-        observableModel.changeValue(wire, 'dstPin', inputs.length);
+        if (!elementOnly)
+          observableModel.changeValue(wire, 'dstPin', inputs.length);
         inputs.push({ type: wire._srcId._master.outputs[wire.srcPin].type });
       });
       outgoing.forEach(function(wire) {
-        observableModel.changeValue(wire, 'srcPin', outputs.length);
+        if (!elementOnly)
+          observableModel.changeValue(wire, 'srcPin', outputs.length);
         outputs.push({ type: wire._dstId._master.inputs[wire.dstPin].type });
       });
       // Create the new group element.
@@ -397,21 +412,28 @@ var editingModel = (function() {
         y: 160,
         inputs: inputs,
         outputs: outputs,
-        // 'groupItems' is part of data model but not traversed in editor.
-        groupItems: groupItems,
       };
+      if (!elementOnly) {
+        // 'groupItems' is part of data model but not traversed in editor.
+        groupElement.groupItems = groupItems;
+      }
       this.newItem(groupElement);
       this.addItem(groupElement, diagram);
-      selectionModel.set(groupElement);
+      if (elementOnly)
+        selectionModel.add(groupElement);
+      else
+        selectionModel.set(groupElement);
 
-      // Remap the external connections.
-      let id = dataModel.getId(groupElement);
-      incoming.forEach(function(wire) {
-        observableModel.changeValue(wire, 'dstId', id);
-      });
-      outgoing.forEach(function(wire) {
-        observableModel.changeValue(wire, 'srcId', id);
-      });
+      if (!elementOnly) {
+        // Remap the external connections.
+        let id = dataModel.getId(groupElement);
+        incoming.forEach(function(wire) {
+          observableModel.changeValue(wire, 'dstId', id);
+        });
+        outgoing.forEach(function(wire) {
+          observableModel.changeValue(wire, 'srcId', id);
+        });
+      }
 
       transactionModel.endTransaction();
     },
@@ -603,7 +625,7 @@ Renderer.prototype.drawMaster = function(master, x, y, mode) {
       ctx.textBaseline = 'bottom';
       if (name) {
         ctx.textAlign = 'center';
-        ctx.fillText(name, x + width / 2, y + textSize);
+        ctx.fillText(name, x + width / 2, y + textSize + spacing / 2);
       }
       inputs.forEach(function(pin, i) {
         let name = pin.name;
@@ -772,13 +794,13 @@ Renderer.prototype.drawHoverText = function(item, p) {
 
 //------------------------------------------------------------------------------
 
-function Editor(model, renderer) {
+function Editor(model, textInputController) {
   var self = this;
   this.model = model;
   this.diagram = model.root;
-  this.renderer = renderer;
+  this.textInputController = textInputController;
 
-  this.hitTolerance = 8;
+  this.hitTolerance = 4;
 
   let masterMap = new Map();
   this.masterMap = masterMap;
@@ -826,6 +848,18 @@ function Editor(model, renderer) {
         { type: 'v' },
       ]
   });
+  // Local storage.
+  masterMap.set('@', {
+      name: '@',
+      type: 'element',
+      inputs: [
+        { name: 'i', type: 'v' },
+      ],
+      outputs: [
+        { type: 'v' },
+        { type: '[v,v]' },
+      ]
+  });
 
   var palette = this.palette = {
     root: {
@@ -834,7 +868,7 @@ function Editor(model, renderer) {
       y: 0,
       items: [
         { type: 'element',
-          x: 16, y: 16,
+          x: 8, y: 8,
           master: '$',
           junction: 'input',
           inputs: [],
@@ -843,7 +877,7 @@ function Editor(model, renderer) {
           ],
         },
         { type: 'element',
-          x: 48, y: 16,
+          x: 36, y: 8,
           master: '$',
           junction: 'output',
           inputs: [
@@ -852,7 +886,7 @@ function Editor(model, renderer) {
           outputs: [],
         },
         { type: 'element',
-          x: 80, y: 16,
+          x: 64, y: 8,
           master: '$',
           junction: 'expander',
           inputs: [
@@ -860,41 +894,39 @@ function Editor(model, renderer) {
           ],
           outputs: [],
         },
+        // TODO Literal object needs work.
+        { type: 'element',
+          x: 92, y: 8,
+          master: '$',
+          name: '0',
+          inputs: [],
+          outputs: [
+            { type: 'v' },
+          ],
+        },
         {
           type: 'element',
-          x: 16, y: 56,
+          x: 8, y: 36,
           master: '?',
         },
         {
           type: 'element',
-          x: 16, y: 140,
+          x: 56, y: 44,
+          master: '@',
+        },
+        {
+          type: 'element',
+          x: 8, y: 108,
           master: '>',
         },
         {
           type: 'element',
-          x: 64, y: 140,
+          x: 56, y: 108,
           master: '+',
         },
       ],
     }
   }
-
-  // function encodePinType(item) {
-  //   // TODO update this
-  //   if (item.type == 'v') return 'v';
-  //   if (item.type == 'signature') {
-  //     let result = '[';
-  //     item._master.inputs.forEach(function(input) {
-  //       result += encodePinType(input);
-  //     });
-  //     result += ',';
-  //     item._master.outputs.forEach(function(input) {
-  //       result += encodePinType(input);
-  //     });
-  //     result += ']';
-  //     return result;
-  //   }
-  // }
 
   // Decodes and atomizes pin types into master map.
   function decodePinType(s) {
@@ -941,9 +973,9 @@ function Editor(model, renderer) {
   function initializePins(master) {
     let inputs = master.inputs, outputs = master.outputs;
     for (let i = 0; i < inputs.length; i++)
-      inputs[i] = decodePinType(inputs[i].type);
+      Object.assign(inputs[i], decodePinType(inputs[i].type));
     for (let i = 0; i < outputs.length; i++)
-      outputs[i] = decodePinType(outputs[i].type);
+      Object.assign(outputs[i], decodePinType(outputs[i].type));
   }
 
   // Initialize the built in masters.
@@ -993,10 +1025,9 @@ Editor.prototype.initialize = function(canvasController) {
   this.canvasController = canvasController;
   this.canvas = canvasController.canvas;
   this.ctx = canvasController.ctx;
+  this.renderer = new Renderer(canvasController.theme);
 
-  if (!this.renderer)
-    this.renderer = new Renderer(canvasController.theme);
-  var renderer = this.renderer, ctx = this.ctx;
+  let renderer = this.renderer, ctx = this.ctx;
   renderer.beginDraw(this.palette, ctx);
   this.masterMap.forEach(function(master, name) {
     renderer.layoutMaster(master);
@@ -1011,19 +1042,19 @@ Editor.prototype.initialize = function(canvasController) {
 
   // Create an instance of every master.
   // TODO make palette awesome.
-  let x = 160, y = 320, model = this.model, diagram = this.diagram;
-  this.masterMap.forEach(function(master) {
-    let item = {
-      type: 'element',
-      master: master.name,
-      x: x,
-      y: y,
-    };
+  // let x = 160, y = 320, model = this.model, diagram = this.diagram;
+  // this.masterMap.forEach(function(master, name) {
+  //   let item = {
+  //     type: 'element',
+  //     master: name,
+  //     x: x,
+  //     y: y,
+  //   };
 
-    model.editingModel.newItem(item);
-    model.editingModel.addItem(item, diagram);
-    x += 48;
-  });
+  //   model.editingModel.newItem(item);
+  //   model.editingModel.addItem(item, diagram);
+  //   x += 48;
+  // });
 }
 
 Editor.prototype.isPaletteItem = function(item) {
@@ -1150,8 +1181,27 @@ function isContainerTarget(hitInfo, model) {
          !model.hierarchicalModel.isItemInSelection(item);
 }
 
+Editor.prototype.setEditableText = function() {
+  let self = this,
+      textInputController = this.textInputController,
+      selectionModel = this.model.selectionModel,
+      lastSelected = selectionModel.lastSelected();
+  if (lastSelected) {
+    textInputController.start(lastSelected.name, function(newText) {
+      if (lastSelected.name != newText) {
+        self.model.transactionModel.beginTransaction('rename');
+        self.model.observableModel.changeValue(lastSelected, 'name', newText);
+        self.model.transactionModel.endTransaction();
+        self.draw();
+      }
+    });
+  } else {
+    textInputController.clear();
+  }
+}
+
 Editor.prototype.onClick = function(p) {
-  var model = this.model,
+  let model = this.model,
       selectionModel = model.selectionModel,
       shiftKeyDown = this.canvasController.shiftKeyDown,
       hitList = this.hitTest(p),
@@ -1170,6 +1220,7 @@ Editor.prototype.onClick = function(p) {
       selectionModel.clear();
     }
   }
+  this.setEditableText();
   return mouseHitInfo != null;
 }
 
@@ -1373,16 +1424,16 @@ Editor.prototype.onEndDrag = function(p) {
       editingModel.deleteItem(dragItem);
       selectionModel.remove(dragItem);
     } else {
-      // Adjust pins for junction elements.
+      // Adjust pins on open junction elements.
       let referencingModel = model.referencingModel,
       srcItem = referencingModel.resolveReference(dragItem, 'srcId'),
       dstItem = referencingModel.resolveReference(dragItem, 'dstId');
-      if (isJunction(srcItem)) {
+      if (isOpenJunction(srcItem)) {
         let dstPin = dstItem._master.inputs[dragItem.dstPin];
         editingModel.setInputJunction(srcItem, dstPin);
-      } else if (isJunction(dstItem)) {
+      } else if (isOpenJunction(dstItem)) {
         let srcPin = srcItem._master.outputs[dragItem.srcPin];
-        editingModel.setOutputJunction(dstItem, srcPin, dstItem.junction == 'expander');
+        editingModel.setOutputJunction(dstItem, srcPin);
       }
     }
   }
@@ -1509,5 +1560,682 @@ var circuit_data =
   "height": 430.60454734008107,
   "name": "Example",
   "items": [
+    {
+      "type": "element",
+      "master": "!",
+      "x": 160,
+      "y": 320,
+      "id": 1002
+    },
+    {
+      "type": "element",
+      "master": "~",
+      "x": 208,
+      "y": 320,
+      "id": 1003
+    },
+    {
+      "type": "element",
+      "master": "-",
+      "x": 256,
+      "y": 320,
+      "id": 1004
+    },
+    {
+      "type": "element",
+      "master": "+",
+      "x": 304,
+      "y": 320,
+      "id": 1005
+    },
+    {
+      "type": "element",
+      "master": "*",
+      "x": 352,
+      "y": 320,
+      "id": 1006
+    },
+    {
+      "type": "element",
+      "master": "/",
+      "x": 400,
+      "y": 320,
+      "id": 1007
+    },
+    {
+      "type": "element",
+      "master": "%",
+      "x": 448,
+      "y": 320,
+      "id": 1008
+    },
+    {
+      "type": "element",
+      "master": "==",
+      "x": 496,
+      "y": 320,
+      "id": 1009
+    },
+    {
+      "type": "element",
+      "master": "!=",
+      "x": 544,
+      "y": 320,
+      "id": 1010
+    },
+    {
+      "type": "element",
+      "master": "<",
+      "x": 592,
+      "y": 320,
+      "id": 1011
+    },
+    {
+      "type": "element",
+      "master": "<=",
+      "x": 640,
+      "y": 320,
+      "id": 1012
+    },
+    {
+      "type": "element",
+      "master": ">",
+      "x": 688,
+      "y": 320,
+      "id": 1013
+    },
+    {
+      "type": "element",
+      "master": ">=",
+      "x": 736,
+      "y": 320,
+      "id": 1014
+    },
+    {
+      "type": "element",
+      "master": "|",
+      "x": 784,
+      "y": 320,
+      "id": 1015
+    },
+    {
+      "type": "element",
+      "master": "&",
+      "x": 832,
+      "y": 320,
+      "id": 1016
+    },
+    {
+      "type": "element",
+      "master": "||",
+      "x": 880,
+      "y": 320,
+      "id": 1017
+    },
+    {
+      "type": "element",
+      "master": "&&",
+      "x": 928,
+      "y": 320,
+      "id": 1018
+    },
+    {
+      "type": "element",
+      "master": "?",
+      "x": 976,
+      "y": 320,
+      "id": 1019
+    },
+    {
+      "type": "element",
+      "master": "@",
+      "x": 915.3264813175407,
+      "y": 236.95702817661135,
+      "id": 1020
+    },
+    {
+      "type": "element",
+      "master": "[v,v]",
+      "x": 1072,
+      "y": 268.7389062818588,
+      "id": 1021
+    },
+    {
+      "type": "element",
+      "x": 539.1191363289757,
+      "y": -18.23827265795142,
+      "master": "?",
+      "id": 1023
+    },
+    {
+      "type": "element",
+      "x": 352,
+      "y": 29,
+      "master": "@",
+      "id": 1037
+    },
+    {
+      "type": "element",
+      "master": "!",
+      "x": 160,
+      "y": 320,
+      "id": 1038
+    },
+    {
+      "type": "element",
+      "master": "~",
+      "x": 208,
+      "y": 320,
+      "id": 1039
+    },
+    {
+      "type": "element",
+      "master": "-",
+      "x": 256,
+      "y": 320,
+      "id": 1040
+    },
+    {
+      "type": "element",
+      "master": "*",
+      "x": 352,
+      "y": 320,
+      "id": 1042
+    },
+    {
+      "type": "element",
+      "master": "/",
+      "x": 400,
+      "y": 320,
+      "id": 1043
+    },
+    {
+      "type": "element",
+      "master": "%",
+      "x": 448,
+      "y": 320,
+      "id": 1044
+    },
+    {
+      "type": "element",
+      "master": "==",
+      "x": 496,
+      "y": 320,
+      "id": 1045
+    },
+    {
+      "type": "element",
+      "master": "!=",
+      "x": 544,
+      "y": 320,
+      "id": 1046
+    },
+    {
+      "type": "element",
+      "master": "<",
+      "x": 461.72884090716536,
+      "y": -28.40754540062888,
+      "id": 1047
+    },
+    {
+      "type": "element",
+      "master": "<=",
+      "x": 640,
+      "y": 320,
+      "id": 1048
+    },
+    {
+      "type": "element",
+      "master": ">",
+      "x": 688,
+      "y": 320,
+      "id": 1049
+    },
+    {
+      "type": "element",
+      "master": ">=",
+      "x": 736,
+      "y": 320,
+      "id": 1050
+    },
+    {
+      "type": "element",
+      "master": "|",
+      "x": 784,
+      "y": 320,
+      "id": 1051
+    },
+    {
+      "type": "element",
+      "master": "&",
+      "x": 832,
+      "y": 320,
+      "id": 1052
+    },
+    {
+      "type": "element",
+      "master": "||",
+      "x": 880,
+      "y": 320,
+      "id": 1053
+    },
+    {
+      "type": "element",
+      "master": "&&",
+      "x": 928,
+      "y": 320,
+      "id": 1054
+    },
+    {
+      "type": "element",
+      "master": "?",
+      "x": 976,
+      "y": 320,
+      "id": 1055
+    },
+    {
+      "type": "element",
+      "master": "@",
+      "x": 953.0920125229383,
+      "y": 122.64549070974454,
+      "id": 1056
+    },
+    {
+      "type": "element",
+      "master": "[v,v]",
+      "x": 1070.9747781256372,
+      "y": 221.57870006116903,
+      "id": 1057
+    },
+    {
+      "type": "element",
+      "master": "$",
+      "x": 192,
+      "y": 188,
+      "inputs": [
+        {
+          "type": "v"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "v"
+        }
+      ],
+      "groupItems": [
+        {
+          "type": "wire",
+          "srcId": 1041,
+          "srcPin": 0,
+          "dstId": 1071,
+          "dstPin": 0,
+          "id": 1072
+        },
+        {
+          "type": "wire",
+          "srcId": 1066,
+          "srcPin": 0,
+          "dstId": 1041,
+          "dstPin": 0,
+          "id": 1067
+        },
+        {
+          "type": "wire",
+          "srcId": 1061,
+          "srcPin": 0,
+          "dstId": 1041,
+          "dstPin": 1,
+          "id": 1062
+        },
+        {
+          "type": "element",
+          "x": 434,
+          "y": 215,
+          "master": "$",
+          "junction": "output",
+          "inputs": [
+            {
+              "type": "v"
+            }
+          ],
+          "outputs": [],
+          "id": 1071
+        },
+        {
+          "type": "element",
+          "x": 325,
+          "y": 213,
+          "master": "$",
+          "junction": "input",
+          "inputs": [],
+          "outputs": [
+            {
+              "type": "v"
+            }
+          ],
+          "id": 1066
+        },
+        {
+          "type": "element",
+          "x": 329,
+          "y": 243,
+          "master": "$",
+          "name": "1",
+          "inputs": [],
+          "outputs": [
+            {
+              "type": "v",
+              "id": 1060
+            }
+          ],
+          "id": 1061
+        },
+        {
+          "type": "element",
+          "master": "+",
+          "x": 372,
+          "y": 209,
+          "id": 1041
+        }
+      ],
+      "id": 1074,
+      "name": "++"
+    },
+    {
+      "type": "element",
+      "master": "$",
+      "x": 458,
+      "y": 78,
+      "inputs": [
+        {
+          "type": "v",
+          "id": 1094
+        }
+      ],
+      "outputs": [
+        {
+          "type": "v",
+          "id": 1095
+        }
+      ],
+      "groupItems": [
+        {
+          "type": "wire",
+          "srcId": 1105,
+          "srcPin": 0,
+          "dstId": 1100,
+          "dstPin": 0,
+          "id": 1096
+        },
+        {
+          "type": "wire",
+          "srcId": 1102,
+          "srcPin": 0,
+          "dstId": 1105,
+          "dstPin": 0,
+          "id": 1097
+        },
+        {
+          "type": "wire",
+          "srcId": 1104,
+          "srcPin": 0,
+          "dstId": 1105,
+          "dstPin": 1,
+          "id": 1098
+        },
+        {
+          "type": "element",
+          "x": 434,
+          "y": 215,
+          "master": "$",
+          "junction": "output",
+          "inputs": [
+            {
+              "type": "v",
+              "id": 1099
+            }
+          ],
+          "outputs": [],
+          "id": 1100
+        },
+        {
+          "type": "element",
+          "x": 325,
+          "y": 213,
+          "master": "$",
+          "junction": "input",
+          "inputs": [],
+          "outputs": [
+            {
+              "type": "v",
+              "id": 1101
+            }
+          ],
+          "id": 1102
+        },
+        {
+          "type": "element",
+          "x": 329,
+          "y": 243,
+          "master": "$",
+          "name": "1",
+          "inputs": [],
+          "outputs": [
+            {
+              "type": "v",
+              "id": 1103
+            }
+          ],
+          "id": 1104
+        },
+        {
+          "type": "element",
+          "master": "+",
+          "x": 372,
+          "y": 209,
+          "id": 1105
+        }
+      ],
+      "name": "++",
+      "id": 1106
+    },
+    {
+      "type": "wire",
+      "srcId": 1037,
+      "srcPin": 0,
+      "dstId": 1106,
+      "dstPin": 0,
+      "id": 1107
+    },
+    {
+      "type": "wire",
+      "srcId": 1037,
+      "srcPin": 0,
+      "dstId": 1047,
+      "dstPin": 0,
+      "id": 1109
+    },
+    {
+      "type": "wire",
+      "srcId": 1047,
+      "srcPin": 0,
+      "dstId": 1023,
+      "dstPin": 0,
+      "id": 1111
+    },
+    {
+      "type": "wire",
+      "srcId": 1106,
+      "srcPin": 0,
+      "dstId": 1023,
+      "dstPin": 1,
+      "id": 1112
+    },
+    {
+      "type": "wire",
+      "srcId": 1037,
+      "srcPin": 0,
+      "dstId": 1023,
+      "dstPin": 2,
+      "id": 1113
+    },
+    {
+      "type": "element",
+      "x": 457,
+      "y": 133,
+      "master": "$",
+      "junction": "expander",
+      "inputs": [
+        {
+          "type": "[v,v]"
+        },
+        {
+          "type": "v"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "[,v]"
+        }
+      ],
+      "id": 1155,
+      "connected": true
+    },
+    {
+      "type": "wire",
+      "srcId": 1037,
+      "srcPin": 1,
+      "dstId": 1155,
+      "dstPin": 0,
+      "id": 1156,
+      "x": null,
+      "y": null
+    },
+    {
+      "type": "element",
+      "x": 538,
+      "y": 122,
+      "master": "$",
+      "junction": "output",
+      "inputs": [
+        {
+          "type": "[,v]"
+        }
+      ],
+      "outputs": [],
+      "id": 1161,
+      "connected": true,
+      "name": "reset"
+    },
+    {
+      "type": "wire",
+      "srcId": 1155,
+      "srcPin": 0,
+      "dstId": 1161,
+      "dstPin": 0,
+      "id": 1162,
+      "x": null,
+      "y": null
+    },
+    {
+      "type": "element",
+      "x": 565,
+      "y": 59,
+      "master": "$",
+      "junction": "output",
+      "inputs": [
+        {
+          "type": "v"
+        }
+      ],
+      "outputs": [],
+      "id": 1166,
+      "connected": true,
+      "name": "v"
+    },
+    {
+      "type": "wire",
+      "srcId": 1037,
+      "srcPin": 0,
+      "dstId": 1166,
+      "dstPin": 0,
+      "id": 1167,
+      "x": null,
+      "y": null
+    },
+    {
+      "type": "element",
+      "x": 291,
+      "y": -13,
+      "master": "$",
+      "junction": "input",
+      "inputs": [],
+      "outputs": [
+        {
+          "type": "v"
+        }
+      ],
+      "id": 1171,
+      "connected": true,
+      "name": "lo"
+    },
+    {
+      "type": "wire",
+      "srcId": 1171,
+      "srcPin": 0,
+      "dstId": 1037,
+      "dstPin": 0,
+      "id": 1172,
+      "x": null,
+      "y": null
+    },
+    {
+      "type": "element",
+      "x": 323,
+      "y": -38,
+      "master": "$",
+      "junction": "input",
+      "inputs": [],
+      "outputs": [
+        {
+          "type": "v"
+        }
+      ],
+      "id": 1176,
+      "connected": true,
+      "name": "hi"
+    },
+    {
+      "type": "wire",
+      "srcId": 1176,
+      "srcPin": 0,
+      "dstId": 1047,
+      "dstPin": 1,
+      "id": 1177,
+      "x": null,
+      "y": null
+    },
+    {
+      "type": "wire",
+      "srcId": 1171,
+      "srcPin": 0,
+      "dstId": 1155,
+      "dstPin": 1,
+      "id": 1178,
+      "x": null,
+      "y": null
+    }
   ]
 }
+// {
+//   "type": "diagram",
+//   "id": 1001,
+//   "x": 0,
+//   "y": 0,
+//   "width": 853,
+//   "height": 430.60454734008107,
+//   "name": "Example",
+//   "items": [
+//   ]
+// }
+
