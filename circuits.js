@@ -8,11 +8,11 @@ function isContainer(item) {
   return item.type == 'diagram';
 }
 
-function isConnectable(item) {
+function isElement(item) {
   return item.type == 'element';
 }
 
-function isConnection(item) {
+function isWire(item) {
   return item.type == 'wire';
 }
 
@@ -37,7 +37,7 @@ function isOutputJunction(item) {
 }
 
 function needsLayout(item) {
-  return isConnection(item) || isImmediate(item);
+  return isWire(item) || isImmediate(item);
 }
 
 function isDiagram(item) {
@@ -81,12 +81,12 @@ var editingModel = (function() {
       let model = this.model,
           itemsAndChildren = new Set();
       items.forEach(function(item) {
-        visit(item, isConnectable, function(item) {
+        visit(item, isElement, function(item) {
           itemsAndChildren.add(item);
         });
       });
       let connections = [];
-      visit(this.diagram, isConnection, function(item) {
+      visit(this.diagram, isWire, function(item) {
         let contains1 = itemsAndChildren.has(item._srcId),
             contains2 = itemsAndChildren.has(item._dstId);
         if (copying) {
@@ -142,7 +142,7 @@ var editingModel = (function() {
 
       items.forEach(function(item) {
         let copy = map.get(dataModel.getId(item));
-        if (isConnectable(copy)) {
+        if (isElement(copy)) {
           let toGlobal = transformableModel.getToParent(item, diagram);
           geometry.matMulPt(copy, toGlobal);
         }
@@ -154,7 +154,7 @@ var editingModel = (function() {
       let selectionModel = this.model.selectionModel;
       this.reduceSelection();
       selectionModel.contents().forEach(function(item) {
-        if (!isConnectable(item))
+        if (!isElement(item))
           selectionModel.remove(item);
       });
       this.prototype.doCopy.call(this);
@@ -173,7 +173,7 @@ var editingModel = (function() {
     doPaste: function() {
       this.getScrap().forEach(function(item) {
         // Offset pastes so the user can see them.
-        if (isConnectable(item)) {
+        if (isElement(item)) {
           item.x += 16;
           item.y += 16;
         }
@@ -246,138 +246,135 @@ var editingModel = (function() {
       model.dataModel.initialize(junction);
     },
 
-    makeClosure: function(element) {
-      let master = element._master;
-      let connections = this.getConnectedConnections([element], false);
-      // Get indices of element's disconnected inputs.
-      let connectedPins = new Set();
-      connections.forEach(function(wire) {
-        if (wire._dstId === element) {
-          connectedPins.add(wire.dstPin);
+    // Partitions group items into elements, interior wires, incoming wires,
+    // and outgoing wires, and partitions element input and output pins into
+    // connected and disconnected sets.
+    evaluateGroup: function(items) {
+      // Separate connections into incoming, outgoing, and internal.
+      let elementSet = new Set();
+      let connectedInputs = new Map(), connectedOutputs = new Map();
+      items.forEach(function(item) {
+        if (isElement(item)) {
+          elementSet.add(item);
+          connectedInputs.set(item, []);
+          connectedOutputs.set(item, []);
         }
       });
-      // The element's disconnected inputs become the new function's inputs.
-      // The connected inputs remain on the element.
-      let fnType = '[', inputs = [];
-      // Create a map from old input to new input.
-      let inputMap = new Map();
-      master.inputs.forEach(function(input, i) {
-        if (!connectedPins.has(i)) {
-          fnType += input.type;
-        } else {
-          inputMap.set(i, inputs.length);
-          inputs.push({ type: input.type });
+      let wires = [], incomingWires = [], outgoingWires = [], interiorWires = [];
+      visit(this.diagram, isWire, function(wire) {
+        wires.push(wire);
+        let srcInside = elementSet.has(wire._srcId),
+            dstInside = elementSet.has(wire._dstId);
+        if (srcInside) {
+          connectedOutputs.get(wire._srcId).push(wire.srcPin);
+          if (dstInside)
+            interiorWires.push(wire);
+          else
+            outgoingWires.push(wire);
         }
+        if (dstInside) {
+          connectedInputs.get(wire._dstId).push(wire.dstPin);
+          if (!srcInside)
+            incomingWires.push(wire);
+        }
+      });
+      // Get disconnected pins.
+      let disconnectedInputs = new Map(), disconnectedOutputs = new Map();
+      elementSet.forEach(function(element) {
+        let connectedIn = connectedInputs.get(element) || [],
+            connectedOut = connectedOutputs.get(element) || [];
+        connectedIn.sort();
+        connectedOut.sort();
+        let disconnectedIn = [], disconnectedOut = [];
+        for (let i = 0, j = 0; i < element._master.inputs.length; i++) {
+          if (i != connectedIn[j])
+            disconnectedIn.push(i);
+          else
+            j++;
+        }
+        for (let i = 0, j = 0; i < element._master.outputs.length; i++) {
+          if (i != connectedOut[j])
+            disconnectedOut.push(i);
+          else
+            j++;
+        }
+        disconnectedInputs.set(element, disconnectedIn);
+        disconnectedOutputs.set(element, disconnectedOut);
+      });
+      return {
+        elementSet: elementSet,
+        wires: wires,
+        interiorWires: interiorWires,
+        incomingWires: incomingWires,
+        outgoingWires: outgoingWires,
+        connectedInputs: connectedInputs,
+        connectedOutputs: connectedOutputs,
+        disconnectedInputs: disconnectedInputs,
+        disconnectedOutputs: disconnectedOutputs,
+      }
+    },
+
+    getClosureType: function(groupInfo) {
+      // Create a function type whose inputs are the disconnected group inputs,
+      // and whose outputs are the group outputs.
+      let fnType = '[';
+      groupInfo.disconnectedInputs.forEach(function(disconnectedIn, element) {
+        disconnectedIn.forEach(function(pin) {
+          // TODO make a name.
+          fnType += element._master.inputs[pin].type;
+        });
       });
       fnType += ',';
-      // The element's outputs become the new function's outputs.
-      master.outputs.forEach(function(output) {
-        fnType += output.type;
+      groupInfo.elementSet.forEach(function(element) {
+        element._master.outputs.forEach(function(output) {
+          fnType += output.type;
+        });
       });
       fnType += ']';
       console.log('closure', fnType);
-      // Add the closure fn to outputs.
-      let outputs = [{ type: fnType }];
-
-      // Now make changes to the data model.
-      let model = this.model, observableModel = model.observableModel;
-      // Remap connected wires to the new input pins.
-      connections.forEach(function(wire) {
-        if (wire._dstId === element) {
-          observableModel.changeValue(wire, 'dstPin', inputMap.get(wire.dstPin));
-        }
-      });
-      // Remaster element.
-      this.setAttr(element, 'inputs', inputs);
-      this.setAttr(element, 'outputs', outputs);
-      this.setAttr(element, 'master', '$');
-      this.model.dataModel.initialize(element);
+      return fnType;
     },
 
-    doClosure: function() {
-      let self = this, selectionModel = this.model.selectionModel,
-          transactionModel = this.model.transactionModel;
-      this.reduceSelection();
-      transactionModel.beginTransaction('closure');
-      selectionModel.contents().forEach(function(item) {
-        if (isConnectable(item))
-          self.makeClosure(item);
-      });
-      transactionModel.endTransaction();
-    },
-
-    makeAbstract: function(element) {
-      let master = element._master;
-      let connections = this.getConnectedConnections([element], false);
-
-      // The abstract function type is just the type of the element.
+    getAbstractType: function(groupInfo) {
+      // Create a function type whose inputs are group inputs, and whose outputs
+      // are the group outputs.
       let fnType = '[';
-      // Create a map from old input to new input.
-      master.inputs.forEach(function(input, i) {
-        fnType += input.type;
+      groupInfo.elementSet.forEach(function(element) {
+        element._master.inputs.forEach(function(input) {
+          fnType += input.type;
+        });
       });
       fnType += ',';
-      master.outputs.forEach(function(output) {
-        fnType += output.type;
+      groupInfo.elementSet.forEach(function(element) {
+        element._master.outputs.forEach(function(output) {
+          fnType += output.type;
+        });
       });
       fnType += ']';
       console.log('abstract', fnType);
-      // Add the closure fn as the first input.
-      let inputs = Array.from(master.inputs), outputs = Array.from(master.outputs);
-      inputs.unshift({ type: fnType });
-
-      // Now make changes to the data model.
-      let model = this.model, observableModel = model.observableModel;
-      // Remap connected wires to the new input pins.
-      connections.forEach(function(wire) {
-        if (wire._dstId === element) {
-          observableModel.changeValue(wire, 'dstPin', wire.dstPin + 1);
-        }
-      });
-      // Remaster element.
-      this.setAttr(element, 'inputs', inputs);
-      this.setAttr(element, 'outputs', outputs);
-      this.setAttr(element, 'master', '$');
-      this.model.dataModel.initialize(element);
+      return fnType;
     },
 
-    doAbstract: function() {
-      let self = this, selectionModel = this.model.selectionModel,
-          transactionModel = this.model.transactionModel;
-      this.reduceSelection();
-      transactionModel.beginTransaction('abstract');
-      selectionModel.contents().forEach(function(item) {
-        if (isConnectable(item))
-          self.makeAbstract(item);
-      });
-      transactionModel.endTransaction();
-    },
-
-    doGroup: function(elementOnly) {
-      let self = this, diagram = this.diagram, model = this.model,
+    makeGroup: function(elements, elementOnly, closure, abstract) {
+      let self = this, model = this.model,
           dataModel = model.dataModel,
           selectionModel = model.selectionModel,
           observableModel = model.observableModel,
           transactionModel = model.transactionModel;
-      this.reduceSelection();
-      transactionModel.beginTransaction('group');
-
-      let connections = this.getConnectedConnections(selectionModel.contents(), false);
-      let incoming = [], outgoing = [];
-      // Separate connections into incoming, outgoing, and internal. Adjust
-      // selection to contain only elements and internal connections.
-      connections.forEach(function(connection) {
-        let src = connection._srcId, dst = connection._dstId;
-        if (!selectionModel.contains(src)) {
-          selectionModel.remove(connection);
-          incoming.push(connection);
-        } else if (!selectionModel.contains(dst)) {
-          selectionModel.remove(connection);
-          outgoing.push(connection);
-        } else {
-          selectionModel.add(connection);
-        }
+      console.log(elements);
+      let groupInfo = this.evaluateGroup(elements);
+      console.log(groupInfo);
+      // Adjust selection to contain just the grouped objects.
+      groupInfo.incomingWires.forEach(function(wire) {
+        selectionModel.remove(wire);
       });
+      groupInfo.outgoingWires.forEach(function(wire) {
+        selectionModel.remove(wire);
+      });
+      groupInfo.interiorWires.forEach(function(wire) {
+        selectionModel.add(wire);
+      });
+
       let groupItems = selectionModel.contents();
       // Input pins are all input junctions, plus any input pins connecting to
       // outside |elements|. Likewise, output pins are all output junctions plus
@@ -394,16 +391,22 @@ var editingModel = (function() {
         if (!elementOnly)
           self.deleteItem(item);
       });
-      incoming.forEach(function(wire) {
+      // Add pins for incoming and outgoing wires.
+      groupInfo.incomingWires.forEach(function(wire) {
         if (!elementOnly)
           observableModel.changeValue(wire, 'dstPin', inputs.length);
         inputs.push({ type: wire._srcId._master.outputs[wire.srcPin].type });
       });
-      outgoing.forEach(function(wire) {
+      groupInfo.outgoingWires.forEach(function(wire) {
         if (!elementOnly)
           observableModel.changeValue(wire, 'srcPin', outputs.length);
         outputs.push({ type: wire._dstId._master.inputs[wire.dstPin].type });
       });
+      if (closure) {
+        outputs = [{ type: this.getClosureType(groupInfo) }];
+      } else if (abstract) {
+        inputs.unshift({ type: this.getAbstractType(groupInfo) });
+      }
       // Create the new group element.
       let groupElement = {
         type: 'element',
@@ -418,7 +421,7 @@ var editingModel = (function() {
         groupElement.groupItems = groupItems;
       }
       this.newItem(groupElement);
-      this.addItem(groupElement, diagram);
+      this.addItem(groupElement, this.diagram);
       if (elementOnly)
         selectionModel.add(groupElement);
       else
@@ -427,15 +430,35 @@ var editingModel = (function() {
       if (!elementOnly) {
         // Remap the external connections.
         let id = dataModel.getId(groupElement);
-        incoming.forEach(function(wire) {
+        groupInfo.incomingWires.forEach(function(wire) {
           observableModel.changeValue(wire, 'dstId', id);
         });
-        outgoing.forEach(function(wire) {
+        groupInfo.outgoingWires.forEach(function(wire) {
           observableModel.changeValue(wire, 'srcId', id);
         });
       }
+    },
 
-      transactionModel.endTransaction();
+    doClosure: function() {
+      this.reduceSelection();
+      this.model.transactionModel.beginTransaction('closure');
+      this.makeGroup(this.model.selectionModel.contents(), false, true);
+      this.model.transactionModel.endTransaction();
+    },
+
+    doAbstract: function() {
+      this.reduceSelection();
+      this.model.transactionModel.beginTransaction('abstract');
+      this.makeGroup(this.model.selectionModel.contents(), false, false, true);
+      this.model.transactionModel.endTransaction();
+    },
+
+    doGroup: function(elementOnly) {
+      this.reduceSelection();
+      this.model.transactionModel.beginTransaction(
+        'group' + elementOnly ? '(elementOnly)' : '');
+      this.makeGroup(this.model.selectionModel.contents(), elementOnly);
+      this.model.transactionModel.endTransaction();
     },
   }
 
@@ -453,7 +476,7 @@ var editingModel = (function() {
 
     var instance = Object.create(model.editingModel);
     instance.prototype = Object.getPrototypeOf(instance);
-    for (var prop in functions)
+    for (let prop in functions)
       instance[prop] = functions[prop];
 
     instance.model = model;
@@ -1081,12 +1104,12 @@ Editor.prototype.draw = function() {
   renderer.beginDraw(model, ctx);
   canvasController.applyTransform();
 
-  visit(diagram, isConnectable, function(item) {
+  visit(diagram, isElement, function(item) {
     if (needsLayout(item))
       renderer.layout(item);
     renderer.draw(item, normalMode);
   });
-  visit(diagram, isConnection, function(item) {
+  visit(diagram, isWire, function(item) {
     if (needsLayout(item))
       renderer.layout(item);
     renderer.draw(item, normalMode);
@@ -1142,10 +1165,10 @@ Editor.prototype.hitTest = function(p) {
     pushInfo(renderer.hitTest(item, p, tol, normalMode));
   });
   // TODO hit test selection first, in highlight, first.
-  reverseVisit(diagram, isConnection, function(item) {
+  reverseVisit(diagram, isWire, function(item) {
     pushInfo(renderer.hitTest(item, cp, cTol, normalMode));
   });
-  reverseVisit(diagram, isConnectable, function(item) {
+  reverseVisit(diagram, isElement, function(item) {
     pushInfo(renderer.hitTest(item, cp, cTol, normalMode));
   });
   return hitList;
@@ -1324,7 +1347,7 @@ Editor.prototype.onDrag = function(p0, p) {
       src, dst, srcId, dstId, t1, t2;
   switch (drag.type) {
     case 'paletteItem':
-      if (isConnectable(dragItem))
+      if (isElement(dragItem))
         hitInfo = this.getFirstHit(hitList, isContainerTarget);
       var snapshot = transactionModel.getSnapshot(dragItem);
       if (snapshot) {
@@ -1333,7 +1356,7 @@ Editor.prototype.onDrag = function(p0, p) {
       }
       break;
     case 'moveSelection':
-      if (isConnectable(dragItem))
+      if (isElement(dragItem))
         hitInfo = this.getFirstHit(hitList, isContainerTarget);
       selectionModel.forEach(function(item) {
         var snapshot = transactionModel.getSnapshot(item);
@@ -1406,7 +1429,7 @@ Editor.prototype.onEndDrag = function(p) {
     } else {
       // Reparent existing items.
       selectionModel.forEach(function(item) {
-        if (isConnectable(item)) {
+        if (isElement(item)) {
           editingModel.addItem(item, parent);
         }
       });
@@ -1418,7 +1441,7 @@ Editor.prototype.onEndDrag = function(p) {
   // editingModel.layout(this.diagram, renderer);
   // renderer.endDraw();
 
-  if (isConnection(dragItem)) {
+  if (isWire(dragItem)) {
     // If dragItem is a disconnected wire, delete it.
     if (!dragItem.srcId || !dragItem.dstId) {
       editingModel.deleteItem(dragItem);
