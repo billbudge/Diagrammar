@@ -319,6 +319,7 @@ var editingModel = (function() {
       // and whose outputs are the group outputs.
       let fnType = '[';
       groupInfo.disconnectedInputs.forEach(function(disconnectedIn, element) {
+          console.log(disconnectedIn, element);
         disconnectedIn.forEach(function(pin) {
           fnType += element._master.inputs[pin].type;
         });
@@ -354,6 +355,13 @@ var editingModel = (function() {
       return fnType;
     },
 
+    makePinName: function(element, pin) {
+      let suffix = element.name || element._master.name;
+      if (suffix && pin.name)
+        return pin.name + ':' + suffix;
+      return pin.name || suffix;
+    },
+
     makeGroup: function(elements, elementOnly, closure, abstract) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
@@ -362,6 +370,7 @@ var editingModel = (function() {
           transactionModel = model.transactionModel;
 
       let groupInfo = this.evaluateGroup(elements);
+      console.log(groupInfo);
       // Adjust selection to contain just the grouped objects.
       groupInfo.incomingWires.forEach(function(wire) {
         selectionModel.remove(wire);
@@ -393,12 +402,30 @@ var editingModel = (function() {
       groupInfo.incomingWires.forEach(function(wire) {
         if (!elementOnly)
           observableModel.changeValue(wire, 'dstPin', inputs.length);
-        inputs.push({ type: wire._srcId._master.outputs[wire.srcPin].type });
+        let src = wire._srcId, srcPin = src._master.outputs[wire.srcPin];
+        let name = self.makePinName(src, srcPin);
+        inputs.push({ type: srcPin.type, name: name });
       });
       groupInfo.outgoingWires.forEach(function(wire) {
         if (!elementOnly)
           observableModel.changeValue(wire, 'srcPin', outputs.length);
-        outputs.push({ type: wire._dstId._master.inputs[wire.dstPin].type });
+        let dst = wire._dstId, dstPin = dst._master.inputs[wire.dstPin];
+        let name = self.makePinName(dst, dstPin);
+        outputs.push({ type: dstPin.type, name: name });
+      });
+      groupInfo.disconnectedInputs.forEach(function(elementInputs, element) {
+        elementInputs.forEach(function(pin) {
+          let dstPin = element._master.inputs[pin];
+          let name = self.makePinName(element, dstPin);
+          inputs.push({ type: dstPin.type, name: name });
+        });
+      });
+      groupInfo.disconnectedOutputs.forEach(function(elementOutputs, element) {
+        elementOutputs.forEach(function(pin) {
+          let srcPin = element._master.outputs[pin];
+          let name = self.makePinName(element, srcPin);
+          outputs.push({ type: srcPin.type, name: name });
+        });
       });
       if (closure) {
         outputs = [{ type: this.getClosureType(groupInfo) }];
