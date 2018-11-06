@@ -320,7 +320,6 @@ var editingModel = (function() {
       let fnType = '[';
       groupInfo.disconnectedInputs.forEach(function(disconnectedIn, element) {
         disconnectedIn.forEach(function(pin) {
-          // TODO make a name.
           fnType += element._master.inputs[pin].type;
         });
       });
@@ -361,9 +360,8 @@ var editingModel = (function() {
           selectionModel = model.selectionModel,
           observableModel = model.observableModel,
           transactionModel = model.transactionModel;
-      console.log(elements);
+
       let groupInfo = this.evaluateGroup(elements);
-      console.log(groupInfo);
       // Adjust selection to contain just the grouped objects.
       groupInfo.incomingWires.forEach(function(wire) {
         selectionModel.remove(wire);
