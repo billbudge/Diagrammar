@@ -250,67 +250,44 @@ var editingModel = (function() {
     // and outgoing wires, and partitions element input and output pins into
     // connected and disconnected sets.
     evaluateGroup: function(items) {
-      // Separate connections into incoming, outgoing, and internal.
+      // Get elements and initialize input/output maps.
       let elementSet = new Set();
-      let connectedInputs = new Map(), connectedOutputs = new Map();
+      let inputMap = new Map(), outputMap = new Map();
       items.forEach(function(item) {
         if (isElement(item)) {
           elementSet.add(item);
-          connectedInputs.set(item, []);
-          connectedOutputs.set(item, []);
+          inputMap.set(item, Array(item._master.inputs.length).fill(false));
+          outputMap.set(item, Array(item._master.outputs.length).fill(false));
         }
       });
+      // Separate connections into incoming, outgoing, and internal. Populate
+      // input/output maps.
       let wires = [], incomingWires = [], outgoingWires = [], interiorWires = [];
       visit(this.diagram, isWire, function(wire) {
         wires.push(wire);
         let srcInside = elementSet.has(wire._srcId),
             dstInside = elementSet.has(wire._dstId);
         if (srcInside) {
-          connectedOutputs.get(wire._srcId).push(wire.srcPin);
+          outputMap.get(wire._srcId)[wire.srcPin] = true;
           if (dstInside)
             interiorWires.push(wire);
           else
             outgoingWires.push(wire);
         }
         if (dstInside) {
-          connectedInputs.get(wire._dstId).push(wire.dstPin);
+          inputMap.get(wire._dstId)[wire.dstPin] = true;
           if (!srcInside)
             incomingWires.push(wire);
         }
       });
-      // Get disconnected pins.
-      let disconnectedInputs = new Map(), disconnectedOutputs = new Map();
-      elementSet.forEach(function(element) {
-        let connectedIn = connectedInputs.get(element) || [],
-            connectedOut = connectedOutputs.get(element) || [];
-        connectedIn.sort();
-        connectedOut.sort();
-        let disconnectedIn = [], disconnectedOut = [];
-        for (let i = 0, j = 0; i < element._master.inputs.length; i++) {
-          if (i != connectedIn[j])
-            disconnectedIn.push(i);
-          else
-            j++;
-        }
-        for (let i = 0, j = 0; i < element._master.outputs.length; i++) {
-          if (i != connectedOut[j])
-            disconnectedOut.push(i);
-          else
-            j++;
-        }
-        disconnectedInputs.set(element, disconnectedIn);
-        disconnectedOutputs.set(element, disconnectedOut);
-      });
       return {
         elementSet: elementSet,
+        inputMap: inputMap,
+        outputMap: outputMap,
         wires: wires,
         interiorWires: interiorWires,
         incomingWires: incomingWires,
         outgoingWires: outgoingWires,
-        connectedInputs: connectedInputs,
-        connectedOutputs: connectedOutputs,
-        disconnectedInputs: disconnectedInputs,
-        disconnectedOutputs: disconnectedOutputs,
       }
     },
 
@@ -318,14 +295,15 @@ var editingModel = (function() {
       // Create a function type whose inputs are the disconnected group inputs,
       // and whose outputs are the group outputs.
       let fnType = '[';
-      groupInfo.disconnectedInputs.forEach(function(disconnectedIn, element) {
-          console.log(disconnectedIn, element);
-        disconnectedIn.forEach(function(pin) {
-          fnType += element._master.inputs[pin].type;
+      groupInfo.inputMap.forEach(function(inputs, element) {
+        inputs.forEach(function(connected, i) {
+          if (!connected)
+            fnType += element._master.inputs[i].type;
         });
       });
       fnType += ',';
       groupInfo.elementSet.forEach(function(element) {
+        // TODO filter out internally connected outputs.
         element._master.outputs.forEach(function(output) {
           fnType += output.type;
         });
@@ -340,12 +318,14 @@ var editingModel = (function() {
       // are the group outputs.
       let fnType = '[';
       groupInfo.elementSet.forEach(function(element) {
+        // TODO filter out internally connected inputs.
         element._master.inputs.forEach(function(input) {
           fnType += input.type;
         });
       });
       fnType += ',';
       groupInfo.elementSet.forEach(function(element) {
+        // TODO filter out internally connected outputs.
         element._master.outputs.forEach(function(output) {
           fnType += output.type;
         });
@@ -362,12 +342,81 @@ var editingModel = (function() {
       return pin.name || suffix;
     },
 
+    completeGroup: function(elements) {
+      let self = this, model = this.model,
+          dataModel = model.dataModel,
+          selectionModel = model.selectionModel,
+          observableModel = model.observableModel;
+
+      let groupInfo = this.evaluateGroup(elements);
+      console.log(groupInfo);
+
+      // Add junctions for disconnected pins on selected elements.
+      groupInfo.inputMap.forEach(function(inputs, element) {
+        inputs.forEach(function(connected, i) {
+          if (connected)
+            return;
+          let dstPin = element._master.inputs[i];
+          let junction = {
+            type: 'element',
+            x: element.x - 32, y: element.y + dstPin._y,
+            master: '$',
+            junction: 'input',
+            inputs: [],
+            outputs: [
+              { type: 'v' },
+            ],
+          };
+          self.newItem(junction);
+          self.addItem(junction, self.diagram);
+          let wire = {
+            type: 'wire',
+            srcId: junction.id,
+            srcPin: 0,
+            dstId: element.id,
+            dstPin: pin,
+          };
+          self.newItem(wire);
+          self.addItem(wire, self.diagram);
+          console.log(wire);
+        });
+      });
+      groupInfo.outputMap.forEach(function(outputs, element) {
+        outputs.forEach(function(connected, i) {
+          if (connected)
+            return;
+          let srcPin = element._master.outputs[i];
+          let junction = {
+            type: 'element',
+            x: element.x + 128, y: element.y + srcPin._y,
+            master: '$',
+            junction: 'output',
+            inputs: [
+              { type: 'v' },
+            ],
+            outputs: [],
+          };
+          self.newItem(junction);
+          self.addItem(junction, self.diagram);
+          let wire = {
+            type: 'wire',
+            srcId: element.id,
+            srcPin: pin,
+            dstId: junction.id,
+            dstPin: 0,
+          };
+          self.newItem(wire);
+          self.addItem(wire, self.diagram);
+          console.log(wire);
+        });
+      });
+    },
+
     makeGroup: function(elements, elementOnly, closure, abstract) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           selectionModel = model.selectionModel,
-          observableModel = model.observableModel,
-          transactionModel = model.transactionModel;
+          observableModel = model.observableModel;
 
       let groupInfo = this.evaluateGroup(elements);
       console.log(groupInfo);
@@ -413,16 +462,18 @@ var editingModel = (function() {
         let name = self.makePinName(dst, dstPin);
         outputs.push({ type: dstPin.type, name: name });
       });
-      groupInfo.disconnectedInputs.forEach(function(elementInputs, element) {
-        elementInputs.forEach(function(pin) {
-          let dstPin = element._master.inputs[pin];
+      groupInfo.inputMap.forEach(function(elementInputs, element) {
+        elementInputs.forEach(function(connected, i) {
+          if (connected) return;
+          let dstPin = element._master.inputs[i];
           let name = self.makePinName(element, dstPin);
           inputs.push({ type: dstPin.type, name: name });
         });
       });
-      groupInfo.disconnectedOutputs.forEach(function(elementOutputs, element) {
-        elementOutputs.forEach(function(pin) {
-          let srcPin = element._master.outputs[pin];
+      groupInfo.outputMap.forEach(function(elementOutputs, element) {
+        elementOutputs.forEach(function(connected, i) {
+          if (connected) return;
+          let srcPin = element._master.outputs[i];
           let name = self.makePinName(element, srcPin);
           outputs.push({ type: srcPin.type, name: name });
         });
@@ -462,6 +513,13 @@ var editingModel = (function() {
           observableModel.changeValue(wire, 'srcId', id);
         });
       }
+    },
+
+    doComplete: function() {
+      this.reduceSelection();
+      this.model.transactionModel.beginTransaction('complete');
+      this.completeGroup(this.model.selectionModel.contents());
+      this.model.transactionModel.endTransaction();
     },
 
     doClosure: function() {
@@ -908,6 +966,19 @@ function Editor(model, textInputController) {
         { type: '[v,v]' },
       ]
   });
+  // Array storage.
+  masterMap.set('[]', {
+      name: '[ ]',
+      type: 'element',
+      inputs: [
+        { name: 'i', type: 'v' },
+        { name: 'n', type: 'v' },
+      ],
+      outputs: [
+        { type: '[v,v]' },
+        { type: '[vv,v]' },
+      ]
+  });
 
   var palette = this.palette = {
     root: {
@@ -965,12 +1036,7 @@ function Editor(model, textInputController) {
         {
           type: 'element',
           x: 8, y: 108,
-          master: '>',
-        },
-        {
-          type: 'element',
-          x: 56, y: 108,
-          master: '+',
+          master: '[]',
         },
       ],
     }
@@ -1418,7 +1484,7 @@ Editor.prototype.onDrag = function(p0, p) {
       break;
   }
 
-  this.hotTrackInfo = (hitInfo && hitInfo.item !== this.statechart) ? hitInfo : null;
+  this.hotTrackInfo = (hitInfo && hitInfo.item !== this.diagram) ? hitInfo : null;
 }
 
 Editor.prototype.onEndDrag = function(p) {
@@ -1557,6 +1623,9 @@ Editor.prototype.onKeyDown = function(e) {
           return true;
         }
         return false;
+      case 74:  // 'j'
+        editingModel.doComplete();
+        return true;
       case 75:  // 'k'
         editingModel.doClosure();
         return true;
@@ -1750,17 +1819,10 @@ var circuit_data =
     },
     {
       "type": "element",
-      "x": 539.1191363289757,
-      "y": -18.23827265795142,
+      "x": 562.1191363289757,
+      "y": -2.23827265795142,
       "master": "?",
       "id": 1023
-    },
-    {
-      "type": "element",
-      "x": 352,
-      "y": 29,
-      "master": "@",
-      "id": 1037
     },
     {
       "type": "element",
@@ -1821,8 +1883,8 @@ var circuit_data =
     {
       "type": "element",
       "master": "<",
-      "x": 461.72884090716536,
-      "y": -28.40754540062888,
+      "x": 486.72884090716536,
+      "y": -42.40754540062888,
       "id": 1047
     },
     {
@@ -1992,8 +2054,8 @@ var circuit_data =
     {
       "type": "element",
       "master": "$",
-      "x": 458,
-      "y": 78,
+      "x": 481,
+      "y": 94,
       "inputs": [
         {
           "type": "v",
@@ -2089,22 +2151,6 @@ var circuit_data =
     },
     {
       "type": "wire",
-      "srcId": 1037,
-      "srcPin": 0,
-      "dstId": 1106,
-      "dstPin": 0,
-      "id": 1107
-    },
-    {
-      "type": "wire",
-      "srcId": 1037,
-      "srcPin": 0,
-      "dstId": 1047,
-      "dstPin": 0,
-      "id": 1109
-    },
-    {
-      "type": "wire",
       "srcId": 1047,
       "srcPin": 0,
       "dstId": 1023,
@@ -2120,17 +2166,9 @@ var circuit_data =
       "id": 1112
     },
     {
-      "type": "wire",
-      "srcId": 1037,
-      "srcPin": 0,
-      "dstId": 1023,
-      "dstPin": 2,
-      "id": 1113
-    },
-    {
       "type": "element",
-      "x": 457,
-      "y": 133,
+      "x": 597,
+      "y": 151,
       "master": "$",
       "junction": "expander",
       "inputs": [
@@ -2147,48 +2185,13 @@ var circuit_data =
         }
       ],
       "id": 1155,
-      "connected": true
-    },
-    {
-      "type": "wire",
-      "srcId": 1037,
-      "srcPin": 1,
-      "dstId": 1155,
-      "dstPin": 0,
-      "id": 1156,
-      "x": null,
-      "y": null
-    },
-    {
-      "type": "element",
-      "x": 538,
-      "y": 122,
-      "master": "$",
-      "junction": "output",
-      "inputs": [
-        {
-          "type": "[,v]"
-        }
-      ],
-      "outputs": [],
-      "id": 1161,
       "connected": true,
       "name": "reset"
     },
     {
-      "type": "wire",
-      "srcId": 1155,
-      "srcPin": 0,
-      "dstId": 1161,
-      "dstPin": 0,
-      "id": 1162,
-      "x": null,
-      "y": null
-    },
-    {
       "type": "element",
-      "x": 565,
-      "y": 59,
+      "x": 659,
+      "y": 33,
       "master": "$",
       "junction": "output",
       "inputs": [
@@ -2202,19 +2205,9 @@ var circuit_data =
       "name": "v"
     },
     {
-      "type": "wire",
-      "srcId": 1037,
-      "srcPin": 0,
-      "dstId": 1166,
-      "dstPin": 0,
-      "id": 1167,
-      "x": null,
-      "y": null
-    },
-    {
       "type": "element",
-      "x": 291,
-      "y": -13,
+      "x": 314,
+      "y": 3,
       "master": "$",
       "junction": "input",
       "inputs": [],
@@ -2228,19 +2221,9 @@ var circuit_data =
       "name": "lo"
     },
     {
-      "type": "wire",
-      "srcId": 1171,
-      "srcPin": 0,
-      "dstId": 1037,
-      "dstPin": 0,
-      "id": 1172,
-      "x": null,
-      "y": null
-    },
-    {
       "type": "element",
-      "x": 323,
-      "y": -38,
+      "x": 346,
+      "y": -22,
       "master": "$",
       "junction": "input",
       "inputs": [],
@@ -2259,9 +2242,7 @@ var circuit_data =
       "srcPin": 0,
       "dstId": 1047,
       "dstPin": 1,
-      "id": 1177,
-      "x": null,
-      "y": null
+      "id": 1177
     },
     {
       "type": "wire",
@@ -2269,7 +2250,129 @@ var circuit_data =
       "srcPin": 0,
       "dstId": 1155,
       "dstPin": 1,
-      "id": 1178,
+      "id": 1178
+    },
+    {
+      "type": "element",
+      "x": 403,
+      "y": 50,
+      "master": "@",
+      "id": 1248
+    },
+    {
+      "type": "wire",
+      "srcId": 1171,
+      "srcPin": 0,
+      "dstId": 1248,
+      "dstPin": 0,
+      "id": 1249
+    },
+    {
+      "type": "wire",
+      "srcId": 1248,
+      "srcPin": 0,
+      "dstId": 1047,
+      "dstPin": 0,
+      "id": 1250
+    },
+    {
+      "type": "wire",
+      "srcId": 1248,
+      "srcPin": 0,
+      "dstId": 1106,
+      "dstPin": 0,
+      "id": 1251
+    },
+    {
+      "type": "wire",
+      "srcId": 1248,
+      "srcPin": 1,
+      "dstId": 1155,
+      "dstPin": 0,
+      "id": 1252
+    },
+    {
+      "type": "wire",
+      "srcId": 1248,
+      "srcPin": 0,
+      "dstId": 1166,
+      "dstPin": 0,
+      "id": 1254
+    },
+    {
+      "type": "wire",
+      "srcId": 1248,
+      "srcPin": 1,
+      "dstId": 1261,
+      "dstPin": 0,
+      "id": 1259,
+      "x": null,
+      "y": null
+    },
+    {
+      "type": "wire",
+      "srcId": 1023,
+      "srcPin": 0,
+      "dstId": 1261,
+      "dstPin": 1,
+      "id": 1260,
+      "x": null,
+      "y": null
+    },
+    {
+      "type": "element",
+      "master": "$",
+      "x": 622,
+      "y": 83,
+      "inputs": [
+        {
+          "type": "[v,v]",
+          "name": "@"
+        },
+        {
+          "type": "v",
+          "name": "?"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "[,v]"
+        }
+      ],
+      "groupItems": [
+        {
+          "type": "element",
+          "x": 591,
+          "y": 87,
+          "master": "$",
+          "junction": "expander",
+          "inputs": [
+            {
+              "type": "[v,v]"
+            },
+            {
+              "type": "v"
+            }
+          ],
+          "outputs": [
+            {
+              "type": "v"
+            }
+          ],
+          "id": 1258,
+          "connected": true
+        }
+      ],
+      "id": 1261,
+      "name": "inc"
+    },
+    {
+      "type": "wire",
+      "srcId": 1176,
+      "srcPin": 0,
+      "dstId": 1023,
+      "dstPin": 2,
+      "id": 1263,
       "x": null,
       "y": null
     }
