@@ -24,18 +24,6 @@ function isJunction(item) {
   return item.type == 'element' && item.junction;
 }
 
-function isOpenJunction(item) {
-  return isJunction(item) && !item.connected;
-}
-
-function isInputJunction(item) {
-  return item.type == 'element' && item.junction == 'input';
-}
-
-function isOutputJunction(item) {
-  return item.type == 'element' && item.junction == 'output';
-}
-
 function needsLayout(item) {
   return isWire(item) || isImmediate(item);
 }
@@ -207,26 +195,24 @@ var editingModel = (function() {
       return itemToAdd;
     },
 
-    setInputJunction: function(junction, input) {
+    setInputJunction: function(junction, srcPin, dstPin) {
       let model = this.model, observableModel = model.observableModel;
-      // Replace the first input with a pin to match output.
-      observableModel.removeElement(junction, 'outputs', 0);
-      observableModel.insertElement(junction, 'outputs', 0, { type: input.type });
-      // Once junction is connected, don't allow further adaptation.
-      model.observableModel.changeValue(junction, 'connected', true);
+      observableModel.changeValue(srcPin, 'type', dstPin.type);
+      if (junction.junction == 'connect') {
+        observableModel.changeValue(junction.inputs[0], 'type', dstPin.type);
+      }
       model.dataModel.initialize(junction);
     },
 
-    setOutputJunction: function(junction, output) {
+    setOutputJunction: function(junction, srcPin, dstPin) {
       let model = this.model, observableModel = model.observableModel;
-      // Replace the first input with a pin to match output.
-      observableModel.removeElement(junction, 'inputs', 0);
-      observableModel.insertElement(junction, 'inputs', 0, { type: output.type });
-      observableModel.insertElement(junction, 'outputs', 0, { type: output.type });
+      observableModel.changeValue(dstPin, 'type', srcPin.type);
 
-      if (junction.junction == 'expander') {
-        // Add the expanded pin's inputs and outputs.
-        let master = output._master;
+      if (junction.junction == 'connect') {
+        observableModel.changeValue(junction.outputs[0], 'type', srcPin.type);
+      } else if (junction.junction == 'apply') {
+        // Add the function's inputs and outputs.
+        let master = srcPin._master;
         if (master) {
           master.inputs.forEach(function(input) {
             observableModel.insertElement(
@@ -242,23 +228,23 @@ var editingModel = (function() {
             junction, 'outputs', junction.outputs.length, { type: output.type });
         }
       }
-      // Once junction is connected, don't allow further adaptation.
-      model.observableModel.changeValue(junction, 'connected', true);
       model.dataModel.initialize(junction);
     },
 
     // Partitions group items into elements, interior wires, incoming wires,
     // and outgoing wires, and partitions element input and output pins into
     // connected and disconnected sets.
-    evaluateGroup: function(items) {
+    collectGroupInfo: function(items) {
       // Get elements and initialize input/output maps.
       let elementSet = new Set();
       let inputMap = new Map(), outputMap = new Map();
       items.forEach(function(item) {
         if (isElement(item)) {
           elementSet.add(item);
-          inputMap.set(item, Array(item._master.inputs.length).fill(false));
-          outputMap.set(item, Array(item._master.outputs.length).fill(false));
+          // inputMap takes element to array of incoming wires.
+          inputMap.set(item, new Array(item._master.inputs.length));
+          // outputMap takes element to array of array of outgoing wires.
+          outputMap.set(item, new Array(item._master.outputs.length).fill([]));
         }
       });
       // Separate connections into incoming, outgoing, and internal. Populate
@@ -270,7 +256,7 @@ var editingModel = (function() {
             srcInside = elementSet.has(src),
             dstInside = elementSet.has(dst);
         if (srcInside) {
-          outputMap.get(src)[wire.srcPin] = true;
+          outputMap.get(src)[wire.srcPin].push(wire);
           if (dstInside) {
             interiorWires.push(wire);
           } else {
@@ -278,7 +264,7 @@ var editingModel = (function() {
           }
         }
         if (dstInside) {
-          inputMap.get(dst)[wire.dstPin] = true;
+          inputMap.get(dst)[wire.dstPin] = wire;
           if (!srcInside) {
             incomingWires.push(wire);
           }
@@ -296,22 +282,17 @@ var editingModel = (function() {
       }
     },
 
-    getClosureType: function(groupInfo) {
-      // Create a function type whose inputs are the disconnected group inputs,
-      // and whose outputs are the group outputs.
+    getClosureType: function(element, inputWires) {
+      // Create a function type whose inputs are the disconnected inputs,
+      // and whose outputs are all the outputs, connected or not.
       let fnType = '[';
-      groupInfo.inputMap.forEach(function(inputs, element) {
-        inputs.forEach(function(connected, i) {
-          if (!connected)
-            fnType += element._master.inputs[i].type;
-        });
+      element._master.inputs.forEach(function(input, i) {
+        if (!inputWires[i])
+          fnType += input.type;
       });
       fnType += ',';
-      // Collect all group outputs.
-      groupInfo.elementSet.forEach(function(element) {
-        element._master.outputs.forEach(function(output) {
-          fnType += output.type;
-        });
+      element._master.outputs.forEach(function(output, i) {
+        fnType += output.type;
       });
       fnType += ']';
       console.log('closure', fnType);
@@ -350,13 +331,13 @@ var editingModel = (function() {
           selectionModel = model.selectionModel,
           observableModel = model.observableModel;
 
-      let groupInfo = this.evaluateGroup(elements);
+      let groupInfo = this.collectGroupInfo(elements);
       console.log(groupInfo);
 
       // Add junctions for disconnected pins on selected elements.
       groupInfo.inputMap.forEach(function(elementInputs, element) {
-        elementInputs.forEach(function(connected, pin) {
-          if (connected)
+        elementInputs.forEach(function(wire, pin) {
+          if (wire)
             return;
           let dstPin = element._master.inputs[pin];
           let junction = {
@@ -364,10 +345,12 @@ var editingModel = (function() {
             name: self.makePinName(element, dstPin),
             x: element.x - 32, y: element.y + dstPin._y,
             master: '$',
-            junction: 'input',
-            inputs: [],
+            junction: 'connect',
+            inputs: [
+              { type: '*' },
+            ],
             outputs: [
-              { type: 'v' },
+              { type: dstPin.type },
             ],
           };
           self.newItem(junction);
@@ -384,8 +367,8 @@ var editingModel = (function() {
         });
       });
       groupInfo.outputMap.forEach(function(elementOutputs, element) {
-        elementOutputs.forEach(function(connected, pin) {
-          if (connected)
+        elementOutputs.forEach(function(wires, pin) {
+          if (wires.length)
             return;
           let srcPin = element._master.outputs[pin];
           let junction = {
@@ -393,11 +376,13 @@ var editingModel = (function() {
             name: self.makePinName(element, srcPin),
             x: element.x + 128, y: element.y + srcPin._y,
             master: '$',
-            junction: 'output',
+            junction: 'connect',
             inputs: [
-              { type: 'v' },
+              { type: srcPin.type },
             ],
-            outputs: [],
+            outputs: [
+              { type: '*' },
+            ],
           };
           self.newItem(junction);
           self.addItem(junction, self.diagram);
@@ -414,13 +399,77 @@ var editingModel = (function() {
       });
     },
 
-    makeGroup: function(elements, elementOnly, closure, abstract) {
+    makeClosures: function(elements) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           selectionModel = model.selectionModel,
           observableModel = model.observableModel;
 
-      let groupInfo = this.evaluateGroup(elements);
+      let groupInfo = this.collectGroupInfo(elements);
+      // Adjust selection to contain just the elements.
+      groupInfo.wires.forEach(function(wire) {
+        selectionModel.remove(wire);
+      });
+      // Close each non-junction element.
+      groupInfo.elementSet.forEach(function(element) {
+        if (isJunction(element)) return;
+        let inputMap = groupInfo.inputMap.get(element),
+            outputMap = groupInfo.outputMap.get(element),
+            closureType = self.getClosureType(element, inputMap);
+        // Closure is a new element with the extra output pin at the end.
+        let inputs = [], outputs = [];
+        let closureElement = {
+          type: 'element',
+          master: '$',
+          x: element.x,
+          y: element.y,
+          inputs: inputs,
+          outputs: outputs,
+        };
+
+        dataModel.assignId(closureElement);
+        let id = dataModel.getId(closureElement);
+
+        // Add only connected input pins to closure's inputs.
+        element._master.inputs.forEach(function(pin, i) {
+          let incomingWire = inputMap[i];
+          if (incomingWire) {
+            inputs.push({ type: pin.type, name: pin.name });
+            // remap wire to new closure element and pin.
+            observableModel.changeValue(incomingWire, 'dstId', id);
+            observableModel.changeValue(incomingWire, 'dstPin', inputs.length - 1);
+          }
+        });
+        // Add all output pins to closure's outputs.
+        element._master.outputs.forEach(function(pin, i) {
+          outputs.push({ type: pin.type, name: pin.name });
+          let outgoingWires = outputMap[i];
+          outgoingWires.forEach(function(outgoingWire, j) {
+            // remap wires to new closure element.
+            observableModel.changeValue(outgoingWire, 'srcId', id);
+          });
+        });
+
+        outputs.push({ type: closureType });
+        closureElement.element = element;
+
+        dataModel.initialize(closureElement);
+
+        selectionModel.remove(element);
+        selectionModel.add(closureElement)
+
+        self.deleteItem(element);
+        self.addItem(closureElement, self.diagram);
+      });
+    },
+
+    makeGroup: function(elements, elementOnly, abstract) {
+      let self = this, model = this.model,
+          dataModel = model.dataModel,
+          selectionModel = model.selectionModel,
+          observableModel = model.observableModel;
+
+      let groupInfo = this.collectGroupInfo(elements);
       // Adjust selection to contain just the grouped objects.
       groupInfo.incomingWires.forEach(function(wire) {
         selectionModel.remove(wire);
@@ -433,17 +482,17 @@ var editingModel = (function() {
       });
 
       let groupItems = selectionModel.contents();
-      // Input pins are all input junctions, plus any input pins connecting to
-      // outside |elements|. Likewise, output pins are all output junctions plus
-      // any output pins connecting to outside |elements|.
+      // Add input/output pins for half connected 'connect' junctions.
       let inputs = [], outputs = [];
       groupItems.forEach(function(item) {
-        if (isInputJunction(item)) {
-          let pin = item.outputs[0];
-          inputs.push({ type: pin.type, name: item.name });
-        } else if (isOutputJunction(item)) {
-          let pin = item.inputs[0];
-          outputs.push({ type: pin.type, name: item.name });
+        if (isJunction(item)) {
+          if (!(groupInfo.inputMap.get(item)[0])) {
+            let pin = item.inputs[0];
+            inputs.push({ type: pin.type, name: item.name });
+          } else if ((groupInfo.outputMap.get(item)[0]).length == 0) {
+            let pin = item.outputs[0];
+            outputs.push({ type: pin.type, name: item.name });
+          }
         }
         if (!elementOnly)
           self.deleteItem(item);
@@ -456,7 +505,7 @@ var editingModel = (function() {
             srcPin = src._master.outputs[index],
             outputs = incomingOutputMap.get(src);
         if (outputs === undefined) {
-          outputs = Array(src._master.outputs.length);
+          outputs = new Array(src._master.outputs.length);
           incomingOutputMap.set(src, outputs);
         }
         let name = self.makePinName(src, srcPin);
@@ -491,9 +540,7 @@ var editingModel = (function() {
       //     outputs.push({ type: srcPin.type, name: name });
       //   });
       // });
-      if (closure) {
-        outputs.push({ type: this.getClosureType(groupInfo) });
-      } else if (abstract) {
+      if (abstract) {
         inputs.push({ type: this.getAbstractType(groupInfo) });
       }
       // Create the new group element.
@@ -544,14 +591,14 @@ var editingModel = (function() {
     doClosure: function() {
       this.reduceSelection();
       this.model.transactionModel.beginTransaction('closure');
-      this.makeGroup(this.model.selectionModel.contents(), false, true);
+      this.makeClosures(this.model.selectionModel.contents());
       this.model.transactionModel.endTransaction();
     },
 
     doAbstract: function() {
       this.reduceSelection();
       this.model.transactionModel.beginTransaction('abstract');
-      this.makeGroup(this.model.selectionModel.contents(), false, false, true);
+      this.makeGroup(this.model.selectionModel.contents(), false, true);
       this.model.transactionModel.endTransaction();
     },
 
@@ -725,7 +772,7 @@ Renderer.prototype.layoutMaster = function(master) {
 }
 
 Renderer.prototype.layoutPin = function(pin) {
-  if (pin.type == 'v') {
+  if (pin.type == 'v' || pin.type == '*') {
     pin._width = pin._height = 2 * this.knobbyRadius;
   } else {
     this.layoutMaster(pin._master);
@@ -783,7 +830,7 @@ Renderer.prototype.drawMaster = function(master, x, y, mode) {
 }
 
 Renderer.prototype.drawPin = function(pin, x, y, mode) {
-  if (pin.type == 'v') {
+  if (pin.type == 'v' || pin.type == '*') {
     drawValue(this, x, y);
   } else {
     let master = pin._master;
@@ -1006,33 +1053,26 @@ function Editor(model, textInputController) {
         { type: 'element',
           x: 8, y: 8,
           master: '$',
-          junction: 'input',
-          inputs: [],
+          junction: 'connect',
+          inputs: [
+            { type: '*' },
+          ],
           outputs: [
-            { type: 'v' },
+            { type: '*' },
           ],
         },
         { type: 'element',
-          x: 36, y: 8,
+          x: 48, y: 8,
           master: '$',
-          junction: 'output',
+          junction: 'apply',
           inputs: [
-            { type: 'v' },
-          ],
-          outputs: [],
-        },
-        { type: 'element',
-          x: 64, y: 8,
-          master: '$',
-          junction: 'expander',
-          inputs: [
-            { type: 'v' },
+            { type: '*' },
           ],
           outputs: [],
         },
         // TODO Literal object needs work.
         { type: 'element',
-          x: 92, y: 8,
+          x: 80, y: 8,
           master: '$',
           name: '0',
           inputs: [],
@@ -1065,9 +1105,14 @@ function Editor(model, textInputController) {
     // close over s, j to avoid extra return values.
     function decode() {
       let i = j;
+      // value types
       if (s[j] == 'v') {
         j++;
         return { type: 'v' };
+      }
+      if (s[j] == '*') {
+        j++;
+        return { type: '*' };
       }
       if (s[j] == '[') {
         let inputs = [], outputs = [];
@@ -1558,16 +1603,16 @@ Editor.prototype.onEndDrag = function(p) {
       editingModel.deleteItem(dragItem);
       selectionModel.remove(dragItem);
     } else {
-      // Adjust pins on open junction elements.
+      // Adjust pins on junction elements.
       let referencingModel = model.referencingModel,
       srcItem = referencingModel.resolveReference(dragItem, 'srcId'),
-      dstItem = referencingModel.resolveReference(dragItem, 'dstId');
-      if (isOpenJunction(srcItem)) {
-        let dstPin = dstItem._master.inputs[dragItem.dstPin];
-        editingModel.setInputJunction(srcItem, dstPin);
-      } else if (isOpenJunction(dstItem)) {
-        let srcPin = srcItem._master.outputs[dragItem.srcPin];
-        editingModel.setOutputJunction(dstItem, srcPin);
+      srcPin = srcItem._master.outputs[dragItem.srcPin],
+      dstItem = referencingModel.resolveReference(dragItem, 'dstId'),
+      dstPin = dstItem._master.inputs[dragItem.dstPin];
+      if (srcPin.type == '*' && dstPin.type != '*') {
+        editingModel.setInputJunction(srcItem, srcPin, dstPin);
+      } else if (srcPin.type != '*' && dstPin.type == '*') {
+        editingModel.setOutputJunction(dstItem, srcPin, dstPin);
       }
     }
   }
@@ -1902,7 +1947,7 @@ var circuit_data =
       "x": 507,
       "y": 198,
       "master": "$",
-      "junction": "expander",
+      "junction": "apply",
       "inputs": [
         {
           "type": "[v,v]"
@@ -1976,7 +2021,7 @@ var circuit_data =
           "x": 551,
           "y": 186,
           "master": "$",
-          "junction": "expander",
+          "junction": "apply",
           "inputs": [
             {
               "type": "[v,v]"
@@ -2288,7 +2333,7 @@ var circuit_data =
           "x": 601,
           "y": 75,
           "master": "$",
-          "junction": "expander",
+          "junction": "apply",
           "inputs": [
             {
               "type": "[v,v]"
@@ -2906,29 +2951,6 @@ var circuit_data =
     },
     {
       "type": "element",
-      "x": 273,
-      "y": 46,
-      "master": "$",
-      "junction": "output",
-      "inputs": [
-        {
-          "type": "[v,v]"
-        }
-      ],
-      "outputs": [],
-      "id": 1300,
-      "connected": true
-    },
-    {
-      "type": "wire",
-      "srcId": 1207,
-      "srcPin": 1,
-      "dstId": 1300,
-      "dstPin": 0,
-      "id": 1301
-    },
-    {
-      "type": "element",
       "master": "!",
       "x": 160,
       "y": 320,
@@ -3090,38 +3112,175 @@ var circuit_data =
     },
     {
       "type": "element",
-      "x": 273,
-      "y": 12,
-      "master": "$",
-      "junction": "output",
-      "inputs": [
-        {
-          "type": "[,v]"
-        }
-      ],
-      "outputs": [],
-      "id": 1338,
-      "connected": true
-    },
-    {
-      "type": "wire",
-      "srcId": 1207,
-      "srcPin": 0,
-      "dstId": 1338,
-      "dstPin": 0,
-      "id": 1339,
-      "x": null,
-      "y": null
+      "master": "!",
+      "x": 160,
+      "y": 320,
+      "id": 1351
     },
     {
       "type": "element",
-      "x": 214,
-      "y": 91,
+      "master": "~",
+      "x": 208,
+      "y": 320,
+      "id": 1352
+    },
+    {
+      "type": "element",
+      "master": "-",
+      "x": 256,
+      "y": 320,
+      "id": 1353
+    },
+    {
+      "type": "element",
+      "master": "+",
+      "x": 304,
+      "y": 320,
+      "id": 1354
+    },
+    {
+      "type": "element",
+      "master": "*",
+      "x": 352,
+      "y": 320,
+      "id": 1355
+    },
+    {
+      "type": "element",
+      "master": "/",
+      "x": 400,
+      "y": 320,
+      "id": 1356
+    },
+    {
+      "type": "element",
+      "master": "%",
+      "x": 448,
+      "y": 320,
+      "id": 1357
+    },
+    {
+      "type": "element",
+      "master": "==",
+      "x": 496,
+      "y": 320,
+      "id": 1358
+    },
+    {
+      "type": "element",
+      "master": "!=",
+      "x": 544,
+      "y": 320,
+      "id": 1359
+    },
+    {
+      "type": "element",
+      "master": "<",
+      "x": 592,
+      "y": 320,
+      "id": 1360
+    },
+    {
+      "type": "element",
+      "master": "<=",
+      "x": 640,
+      "y": 320,
+      "id": 1361
+    },
+    {
+      "type": "element",
+      "master": ">",
+      "x": 688,
+      "y": 320,
+      "id": 1362
+    },
+    {
+      "type": "element",
+      "master": ">=",
+      "x": 736,
+      "y": 320,
+      "id": 1363
+    },
+    {
+      "type": "element",
+      "master": "|",
+      "x": 784,
+      "y": 320,
+      "id": 1364
+    },
+    {
+      "type": "element",
+      "master": "&",
+      "x": 832,
+      "y": 320,
+      "id": 1365
+    },
+    {
+      "type": "element",
+      "master": "||",
+      "x": 880,
+      "y": 320,
+      "id": 1366
+    },
+    {
+      "type": "element",
+      "master": "&&",
+      "x": 928,
+      "y": 320,
+      "id": 1367
+    },
+    {
+      "type": "element",
+      "master": "?",
+      "x": 976,
+      "y": 320,
+      "id": 1368
+    },
+    {
+      "type": "element",
+      "master": "@",
+      "x": 1024,
+      "y": 320,
+      "id": 1369
+    },
+    {
+      "type": "element",
+      "master": "[]",
+      "x": 1072,
+      "y": 320,
+      "id": 1370
+    },
+    {
+      "type": "element",
+      "master": "[,v]",
+      "x": 1120,
+      "y": 320,
+      "id": 1371
+    },
+    {
+      "type": "element",
+      "master": "[v,v]",
+      "x": 1168,
+      "y": 320,
+      "id": 1372
+    },
+    {
+      "type": "element",
+      "master": "[vv,v]",
+      "x": 1216,
+      "y": 320,
+      "id": 1373
+    },
+    {
+      "type": "element",
+      "x": 262,
+      "y": 22,
       "master": "$",
-      "junction": "expander",
+      "junction": "apply",
       "inputs": [
         {
-          "type": "[v,v]"
+          "type": "[v,v]",
+          "id": 1413
         },
         {
           "type": "v"
@@ -3132,28 +3291,38 @@ var circuit_data =
           "type": "v"
         }
       ],
-      "id": 1343,
-      "connected": true
+      "id": 1414
+    },
+    {
+      "type": "element",
+      "x": 187,
+      "y": -25,
+      "master": "@",
+      "id": 1416
     },
     {
       "type": "wire",
-      "srcId": 1207,
+      "srcId": 1416,
       "srcPin": 1,
-      "dstId": 1343,
+      "dstId": 1414,
       "dstPin": 0,
-      "id": 1344,
+      "id": 1417,
       "x": null,
       "y": null
     },
     {
       "type": "element",
-      "x": 165,
-      "y": 135,
+      "x": 261,
+      "y": 69,
       "master": "$",
-      "junction": "expander",
+      "junction": "apply",
       "inputs": [
         {
-          "type": "[,v]"
+          "type": "[v,v]",
+          "id": 1420
+        },
+        {
+          "type": "v"
         }
       ],
       "outputs": [
@@ -3161,26 +3330,77 @@ var circuit_data =
           "type": "v"
         }
       ],
-      "id": 1348,
-      "connected": true
+      "id": 1421
+    },
+    {
+      "type": "element",
+      "x": 260,
+      "y": 117,
+      "master": "$",
+      "junction": "apply",
+      "inputs": [
+        {
+          "type": "[v,v]",
+          "id": 1424
+        },
+        {
+          "type": "v"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "v"
+        }
+      ],
+      "id": 1425
     },
     {
       "type": "wire",
-      "srcId": 1209,
-      "srcPin": 0,
-      "dstId": 1348,
+      "srcId": 1207,
+      "srcPin": 1,
+      "dstId": 1421,
       "dstPin": 0,
-      "id": 1349,
+      "id": 1426,
       "x": null,
       "y": null
     },
     {
       "type": "wire",
-      "srcId": 1348,
+      "srcId": 1209,
+      "srcPin": 1,
+      "dstId": 1425,
+      "dstPin": 0,
+      "id": 1427,
+      "x": null,
+      "y": null
+    },
+    {
+      "type": "wire",
+      "srcId": 1207,
       "srcPin": 0,
-      "dstId": 1343,
+      "dstId": 1414,
       "dstPin": 1,
-      "id": 1350,
+      "id": 1428,
+      "x": null,
+      "y": null
+    },
+    {
+      "type": "wire",
+      "srcId": 1209,
+      "srcPin": 0,
+      "dstId": 1421,
+      "dstPin": 1,
+      "id": 1429,
+      "x": null,
+      "y": null
+    },
+    {
+      "type": "wire",
+      "srcId": 1416,
+      "srcPin": 0,
+      "dstId": 1425,
+      "dstPin": 1,
+      "id": 1432,
       "x": null,
       "y": null
     }
