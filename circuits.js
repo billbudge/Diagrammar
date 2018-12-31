@@ -198,9 +198,7 @@ var editingModel = (function() {
     setInputJunction: function(junction, srcPin, dstPin) {
       let model = this.model, observableModel = model.observableModel;
       observableModel.changeValue(srcPin, 'type', dstPin.type);
-      if (junction.junction == 'connect') {
-        observableModel.changeValue(junction.inputs[0], 'type', dstPin.type);
-      }
+      observableModel.changeValue(junction.inputs[0], 'type', dstPin.type);
       model.dataModel.initialize(junction);
     },
 
@@ -208,12 +206,13 @@ var editingModel = (function() {
       let model = this.model, observableModel = model.observableModel;
       observableModel.changeValue(dstPin, 'type', srcPin.type);
 
-      if (junction.junction == 'connect') {
+      if (junction.junction == 'output') {
         observableModel.changeValue(junction.outputs[0], 'type', srcPin.type);
       } else if (junction.junction == 'apply') {
         // Add the function's inputs and outputs.
         let master = srcPin._master;
         if (master) {
+          observableModel.removeElement(junction, 'inputs', 0);
           master.inputs.forEach(function(input) {
             observableModel.insertElement(
               junction, 'inputs', junction.inputs.length, { type: input.type });
@@ -222,6 +221,8 @@ var editingModel = (function() {
             observableModel.insertElement(
               junction, 'outputs', junction.outputs.length, { type: output.type });
           });
+          observableModel.insertElement(
+            junction, 'inputs', junction.inputs.length, { type: srcPin.type });
         } else {
           // Single output value.
           observableModel.insertElement(
@@ -282,45 +283,6 @@ var editingModel = (function() {
       }
     },
 
-    getClosureType: function(element, inputWires) {
-      // Create a function type whose inputs are the disconnected inputs,
-      // and whose outputs are all the outputs, connected or not.
-      let fnType = '[';
-      element._master.inputs.forEach(function(input, i) {
-        if (!inputWires[i])
-          fnType += input.type;
-      });
-      fnType += ',';
-      element._master.outputs.forEach(function(output, i) {
-        fnType += output.type;
-      });
-      fnType += ']';
-      console.log('closure', fnType);
-      return fnType;
-    },
-
-    getAbstractType: function(groupInfo) {
-      // Create a function type whose inputs are group inputs, and whose outputs
-      // are the group outputs.
-      let fnType = '[';
-      groupInfo.elementSet.forEach(function(element) {
-        // TODO filter out internally connected inputs.
-        element._master.inputs.forEach(function(input) {
-          fnType += input.type;
-        });
-      });
-      fnType += ',';
-      groupInfo.elementSet.forEach(function(element) {
-        // TODO filter out internally connected outputs.
-        element._master.outputs.forEach(function(output) {
-          fnType += output.type;
-        });
-      });
-      fnType += ']';
-      console.log('abstract', fnType);
-      return fnType;
-    },
-
     makePinName: function(element, pin) {
       return pin.name;// || element.name || element._master.name;
     },
@@ -345,10 +307,8 @@ var editingModel = (function() {
             name: self.makePinName(element, dstPin),
             x: element.x - 32, y: element.y + dstPin._y,
             master: '$',
-            junction: 'connect',
-            inputs: [
-              { type: '*' },
-            ],
+            junction: 'input',
+            inputs: [],
             outputs: [
               { type: dstPin.type },
             ],
@@ -376,13 +336,11 @@ var editingModel = (function() {
             name: self.makePinName(element, srcPin),
             x: element.x + 128, y: element.y + srcPin._y,
             master: '$',
-            junction: 'connect',
+            junction: 'output',
             inputs: [
               { type: srcPin.type },
             ],
-            outputs: [
-              { type: '*' },
-            ],
+            outputs: [],
           };
           self.newItem(junction);
           self.addItem(junction, self.diagram);
@@ -399,7 +357,40 @@ var editingModel = (function() {
       });
     },
 
-    makeClosures: function(elements) {
+    getClosureType: function(element, inputWires) {
+      // Create a function type whose inputs are the disconnected inputs,
+      // and whose outputs are all the outputs, connected or not.
+      let fnType = '[';
+      element._master.inputs.forEach(function(input, i) {
+        if (!inputWires[i])
+          fnType += input.type;
+      });
+      fnType += ',';
+      element._master.outputs.forEach(function(output, i) {
+        fnType += output.type;
+      });
+      fnType += ']';
+      console.log('closure', fnType);
+      return fnType;
+    },
+
+    getAbstractType: function(element) {
+      // Create a function type whose inputs are all inputs, and whose outputs
+      // are all outputs.
+      let fnType = '[';
+      element._master.inputs.forEach(function(input) {
+        fnType += input.type;
+      });
+      fnType += ',';
+      element._master.outputs.forEach(function(output) {
+        fnType += output.type;
+      });
+      fnType += ']';
+      console.log('abstract', fnType);
+      return fnType;
+    },
+
+    closeOrOpenFunctions: function(elements, close) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           selectionModel = model.selectionModel,
@@ -415,8 +406,8 @@ var editingModel = (function() {
         if (isJunction(element)) return;
         let inputMap = groupInfo.inputMap.get(element),
             outputMap = groupInfo.outputMap.get(element),
-            closureType = self.getClosureType(element, inputMap);
-        // Closure is a new element with the extra output pin at the end.
+            closureType = close ? self.getClosureType(element, inputMap) : self.getAbstractType(element);
+
         let inputs = [], outputs = [];
         let closureElement = {
           type: 'element',
@@ -433,11 +424,13 @@ var editingModel = (function() {
         // Add only connected input pins to closure's inputs.
         element._master.inputs.forEach(function(pin, i) {
           let incomingWire = inputMap[i];
-          if (incomingWire) {
+          if (incomingWire || !close) {
             inputs.push({ type: pin.type, name: pin.name });
             // remap wire to new closure element and pin.
-            observableModel.changeValue(incomingWire, 'dstId', id);
-            observableModel.changeValue(incomingWire, 'dstPin', inputs.length - 1);
+            if (incomingWire) {
+              observableModel.changeValue(incomingWire, 'dstId', id);
+              observableModel.changeValue(incomingWire, 'dstPin', inputs.length - 1);
+            }
           }
         });
         // Add all output pins to closure's outputs.
@@ -450,7 +443,11 @@ var editingModel = (function() {
           });
         });
 
-        outputs.push({ type: closureType });
+        if (close)
+          outputs.push({ type: closureType });
+        else
+          inputs.push({type: closureType });
+
         closureElement.element = element;
 
         dataModel.initialize(closureElement);
@@ -482,7 +479,7 @@ var editingModel = (function() {
       });
 
       let groupItems = selectionModel.contents();
-      // Add input/output pins for half connected 'connect' junctions.
+      // Add input/output pins for 'input' and 'output' junctions.
       let inputs = [], outputs = [];
       groupItems.forEach(function(item) {
         if (isJunction(item)) {
@@ -591,14 +588,14 @@ var editingModel = (function() {
     doClosure: function() {
       this.reduceSelection();
       this.model.transactionModel.beginTransaction('closure');
-      this.makeClosures(this.model.selectionModel.contents());
+      this.closeOrOpenFunctions(this.model.selectionModel.contents(), true);
       this.model.transactionModel.endTransaction();
     },
 
     doAbstract: function() {
       this.reduceSelection();
       this.model.transactionModel.beginTransaction('abstract');
-      this.makeGroup(this.model.selectionModel.contents(), false, true);
+      this.closeOrOpenFunctions(this.model.selectionModel.contents(), false);
       this.model.transactionModel.endTransaction();
     },
 
@@ -1053,16 +1050,23 @@ function Editor(model, textInputController) {
         { type: 'element',
           x: 8, y: 8,
           master: '$',
-          junction: 'connect',
-          inputs: [
-            { type: '*' },
-          ],
+          junction: 'input',
+          inputs: [],
           outputs: [
             { type: '*' },
           ],
         },
         { type: 'element',
-          x: 48, y: 8,
+          x: 38, y: 8,
+          master: '$',
+          junction: 'output',
+          inputs: [
+            { type: '*' },
+          ],
+          outputs: [],
+        },
+        { type: 'element',
+          x: 72, y: 8,
           master: '$',
           junction: 'apply',
           inputs: [
@@ -1072,7 +1076,7 @@ function Editor(model, textInputController) {
         },
         // TODO Literal object needs work.
         { type: 'element',
-          x: 80, y: 8,
+          x: 102, y: 8,
           master: '$',
           name: '0',
           inputs: [],
