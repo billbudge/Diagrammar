@@ -24,6 +24,14 @@ function isJunction(item) {
   return item.type == 'element' && item.junction;
 }
 
+function isInputJunction(item) {
+  return item.type == 'element' && item.junction == 'input';
+}
+
+function isOutputJunction(item) {
+  return item.type == 'element' && item.junction == 'output';
+}
+
 function needsLayout(item) {
   return isWire(item) || isImmediate(item);
 }
@@ -243,7 +251,7 @@ var editingModel = (function() {
         if (isElement(item)) {
           elementSet.add(item);
           // inputMap takes element to array of incoming wires.
-          inputMap.set(item, new Array(item._master.inputs.length));
+          inputMap.set(item, new Array(item._master.inputs.length).fill(null));
           // outputMap takes element to array of array of outgoing wires.
           outputMap.set(item, new Array(item._master.outputs.length).fill([]));
         }
@@ -298,8 +306,8 @@ var editingModel = (function() {
 
       // Add junctions for disconnected pins on selected elements.
       groupInfo.inputMap.forEach(function(elementInputs, element) {
-        elementInputs.forEach(function(wire, pin) {
-          if (wire)
+        elementInputs.forEach(function(connectedWire, pin) {
+          if (connectedWire)
             return;
           let dstPin = element._master.inputs[pin];
           let junction = {
@@ -328,7 +336,7 @@ var editingModel = (function() {
       });
       groupInfo.outputMap.forEach(function(elementOutputs, element) {
         elementOutputs.forEach(function(wires, pin) {
-          if (wires.length)
+          if (wires.length > 0)
             return;
           let srcPin = element._master.outputs[pin];
           let junction = {
@@ -479,17 +487,15 @@ var editingModel = (function() {
       });
 
       let groupItems = selectionModel.contents();
-      // Add input/output pins for 'input' and 'output' junctions.
+      // Add input/output pins for connected 'input' and 'output' junctions.
       let inputs = [], outputs = [];
       groupItems.forEach(function(item) {
-        if (isJunction(item)) {
-          if (!(groupInfo.inputMap.get(item)[0])) {
-            let pin = item.inputs[0];
-            inputs.push({ type: pin.type, name: item.name });
-          } else if ((groupInfo.outputMap.get(item)[0]).length == 0) {
-            let pin = item.outputs[0];
-            outputs.push({ type: pin.type, name: item.name });
-          }
+        if (isInputJunction(item) && groupInfo.outputMap.get(item)[0].length) {
+          let pin = item.outputs[0];
+          inputs.push({ type: pin.type, name: item.name });
+        } else if (isOutputJunction(item) && groupInfo.inputMap.get(item)[0]) {
+          let pin = item.inputs[0];
+          outputs.push({ type: pin.type, name: item.name });
         }
         if (!elementOnly)
           self.deleteItem(item);
