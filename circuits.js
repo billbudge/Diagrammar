@@ -66,6 +66,8 @@ function reverseVisit(item, filterFn, itemFn) {
 
 //------------------------------------------------------------------------------
 
+let _master = Symbol('master');
+
 var editingModel = (function() {
   var functions = {
     reduceSelection: function () {
@@ -219,7 +221,7 @@ var editingModel = (function() {
         observableModel.changeValue(junction.outputs[0], 'type', srcPin.type);
       } else if (junction.junction == 'apply') {
         // Add the function's inputs and outputs.
-        let master = srcPin._master;
+        let master = srcPin[_master];
         if (master) {
           master.inputs.forEach(function(input) {
             observableModel.insertElement(
@@ -249,9 +251,9 @@ var editingModel = (function() {
         if (isElement(item)) {
           elementSet.add(item);
           // inputMap takes element to array of incoming wires.
-          inputMap.set(item, new Array(item._master.inputs.length).fill(null));
+          inputMap.set(item, new Array(item[_master].inputs.length).fill(null));
           // outputMap takes element to array of array of outgoing wires.
-          outputMap.set(item, new Array(item._master.outputs.length).fill([]));
+          outputMap.set(item, new Array(item[_master].outputs.length).fill([]));
         }
       });
       // Separate connections into incoming, outgoing, and internal. Populate
@@ -292,7 +294,7 @@ var editingModel = (function() {
     },
 
     makePinName: function(element, pin) {
-      return pin.name;// || element.name || element._master.name;
+      return pin.name;// || element.name || element[_master].name;
     },
 
     completeGroup: function(elements) {
@@ -309,11 +311,11 @@ var editingModel = (function() {
         elementInputs.forEach(function(connectedWire, pin) {
           if (connectedWire)
             return;
-          let dstPin = element._master.inputs[pin];
+          let dstPin = element[_master].inputs[pin];
           let junction = {
             type: 'element',
             name: self.makePinName(element, dstPin),
-            x: element.x - 32, y: element.y + dstPin._y,
+            x: element.x - 32, y: element.y,  // TODO add pin y
             master: '$',
             junction: 'input',
             inputs: [],
@@ -338,11 +340,11 @@ var editingModel = (function() {
         elementOutputs.forEach(function(wires, pin) {
           if (wires.length > 0)
             return;
-          let srcPin = element._master.outputs[pin];
+          let srcPin = element[_master].outputs[pin];
           let junction = {
             type: 'element',
             name: self.makePinName(element, srcPin),
-            x: element.x + 128, y: element.y + srcPin._y,
+            x: element.x + 128, y: element.y,  // TODO add pin y
             master: '$',
             junction: 'output',
             inputs: [
@@ -369,12 +371,12 @@ var editingModel = (function() {
       // Create a function type whose inputs are the disconnected inputs,
       // and whose outputs are all the outputs, connected or not.
       let fnType = '[';
-      element._master.inputs.forEach(function(input, i) {
+      element[_master].inputs.forEach(function(input, i) {
         if (!inputWires[i])
           fnType += input.type;
       });
       fnType += ',';
-      element._master.outputs.forEach(function(output, i) {
+      element[_master].outputs.forEach(function(output, i) {
         fnType += output.type;
       });
       fnType += ']';
@@ -386,11 +388,11 @@ var editingModel = (function() {
       // Create a function type whose inputs are all inputs, and whose outputs
       // are all outputs.
       let fnType = '[';
-      element._master.inputs.forEach(function(input) {
+      element[_master].inputs.forEach(function(input) {
         fnType += input.type;
       });
       fnType += ',';
-      element._master.outputs.forEach(function(output) {
+      element[_master].outputs.forEach(function(output) {
         fnType += output.type;
       });
       fnType += ']';
@@ -430,7 +432,7 @@ var editingModel = (function() {
         let id = dataModel.getId(closureElement);
 
         // Add only connected input pins to closure's inputs.
-        element._master.inputs.forEach(function(pin, i) {
+        element[_master].inputs.forEach(function(pin, i) {
           let incomingWire = inputMap[i];
           if (incomingWire || !close) {
             inputs.push({ type: pin.type, name: pin.name });
@@ -442,7 +444,7 @@ var editingModel = (function() {
           }
         });
         // Add all output pins to closure's outputs.
-        element._master.outputs.forEach(function(pin, i) {
+        element[_master].outputs.forEach(function(pin, i) {
           outputs.push({ type: pin.type, name: pin.name });
           let outgoingWires = outputMap[i];
           outgoingWires.forEach(function(outgoingWire, j) {
@@ -506,10 +508,10 @@ var editingModel = (function() {
       let incomingOutputMap = new Map();
       groupInfo.incomingWires.forEach(function(wire) {
         let src = getReference(wire, 'srcId'), index = wire.srcPin,
-            srcPin = src._master.outputs[index],
+            srcPin = src[_master].outputs[index],
             outputs = incomingOutputMap.get(src);
         if (outputs === undefined) {
-          outputs = new Array(src._master.outputs.length);
+          outputs = new Array(src[_master].outputs.length);
           incomingOutputMap.set(src, outputs);
         }
         let name = self.makePinName(src, srcPin);
@@ -524,14 +526,14 @@ var editingModel = (function() {
       groupInfo.outgoingWires.forEach(function(wire) {
         if (!elementOnly)
           observableModel.changeValue(wire, 'srcPin', outputs.length);
-        let dst = getReference(wire, 'dstId'), dstPin = dst._master.inputs[wire.dstPin];
+        let dst = getReference(wire, 'dstId'), dstPin = dst[_master].inputs[wire.dstPin];
         let name = self.makePinName(dst, dstPin);
         outputs.push({ type: dstPin.type, name: name });
       });
       // groupInfo.inputMap.forEach(function(elementInputs, element) {
       //   elementInputs.forEach(function(connected, i) {
       //     if (connected) return;
-      //     let dstPin = element._master.inputs[i];
+      //     let dstPin = element[_master].inputs[i];
       //     let name = self.makePinName(element, dstPin);
       //     inputs.push({ type: dstPin.type, name: name });
       //   });
@@ -539,7 +541,7 @@ var editingModel = (function() {
       // groupInfo.outputMap.forEach(function(elementOutputs, element) {
       //   elementOutputs.forEach(function(connected, i) {
       //     if (connected) return;
-      //     let srcPin = element._master.outputs[i];
+      //     let srcPin = element[_master].outputs[i];
       //     let name = self.makePinName(element, srcPin);
       //     outputs.push({ type: srcPin.type, name: name });
       //   });
@@ -551,7 +553,7 @@ var editingModel = (function() {
       let name = '';
       if (groupInfo.elementSet.size == 1) {
         let element = groupInfo.elementSet.values().next().value;
-        name = element.name || element._master.name;
+        name = element.name || element[_master].name;
       }
       let groupElement = {
         type: 'element',
@@ -646,9 +648,13 @@ var editingModel = (function() {
 
 //------------------------------------------------------------------------------
 
-var normalMode = 1,
+let normalMode = 1,
     highlightMode = 2,
     hotTrackMode = 3;
+
+let _y = Symbol('y'), _baseline = Symbol('baseline'),
+    _width = Symbol('width'), _height = Symbol('height'),
+    _p1 = Symbol('p1'), _p2 = Symbol('p2'), _bezier = Symbol('bezier');
 
 function Renderer(theme) {
   this.theme = theme || diagrams.theme.create();
@@ -677,8 +683,8 @@ Renderer.prototype.getItemRect = function(item) {
   // TODO update
   switch (item.type) {
     case 'element':
-      w = item._master._width;
-      h = item._master._height;
+      w = item[_master][_width];
+      h = item[_master][_height];
       break;
   }
   return { x: x, y: y, w: w, h: h };
@@ -688,15 +694,15 @@ Renderer.prototype.pinToPoint = function(item, pin, input) {
   let rect = this.getItemRect(item),
       x = rect.x, y = rect.y, w = rect.w, h = rect.h,
       textSize = this.theme.fontSize,
-      offset = pin._height / 2;
+      offset = pin[_height] / 2;
   // Element.
   if (input) {
-    pin = item._master.inputs[pin];
+    pin = item[_master].inputs[pin];
   } else {
-    pin = item._master.outputs[pin];
+    pin = item[_master].outputs[pin];
     x += w;
   }
-  y += pin._y + pin._height / 2;
+  y += pin[_y] + pin[_height] / 2;
 
   return {
     x: x,
@@ -733,16 +739,16 @@ Renderer.prototype.layoutMaster = function(master) {
   for (let i = 0; i < inputs.length; i++) {
     let pin = inputs[i];
     this.layoutPin(pin);
-    pin._y = yIn + spacing / 2;
-    let name = pin.name, w = pin._width, h = pin._height + spacing / 2;
+    pin[_y] = yIn + spacing / 2;
+    let name = pin.name, w = pin[_width], h = pin[_height] + spacing / 2;
     if (name) {
       let offset = Math.abs(h - textSize) / 2;
-      pin._baseline = yIn + textSize;
+      pin[_baseline] = yIn + textSize;
       if (textSize > h) {
-        pin._y += offset;
+        pin[_y] += offset;
         h = textSize;
       } else {
-        pin._baseline += offset;
+        pin[_baseline] += offset;
       }
       w += spacing + ctx.measureText(name).width;
     }
@@ -753,16 +759,16 @@ Renderer.prototype.layoutMaster = function(master) {
   for (let i = 0; i < outputs.length; i++) {
     let pin = outputs[i];
     this.layoutPin(pin);
-    pin._y = yOut + spacing / 2;
-    let name = pin.name, w = pin._width, h = pin._height + spacing / 2;
+    pin[_y] = yOut + spacing / 2;
+    let name = pin.name, w = pin[_width], h = pin[_height] + spacing / 2;
     if (name) {
       let offset = Math.abs(h - textSize) / 2;
-      pin._baseline = yOut + textSize;
+      pin[_baseline] = yOut + textSize;
       if (textSize > h) {
-        pin._y += offset;
+        pin[_y] += offset;
         h = textSize;
       } else {
-        pin._baseline += offset;
+        pin[_baseline] += offset;
       }
       w += spacing + ctx.measureText(name).width;
     }
@@ -770,24 +776,24 @@ Renderer.prototype.layoutMaster = function(master) {
     wOut = Math.max(wOut, w);
   }
 
-  master._width = Math.max(width, wIn + 2 * spacing + wOut, minMasterWidth);
-  master._height = Math.max(yIn, yOut, minMasterHeight) + spacing / 2;
+  master[_width] = Math.max(width, wIn + 2 * spacing + wOut, minMasterWidth);
+  master[_height] = Math.max(yIn, yOut, minMasterHeight) + spacing / 2;
   return master;
 }
 
 Renderer.prototype.layoutPin = function(pin) {
   if (pin.type == 'v' || pin.type == '*') {
-    pin._width = pin._height = 2 * this.knobbyRadius;
+    pin[_width] = pin[_height] = 2 * this.knobbyRadius;
   } else {
-    this.layoutMaster(pin._master);
-    pin._width = pin._master._width * shrink;
-    pin._height = pin._master._height * shrink;
+    this.layoutMaster(pin[_master]);
+    pin[_width] = pin[_master][_width] * shrink;
+    pin[_height] = pin[_master][_height] * shrink;
   }
 }
 
 Renderer.prototype.drawMaster = function(master, x, y, mode) {
   var self = this, ctx = this.ctx, theme = this.theme,
-      width = master._width, height = master._height;
+      width = master[_width], height = master[_height];
   switch (mode) {
     case normalMode:
       let textSize = theme.fontSize, name = master.name,
@@ -805,18 +811,18 @@ Renderer.prototype.drawMaster = function(master, x, y, mode) {
       }
       inputs.forEach(function(pin, i) {
         let name = pin.name;
-        self.drawPin(pin, x, y + pin._y, mode);
+        self.drawPin(pin, x, y + pin[_y], mode);
         if (name) {
           ctx.textAlign = 'left';
-          ctx.fillText(name, x + pin._width + spacing, y + pin._baseline);
+          ctx.fillText(name, x + pin[_width] + spacing, y + pin[_baseline]);
         }
       });
       outputs.forEach(function(pin) {
-        let name = pin.name, left = x + width - pin._width;
-        self.drawPin(pin, left, y + pin._y, mode);
+        let name = pin.name, left = x + width - pin[_width];
+        self.drawPin(pin, left, y + pin[_y], mode);
         if (name) {
           ctx.textAlign = 'right';
-          ctx.fillText(name, left - spacing, y + pin._baseline);
+          ctx.fillText(name, left - spacing, y + pin[_baseline]);
         }
       });
       break;
@@ -837,7 +843,7 @@ Renderer.prototype.drawPin = function(pin, x, y, mode) {
   if (pin.type == 'v' || pin.type == '*') {
     drawValue(this, x, y);
   } else {
-    let master = pin._master;
+    let master = pin[_master];
     this.ctx.scale(shrink, shrink);
     this.drawMaster(master, inv_shrink * x, inv_shrink * y, mode);
     this.ctx.scale(inv_shrink, inv_shrink);
@@ -849,16 +855,16 @@ Renderer.prototype.hitTestElement = function(element, p, tol, mode) {
       x = rect.x, y = rect.y, width = rect.w, height = rect.h,
       hitInfo = diagrams.hitTestRect(x, y, width, height, p, tol);
   if (hitInfo) {
-    var master = element._master,
+    var master = element[_master],
         inputs = master.inputs, outputs = master.outputs,
         self = this;
     inputs.forEach(function(input, i) {
-      if (diagrams.hitTestRect(x, y + input._y, input._width, input._height, p, 0))
+      if (diagrams.hitTestRect(x, y + input[_y], input[_width], input[_height], p, 0))
         hitInfo.input = i;
     });
     outputs.forEach(function(output, i) {
-      if (diagrams.hitTestRect(x + width - output._width,
-          y + output._y, output._width, output._height, p, 0))
+      if (diagrams.hitTestRect(x + width - output[_width],
+          y + output[_y], output[_width], output[_height], p, 0))
         hitInfo.output = i;
     });
   }
@@ -869,18 +875,18 @@ Renderer.prototype.layoutWire = function(wire) {
   var referencingModel = this.model.referencingModel,
       c1 = referencingModel.getReference(wire, 'srcId'),
       c2 = referencingModel.getReference(wire, 'dstId'),
-      p1 = wire._p1, p2 = wire._p2;
+      p1 = wire[_p1], p2 = wire[_p2];
 
   if (c1)
     p1 = this.pinToPoint(c1, wire.srcPin, false);
   if (c2)
     p2 = this.pinToPoint(c2, wire.dstPin, true);
-  wire._bezier = diagrams.getEdgeBezier(p1, p2);
+  wire[_bezier] = diagrams.getEdgeBezier(p1, p2);
 }
 
 Renderer.prototype.drawWire = function(wire, mode) {
   var ctx = this.ctx;
-  diagrams.bezierEdgePath(wire._bezier, ctx, 0);
+  diagrams.bezierEdgePath(wire[_bezier], ctx, 0);
   switch (mode) {
     case normalMode:
       ctx.strokeStyle = theme.strokeColor;
@@ -899,7 +905,7 @@ Renderer.prototype.drawWire = function(wire, mode) {
 }
 
 Renderer.prototype.hitTestWire = function(wire, p, tol, mode) {
-  return diagrams.hitTestBezier(wire._bezier, p, tol);
+  return diagrams.hitTestBezier(wire[_bezier], p, tol);
 }
 
 Renderer.prototype.layout = function(item) {
@@ -920,7 +926,7 @@ Renderer.prototype.draw = function(item, mode) {
   switch (item.type) {
     case 'element':
       rect = this.getItemRect(item);
-      this.drawMaster(item._master, rect.x, rect.y, mode);
+      this.drawMaster(item[_master], rect.x, rect.y, mode);
       break;
     case 'wire':
       this.drawWire(item, mode);
@@ -1147,10 +1153,9 @@ function Editor(model, textInputController) {
           console.log(type, master);
           masterMap.set(type, master);
         }
-        return {
-          type: type,
-          _master: master,
-        };
+        let result = { type: type };
+        result[_master] = master;
+        return result;
       }
     }
     return decode();
@@ -1175,13 +1180,13 @@ function Editor(model, textInputController) {
   function initialize(item) {
     if (item.type == 'element') {
       // Only initialize once.
-      // if (!item._master) {
+      // if (!item[_master]) {
         if (item.master == '$') {
           // Self master (junction).
           initializePins(item);
-          item._master = item;
+          item[_master] = item;
         } else {
-          item._master = masterMap.get(item.master);
+          item[_master] = masterMap.get(item.master);
         }
       // }
     }
@@ -1202,7 +1207,7 @@ function Editor(model, textInputController) {
   model.observableModel.addHandler('changed', function (change) {
     if (change.attr == 'master') {
       let item = change.item;
-      item._master = undefined;
+      item[_master] = undefined;
       initialize(item);
     }
   });
@@ -1541,7 +1546,7 @@ Editor.prototype.onDrag = function(p0, p) {
       if (src) {
         observableModel.changeValue(dragItem, 'srcPin', hitInfo.output);
       } else {
-        dragItem._p1 = cp;
+        dragItem[_p1] = cp;
       }
       break;
     case 'connectingW2':
@@ -1555,7 +1560,7 @@ Editor.prototype.onDrag = function(p0, p) {
       if (dst) {
         observableModel.changeValue(dragItem, 'dstPin', hitInfo.input);
       } else {
-        dragItem._p2 = cp;
+        dragItem[_p2] = cp;
       }
       break;
   }
@@ -1617,9 +1622,9 @@ Editor.prototype.onEndDrag = function(p) {
       // Adjust pins on junction elements.
       let referencingModel = model.referencingModel,
       srcItem = referencingModel.resolveReference(dragItem, 'srcId'),
-      srcPin = srcItem._master.outputs[dragItem.srcPin],
+      srcPin = srcItem[_master].outputs[dragItem.srcPin],
       dstItem = referencingModel.resolveReference(dragItem, 'dstId'),
-      dstPin = dstItem._master.inputs[dragItem.dstPin];
+      dstPin = dstItem[_master].inputs[dragItem.dstPin];
       if (srcPin.type == '*' && dstPin.type != '*') {
         editingModel.setInputJunction(srcItem, srcPin, dstPin);
       } else if (srcPin.type != '*' && dstPin.type == '*') {

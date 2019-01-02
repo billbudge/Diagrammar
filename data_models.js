@@ -943,18 +943,18 @@ let editingModel = (function () {
 //------------------------------------------------------------------------------
 
 let hierarchicalModel = (function () {
-  let parentSym = Symbol('parent');
+  let _parent = Symbol('parent');
   let proto = {
     getRoot: function () {
       return this.model.dataModel.getRoot();
     },
 
     getParent: function (item) {
-      return item[parentSym];
+      return item[_parent];
     },
 
     setParent: function (child, parent) {
-      child[parentSym] = parent;
+      child[_parent] = parent;
     },
 
     visitChildren: function (item, childFn) {
@@ -1065,12 +1065,12 @@ let hierarchicalModel = (function () {
 // handles 2d transforms with rotation, uniform scaling, and translations. Non-
 // uniform scale transforms don't work well with canvas drawing in general.
 let transformableModel = (function () {
-  let xSym = Symbol('x'), ySym = Symbol('y'), scaleSym = Symbol('scale'),
-      ooScaleSym = Symbol('ooScale'), rotationSym = Symbol('rotation'),
-      transformSym = Symbol('transform'),
-      iTransformSym = Symbol('inverse transform'),
-      aTransformSym = Symbol('absolute transform'),
-      iaTransformSym = Symbol('inverse absolute transform');
+  let _x = Symbol('x'), _y = Symbol('y'), _scale = Symbol('scale'),
+      _ooScale = Symbol('ooScale'), _rotation = Symbol('rotation'),
+      _transform = Symbol('transform'),
+      _iTransform = Symbol('inverse transform'),
+      _aTransform = Symbol('absolute transform'),
+      _iaTransform = Symbol('inverse absolute transform');
   let proto = {
     // Getter functions which determine transform parameters. Override if these
     // don't fit your model.
@@ -1079,40 +1079,40 @@ let transformableModel = (function () {
     },
 
     getX: function(item) {
-      return item.x || item[xSym] || 0;
+      return item.x || item[_x] || 0;
     },
 
     getY: function(item) {
-      return item.y || item[ySym] || 0;
+      return item.y || item[_y] || 0;
     },
 
     getScale: function(item) {
-      return item.scale || item[scaleSym] || 1;
+      return item.scale || item[_scale] || 1;
     },
 
     getRotation: function (item) {
-      return item.rotation || item[rotationSym] || 0;
+      return item.rotation || item[_rotation] || 0;
     },
 
     // Getter functions for genereated transforms and related information.
     getLocal: function (item) {
-      return item[transformSym];
+      return item[_transform];
     },
 
     getInverseLocal: function (item) {
-      return item[iTransformSym];
+      return item[_iTransform];
     },
 
     getAbsolute: function (item) {
-      return item[aTransformSym];
+      return item[_aTransform];
     },
 
     getInverseAbsolute: function (item) {
-      return item[iaTransformSym];
+      return item[_iaTransform];
     },
 
     getOOScale: function (item) {
-      return item[ooScaleSym];
+      return item[_ooScale];
     },
 
     // Gets the matrix to move an item from its current parent to newParent.
@@ -1132,13 +1132,13 @@ let transformableModel = (function () {
           rot = this.getRotation(item),
           cos = Math.cos(rot), sin = Math.sin(rot),
           ooScaleCos = ooScale * cos, ooScaleSin = ooScale * sin;
-      item[ooScaleSym] = ooScale;
-      item[transformSym] = [ scale * cos, scale * -sin,
-                              scale * sin, scale * cos,
-                              tx, ty ];
-      item[iTransformSym] = [ ooScaleCos, ooScaleSin,
-                              -ooScaleSin, ooScaleCos,
-                              -tx * ooScaleCos + ty * ooScaleSin, -tx * ooScaleSin - ty * ooScaleCos ];
+      item[_ooScale] = ooScale;
+      item[_transform] = [ scale * cos, scale * -sin,
+                           scale * sin, scale * cos,
+                           tx, ty ];
+      item[_iTransform] = [ ooScaleCos, ooScaleSin,
+                           -ooScaleSin, ooScaleCos,
+                           -tx * ooScaleCos + ty * ooScaleSin, -tx * ooScaleSin - ty * ooScaleCos ];
     },
 
     updateTransforms: function (item) {
@@ -1153,12 +1153,12 @@ let transformableModel = (function () {
         parent = hierarchicalModel.getParent(parent);
 
       if (parent) {
-        item[ooScaleSym] *= parent[ooScaleSym];
-        item[aTransformSym] = geometry.matMulNew(item[transformSym], parent[aTransformSym]);
-        item[iaTransformSym] = geometry.matMulNew(parent[iaTransformSym], item[iTransformSym]);
+        item[_ooScale] *= parent[_ooScale];
+        item[_aTransform] = geometry.matMulNew(item[_transform], parent[_aTransform]);
+        item[_iaTransform] = geometry.matMulNew(parent[_iaTransform], item[_iTransform]);
       } else {
-        item[aTransformSym] = item[transformSym];
-        item[iaTransformSym] = item[iTransformSym];
+        item[_aTransform] = item[_transform];
+        item[_iaTransform] = item[_iTransform];
       }
     },
 

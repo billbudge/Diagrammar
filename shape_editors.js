@@ -56,6 +56,11 @@ function isHullItem(item) {
   return item.type === 'disk';
 }
 
+let _beziers = Symbol('beziers'), _path = Symbol('path'),
+    _extents = Symbol('extents'), _merged = Symbol('merged'),
+    _center = Symbol('center'), _flipped = Symbol('flipped'),
+    _a1 = Symbol('a1'), _a2 = Symbol('a2');
+
 //------------------------------------------------------------------------------
 
 var editingModel = (function() {
@@ -189,16 +194,16 @@ var editingModel = (function() {
 
 //------------------------------------------------------------------------------
 
-var invalidatingModel = (function () {
-  var proto = {
+let invalidatingModel = (function () {
+  let proto = {
     isInvalid: function(item) {
-      return this._invalid.has(item);
+      return this.invalid_.has(item);
     },
 
     invalidate: function (item) {
-      var model = this.model,
+      let model = this.model,
           hierarchicalModel = model.hierarchicalModel,
-          invalid = this._invalid,
+          invalid = this.invalid_,
           ancestor = item;
       while (ancestor) {
         invalid.add(ancestor);
@@ -207,47 +212,49 @@ var invalidatingModel = (function () {
     },
 
     invalidateAll: function(valid) {
-      var self = this,
+      let self = this,
           dataModel = this.model.dataModel,
-          invalid = this._invalid;
+          invalid = this.invalid_;
       dataModel.visitSubtree(dataModel.getRoot(), function(item) {
         invalid.add(item);
       });
     },
 
     reset: function (item) {
-      this._invalid.delete(item);
+      this.invalid_.delete(item);
     },
 
     resetAll: function() {
-      this._invalid.clear();
+      this.invalid_.clear();
     },
 
     onChanged_: function (change) {
-      var self = this,
+      let self = this,
           item = change.item,
           model = this.model,
           dataModel = model.dataModel,
           hierarchicalModel = model.hierarchicalModel;
       switch (change.type) {
-        case 'change':
-          var newValue = item[change.attr];
+        case 'change': {
+          let newValue = item[change.attr];
           if (dataModel.isItem(newValue))
             this.invalidate(newValue);
           else
             this.invalidate(item);
           break;
-        case 'insert':
-          var newValue = item[change.attr][change.index];
+        }
+        case 'insert': {
+          let newValue = item[change.attr][change.index];
           if (dataModel.isItem(newValue))
             this.invalidate(newValue);
           else
             this.invalidate(item);
           // Invalidate the item's subtree.
           dataModel.visitSubtree(item, function(subItem) {
-            self._invalid.add(subItem);
+            self.invalid_.add(subItem);
           });
           break;
+        }
         case 'remove':
           this.invalidate(item);
           break;
@@ -269,7 +276,7 @@ var invalidatingModel = (function () {
       instance.onChanged_(change);
     });
 
-    instance._invalid = new Set();
+    instance.invalid_ = new Set();
 
     model.invalidatingModel = instance;
     return instance;
@@ -364,9 +371,9 @@ Renderer.prototype.drawItem = function(item, mode) {
 
       ctx.lineWidth = 2 * ooScale;
       ctx.beginPath();
-      ctx.moveTo(item._beziers[0][0].x, item._beziers[0][0].y);
-      for (var i = 0; i < item._beziers.length; i++) {
-        var seg = item._beziers[i];
+      ctx.moveTo(item[_beziers][0][0].x, item[_beziers][0][0].y);
+      for (var i = 0; i < item[_beziers].length; i++) {
+        var seg = item[_beziers][i];
         ctx.bezierCurveTo(seg[1].x, seg[1].y, seg[2].x, seg[2].y, seg[3].x, seg[3].y);
       }
       ctx.stroke();
@@ -378,7 +385,7 @@ Renderer.prototype.drawItem = function(item, mode) {
       drawKnobby(this, knobbyRadius, 1, 0);
       break;
     // case 'group':
-    //   var path = item._path;
+    //   var path = item[_path];
     //   ctx.setLineDash([lineDash]);
     //   if (!path) {
     //     ctx.beginPath();
@@ -387,7 +394,7 @@ Renderer.prototype.drawItem = function(item, mode) {
     //   } else {
     //     diagrams.closedPath(path, ctx);
     //     ctx.stroke();
-    //     var extents = item._extents;
+    //     var extents = item[_extents];
     //     if (mode == normalMode) {
     //       ctx.lineWidth = 0.25 * ooScale;
     //       ctx.beginPath();
@@ -402,8 +409,8 @@ Renderer.prototype.drawItem = function(item, mode) {
     //   ctx.setLineDash([]);
     //   break;
     case 'group':
-      var path = item._path, length = path.length, pLast = path[length - 1];
-      if (item._merged) {
+      var path = item[_path], length = path.length, pLast = path[length - 1];
+      if (item[_merged]) {
         // Draw the baseline hull first.
         ctx.lineWidth = 0.25 * ooScale;
         ctx.setLineDash([lineDash]);
@@ -417,7 +424,7 @@ Renderer.prototype.drawItem = function(item, mode) {
         ctx.setLineDash([]);
 
         ctx.lineWidth = 2 * ooScale;
-        path = item._merged;
+        path = item[_merged];
         length = path.length;
         pLast = path[length - 1];
       }
@@ -431,7 +438,7 @@ Renderer.prototype.drawItem = function(item, mode) {
       // if (mode == normalMode)
       //   ctx.fill();
       ctx.stroke();
-      drawKnobby(this, knobbyRadius, item._center);
+      drawKnobby(this, knobbyRadius, item[_center]);
       break;
   }
   ctx.restore();
@@ -477,7 +484,7 @@ Renderer.prototype.hitTest = function(item, p, tol, mode) {
         hitInfo = { p2: true };
       // Now check the edge segments.
       if (!hitInfo) {
-        var beziers = item._beziers, length = beziers.length,
+        var beziers = item[_beziers], length = beziers.length,
             dMin = Number.MAX_VALUE, iMin = -1;
         var d = [];
         for (var i = 0; i < length; i++) {
@@ -495,11 +502,11 @@ Renderer.prototype.hitTest = function(item, p, tol, mode) {
       }
       break;
     // case 'group':
-    //   var path = item._path;
+    //   var path = item[_path];
     //   if (!path) {
     //     hitInfo = diagrams.hitTestDisk(0, 0, 16, localP, tol);
     //   } else {
-    //     var extents = item._extents;
+    //     var extents = item[_extents];
     //     if (hitKnobby(0, 0, knobbyRadius, localP)) {
     //       hitInfo = { relocator: true };
     //     } else if (hitKnobby(extents.xmax, 0, knobbyRadius, localP)) {
@@ -511,7 +518,7 @@ Renderer.prototype.hitTest = function(item, p, tol, mode) {
     //   break;
     case 'group':
       if (mode == normalMode) {
-        var path = item._path;
+        var path = item[_path];
         hitInfo = diagrams.hitTestConvexHull(path, localP, tol);
       }
       break;
@@ -579,7 +586,7 @@ Editor.prototype.initialize = function(canvasController) {
     if (item.type == 'edge') {
       self.updateAttachedEdgeAngles(item);
     } else if (item.type == 'group') {
-      item._center = self.getStableCenter(item);
+      item[_center] = self.getStableCenter(item);
     }
   }
 
@@ -601,7 +608,7 @@ Editor.prototype.initialize = function(canvasController) {
   model.dataModel.initialize();
   model.invalidatingModel.invalidateAll();
 
-  this._visible = new Set();
+  this.visible_ = new Set();
 }
 
 Editor.prototype.isPaletteItem = function(item) {
@@ -623,7 +630,7 @@ Editor.prototype.getTemporaryItem = function() {
 }
 
 Editor.prototype.draw = function() {
-  var visible = this._visible,
+  var visible = this.visible_,
       renderer = this.renderer, ctx = this.ctx,
       canvasController = this.canvasController,
       model = this.model,
@@ -666,7 +673,7 @@ Editor.prototype.draw = function() {
 }
 
 Editor.prototype.hitTest = function(p) {
-  var visible = this._visible,
+  var visible = this.visible_,
       renderer = this.renderer,
       canvasController = this.canvasController,
       cp = canvasController.viewToCanvas(p),
@@ -800,7 +807,7 @@ Editor.prototype.onBeginDrag = function(p0) {
         break;
       // case 'group':
       //   // Direction/scale vector, in parent space.
-      //   var vector = geometry.matMulVec({ x: dragItem._extents.xmax, y: 0 }, transform);
+      //   var vector = geometry.matMulVec({ x: dragItem[_extents].xmax, y: 0 }, transform);
       //   if (mouseHitInfo.resizer) {
       //     drag = { type: 'resizeGroup', name: 'Resize group', vector: vector };
       //   } else if (mouseHitInfo.relocator) {
@@ -818,7 +825,7 @@ Editor.prototype.onBeginDrag = function(p0) {
   // Update centers of any affected groups.
   function updateCenters(item) {
     if (isGroup(item)) {
-      item._center = self.getStableCenter(item);
+      item[_center] = self.getStableCenter(item);
       // Attached edges should update their angles to the new group center.
       item.items.forEach(function(subItem) {
         if (isEdge(subItem) && subItem.attached) {
@@ -907,10 +914,10 @@ Editor.prototype.updateAttachedEdgePositions = function(edge) {
       observableModel = model.observableModel,
       hierarchicalModel = model.hierarchicalModel,
       parent = hierarchicalModel.getParent(edge),
-      hull = parent._path,
-      center = parent._center,
-      p1 = geometry.angleToConvexHull(hull, center, edge._a1),
-      p2 = geometry.angleToConvexHull(hull, center, edge._a2),
+      hull = parent[_path],
+      center = parent[_center],
+      p1 = geometry.angleToConvexHull(hull, center, edge[_a1]),
+      p2 = geometry.angleToConvexHull(hull, center, edge[_a2]),
       dx = p2.x - p1.x,
       dy = p2.y - p1.y;
   if (Math.abs(edge.x - p1.x) > 0.000001)
@@ -927,7 +934,7 @@ Editor.prototype.getAngleWRTParent = function(item, p) {
   var model = this.model,
       parent = model.hierarchicalModel.getParent(item);
   if (parent && parent.type == 'group') {
-    var center = parent._center,
+    var center = parent[_center],
         angle = geometry.getAngle(p.x - center.x, p.y - center.y);
     return angle;
   }
@@ -938,9 +945,9 @@ Editor.prototype.updateAttachedEdgeAngles = function(edge) {
       a2 = this.getAngleWRTParent(edge, { x: edge.x + edge.dx, y: edge.y + edge.dy }),
       da = a2 - a1,
       flipped = (da > 0 && da < Math.PI) || (da < 0 && da < -Math.PI);
-  edge._a1 = a1;
-  edge._a2 = a2;
-  edge._flipped = flipped;
+  edge[_a1] = a1;
+  edge[_a2] = a2;
+  edge[_flipped] = flipped;
 }
 
 Editor.prototype.onDrag = function(p0, p) {
@@ -1010,7 +1017,7 @@ Editor.prototype.onDrag = function(p0, p) {
 
     case 'p1':
       if (dragItem.attached) {
-        dragItem._a1 = self.getAngleWRTParent(dragItem, drags.parentMouse);
+        dragItem[_a1] = self.getAngleWRTParent(dragItem, drags.parentMouse);
         self.updateAttachedEdgePositions(dragItem);
       } else {
         var snapshot = transactionModel.getSnapshot(dragItem),
@@ -1025,7 +1032,7 @@ Editor.prototype.onDrag = function(p0, p) {
 
     case 'p2':
       if (dragItem.attached) {
-        dragItem._a2 = self.getAngleWRTParent(dragItem, drags.parentMouse);
+        dragItem[_a2] = self.getAngleWRTParent(dragItem, drags.parentMouse);
         self.updateAttachedEdgePositions(dragItem);
       } else {
         var snapshot = transactionModel.getSnapshot(dragItem),
@@ -1039,7 +1046,7 @@ Editor.prototype.onDrag = function(p0, p) {
     case 'dragAttachedEdge':
       var parentClick = drags.parentClick, parentMouse = drags.parentMouse,
           group = hierarchicalModel.getParent(dragItem),
-          center = group._center, cx = center.x, cy = center.y,
+          center = group[_center], cx = center.x, cy = center.y,
           angle0 = geometry.getAngle(parentClick.x - cx, parentClick.y - cy),
           angle = geometry.getAngle(parentMouse.x - cx, parentMouse.y - cy),
           da = angle - angle0,
@@ -1048,8 +1055,8 @@ Editor.prototype.onDrag = function(p0, p) {
           a2 = geometry.getAngle((snapshot.x + snapshot.dx) - cx,
                                  (snapshot.y + snapshot.dy) - cy);
 
-      dragItem._a1 = adjustAngle(a1 + da),
-      dragItem._a2 = adjustAngle(a2 + da);
+      dragItem[_a1] = adjustAngle(a1 + da),
+      dragItem[_a2] = adjustAngle(a2 + da);
       self.updateAttachedEdgePositions(dragItem);
       break;
   }
@@ -1155,7 +1162,7 @@ Editor.prototype.updateVisibility = function(model) {
   var root = model.root,
       hierarchicalModel = model.hierarchicalModel,
       openItem = model.openingModel.openItem(),
-      visible = this._visible;
+      visible = this.visible_;
 
   // Update paths for primitive hull items and form hulls
   function update(item) {
@@ -1210,7 +1217,7 @@ Editor.prototype.updateFreeEdge = function(edge) {
   last.x = c1.x;
   last.y = c1.y;
   var beziers = geometry.generateInterpolatingBeziers(points);
-  edge._beziers =  beziers;
+  edge[_beziers] =  beziers;
 }
 
 // Compute length of hull segment (i0, t0, i1, t1)
@@ -1287,19 +1294,19 @@ Editor.prototype.updateAttachedEdge = function(edge, parent, attachments) {
 
   // Update x, y, dx, and dy for attachment.
   this.updateAttachedEdgeAngles(edge);
-  var a1 = edge._a1, a2 = edge._a2;
+  var a1 = edge[_a1], a2 = edge[_a2];
   this.updateAttachedEdgePositions(edge);
   this.updateEdge(edge);
-  var hull = parent._path,
-      center = parent._center,
-      a1 = edge._a1,
-      a2 = edge._a2,
+  var hull = parent[_path],
+      center = parent[_center],
+      a1 = edge[_a1],
+      a2 = edge[_a2],
       p1 = geometry.angleToConvexHull(hull, center, a1),
       p2 = geometry.angleToConvexHull(hull, center, a2);
 
   var transformableModel = this.model.transformableModel,
       inverseLocal = transformableModel.getInverseLocal(edge),
-      flipped = edge._flipped,
+      flipped = edge[_flipped],
       f = flipped ? 1024 : -1024,  // TODO fix magic number
       n1 = geometry.matMulPt({ x: p1.x + p1.ny * f, y: p1.y - p1.nx * f }, inverseLocal),
       n2 = geometry.matMulPt({ x: p2.x - p2.ny * f, y: p2.y + p2.nx * f }, inverseLocal);
@@ -1313,13 +1320,13 @@ Editor.prototype.updateAttachedEdge = function(edge, parent, attachments) {
   attachments.push({ item: edge, start: p1.i1, startT: p1.t, end: p2.i1, endT: p2.t });
 
   var beziers = geometry.generateInterpolatingBeziers(points);
-  edge._beziers =  beziers;
+  edge[_beziers] =  beziers;
   var path = sampleBeziers(beziers, 0.01);  // TODO fix magic number
   var local = transformableModel.getLocal(edge);
   for (var i = 0; i < path.length; i++)
     path[i] = geometry.matMulPt(path[i], local);
-  edge._path = path;
-  // edge._extents = geometry.getExtents(edge._path);
+  edge[_path] = path;
+  // edge[_extents] = geometry.getExtents(edge[_path]);
 }
 
 // function visitHullSegments(hull, segments, segFn) {
@@ -1362,8 +1369,8 @@ Editor.prototype.updateGeometry = function(model) {
             y: Math.sin(2 * Math.PI * i / subdivisions),
           });
         }
-        item._path = points;
-        item._extents = geometry.getExtents(points);
+        item[_path] = points;
+        item[_extents] = geometry.getExtents(points);
         break;
 
       case 'edge':
@@ -1380,7 +1387,7 @@ Editor.prototype.updateGeometry = function(model) {
           // HACK for now, only disks contribute to hull.
           if (item.type == 'group' && (subItem.type !== 'disk' && subItem.type !== 'group'))
             return;
-          var path = subItem._path;
+          var path = subItem[_path];
           var localTransform = transformableModel.getLocal(subItem);
           path.forEach(function(p) {
             var localP = geometry.matMulPtNew(p, localTransform);
@@ -1390,7 +1397,7 @@ Editor.prototype.updateGeometry = function(model) {
         });
         if (points.length > 0) {
           var hull = geometry.getConvexHull(points),
-              center = item._center,
+              center = item[_center],
               segments = [],
               extents = geometry.getExtents(hull);
           geometry.annotateConvexHull(hull, center);
@@ -1406,12 +1413,12 @@ Editor.prototype.updateGeometry = function(model) {
           return;
         }
 
-        item._path = hull;
-        // item._segments = segments;
+        item[_path] = hull;
+        // item[_segments] = segments;
         // visitHullSegments(hull, segments, function(i0, i1, breaks) {
         //   console.log(i0, i1, breaks);
         // });
-        item._extents = extents;
+        item[_extents] = extents;
 
         var attachments = [];
         subItems.forEach(function(subItem) {
@@ -1420,9 +1427,9 @@ Editor.prototype.updateGeometry = function(model) {
           }
         });
 
-        item._merged = null;
+        item[_merged] = null;
 
-        var path = item._path, pLength = path.length;
+        var path = item[_path], pLength = path.length;
         if (attachments.length === 0)
           break;
 
@@ -1447,8 +1454,8 @@ Editor.prototype.updateGeometry = function(model) {
             }
           }
           // Now add the attachment's path.
-          var aiPath = ai.item._path, aipLength = aiPath.length;
-          if (ai.item._flipped) {
+          var aiPath = ai.item[_path], aipLength = aiPath.length;
+          if (ai.item[_flipped]) {
             for (var j = 0; j < aipLength; j++)
               merged.push(aiPath[j]);
           } else {
@@ -1468,7 +1475,7 @@ Editor.prototype.updateGeometry = function(model) {
             if (j === pLength) j = 0;
           }
         }
-        item._merged = merged;
+        item[_merged] = merged;
         break;
     }
   }
@@ -1482,8 +1489,8 @@ Editor.prototype.exportPaths = function(item) {
       type, path, children, result;
   if (item.type === 'board' || item.type === 'group') {
     type = 'node';
-    if (item._path)
-      path = item._path;
+    if (item[_path])
+      path = item[_path];
     children = [];
     item.items.forEach(function(item) {
       var result = self.exportPaths(item);
@@ -1491,9 +1498,9 @@ Editor.prototype.exportPaths = function(item) {
         children.push(result);
     });
   } else if (item.type === 'edge') {
-    if (item._path) {
+    if (item[_path]) {
       type = 'openPath';
-      path = item._path;
+      path = item[_path];
     }
   }
   if (type) {

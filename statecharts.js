@@ -41,6 +41,8 @@ function isConnection(item) {
   return item.type == 'transition' || item.type == 'wire';
 }
 
+let _p1 = Symbol('p1'), _p2 = Symbol('p2'), _master = Symbol('master');
+
 function visit(item, filterFn, itemFn) {
   if (!filterFn || filterFn(item))
     itemFn(item);
@@ -386,6 +388,8 @@ var normalMode = 1,
 var stateMinWidth = 100,
     stateMinHeight = 60;
 
+let _mid = Symbol('mid'), _bezier = Symbol('bezier');
+
 function Renderer(theme) {
   this.theme = theme || diagrams.theme.create();
 
@@ -426,8 +430,8 @@ Renderer.prototype.getItemRect = function(item) {
       w = h = 2 * this.radius;
       break;
     case 'circuit':
-      w = item._master.width;
-      h = item._master.height;
+      w = item[_master].width;
+      h = item[_master].height;
       break;
   }
   return { x: x, y: y, w: w, h: h };
@@ -452,7 +456,7 @@ Renderer.prototype.stateParamToPoint = function(state, t) {
 Renderer.prototype.pinToPoint = function(item, pin, input) {
   if (isTransition(item)) {
     // pin === 0, input === true.
-    var mid = item._mid;
+    var mid = item[_mid];
     return { x: mid.x, y: mid.y };
   }
   // Otherwise, it's a state or circuit element.
@@ -465,7 +469,7 @@ Renderer.prototype.pinToPoint = function(item, pin, input) {
   } else {
     // Circuit.
     y += textSize / 2;
-    if (item._master.name)
+    if (item[_master].name)
       y += textSize;
   }
 
@@ -676,7 +680,7 @@ Renderer.prototype.layoutCircuitMaster = function(master) {
 
 Renderer.prototype.drawCircuit = function(circuit, mode) {
   var self = this, ctx = this.ctx, theme = this.theme, r = this.radius,
-      master = circuit._master,
+      master = circuit[_master],
       rect = this.getItemRect(circuit),
       x = rect.x, y = rect.y, w = rect.w, h = rect.h;
   switch (mode) {
@@ -733,7 +737,7 @@ Renderer.prototype.hitTestCircuit = function(circuit, p, tol, mode) {
   if (hitInfo) {
     var textSize = this.theme.fontSize,
         knobbyRadius = this.knobbyRadius,
-        master = circuit._master,
+        master = circuit[_master],
         inputs = master.inputs, outputs = master.outputs,
         self = this;
     var baseLine = y + textSize;
@@ -758,27 +762,27 @@ Renderer.prototype.layoutTransition = function(transition) {
   var referencingModel = this.model.referencingModel,
       v1 = referencingModel.resolveReference(transition, 'srcId'),
       v2 = referencingModel.resolveReference(transition, 'dstId'),
-      p1 = transition._p1, p2 = transition._p2;
+      p1 = transition[_p1], p2 = transition[_p2];
 
   if (v1)
     p1 = this.stateParamToPoint(v1, transition.t1);
   if (v2)
     p2 = this.stateParamToPoint(v2, transition.t2);
 
-  var bezier = transition._bezier = diagrams.getEdgeBezier(p1, p2);
-  transition._mid = geometry.evaluateBezier(bezier, 0.5);
+  var bezier = transition[_bezier] = diagrams.getEdgeBezier(p1, p2);
+  transition[_mid] = geometry.evaluateBezier(bezier, 0.5);
 }
 
 Renderer.prototype.drawTransition = function(transition, mode) {
   var ctx = this.ctx;
-  diagrams.bezierEdgePath(transition._bezier, ctx, this.arrowSize);
+  diagrams.bezierEdgePath(transition[_bezier], ctx, this.arrowSize);
   switch (mode) {
     case normalMode:
       ctx.strokeStyle = theme.strokeColor;
       ctx.lineWidth = 1;
       ctx.stroke();
       ctx.lineWidth = 0.25;
-      var mid = transition._mid;
+      var mid = transition[_mid];
       drawJunction(this, mid.x, mid.y);
       break;
     case highlightMode:
@@ -795,28 +799,28 @@ Renderer.prototype.drawTransition = function(transition, mode) {
 }
 
 Renderer.prototype.hitTestTransition = function(transition, p, tol, mode) {
-  var mid = transition._mid;
+  var mid = transition[_mid];
   if (hitPin(this, mid.x, mid.y, p, tol))
     return { input: 0 };
-  return diagrams.hitTestBezier(transition._bezier, p, tol);
+  return diagrams.hitTestBezier(transition[_bezier], p, tol);
 }
 
 Renderer.prototype.layoutWire = function(wire) {
   var referencingModel = this.model.referencingModel,
       c1 = referencingModel.resolveReference(wire, 'srcId'),
       c2 = referencingModel.resolveReference(wire, 'dstId'),
-      p1 = wire._p1, p2 = wire._p2;
+      p1 = wire[_p1], p2 = wire[_p2];
 
   if (c1)
     p1 = this.pinToPoint(c1, wire.srcPin, false);
   if (c2)
     p2 = this.pinToPoint(c2, wire.dstPin, true);
-  wire._bezier = diagrams.getEdgeBezier(p1, p2);
+  wire[_bezier] = diagrams.getEdgeBezier(p1, p2);
 }
 
 Renderer.prototype.drawWire = function(wire, mode) {
   var ctx = this.ctx;
-  diagrams.bezierEdgePath(wire._bezier, ctx, 0);
+  diagrams.bezierEdgePath(wire[_bezier], ctx, 0);
   switch (mode) {
     case normalMode:
       ctx.strokeStyle = theme.strokeColor;
@@ -835,7 +839,7 @@ Renderer.prototype.drawWire = function(wire, mode) {
 }
 
 Renderer.prototype.hitTestWire = function(wire, p, tol, mode) {
-  return diagrams.hitTestBezier(wire._bezier, p, tol);
+  return diagrams.hitTestBezier(wire[_bezier], p, tol);
 }
 
 Renderer.prototype.layout = function(item) {
@@ -1001,7 +1005,7 @@ function Editor(model, renderer) {
 
   function initialize(item) {
     if (item.type == 'circuit') {
-      item._master = circuitMasters[item.master];
+      item[_master] = circuitMasters[item.master];
     }
   }
 
@@ -1336,7 +1340,7 @@ Editor.prototype.onDrag = function(p0, p) {
         t1 = renderer.statePointToParam(src, cp);
         observableModel.changeValue(dragItem, 't1', t1);
       } else {
-        dragItem._p1 = cp;
+        dragItem[_p1] = cp;
       }
       break;
     case 'connectingP2':
@@ -1352,7 +1356,7 @@ Editor.prototype.onDrag = function(p0, p) {
         t2 = renderer.statePointToParam(dst, cp);
         observableModel.changeValue(dragItem, 't2', t2);
       } else {
-        dragItem._p2 = cp;
+        dragItem[_p2] = cp;
       }
       break;
     case 'connectingW1':
@@ -1363,7 +1367,7 @@ Editor.prototype.onDrag = function(p0, p) {
       if (src) {
         observableModel.changeValue(dragItem, 'srcPin', hitInfo.output);
       } else {
-        dragItem._p1 = cp;
+        dragItem[_p1] = cp;
       }
       break;
     case 'connectingW2':
@@ -1377,7 +1381,7 @@ Editor.prototype.onDrag = function(p0, p) {
       if (dst) {
         observableModel.changeValue(dragItem, 'dstPin', hitInfo.input);
       } else {
-        dragItem._p2 = cp;
+        dragItem[_p2] = cp;
       }
       break;
   }
@@ -1407,7 +1411,7 @@ Editor.prototype.onEndDrag = function(p) {
     transactionModel.beginTransaction(drag.name);
   }
   if (isTransition(dragItem)) {
-    dragItem._p1 = dragItem._p2 = null;
+    dragItem[_p1] = dragItem[_p2] = null;
     if (newItem) {
       observableModel.insertElement(
           statechart, 'items', statechart.items.length - 1, newItem);
