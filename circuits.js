@@ -74,7 +74,8 @@ var editingModel = (function() {
     },
 
     getConnectedConnections: function (items, copying) {
-      let model = this.model,
+      let self = this, model = this.model,
+          getReference = model.referencingModel.getReference,
           itemsAndChildren = new Set();
       items.forEach(function(item) {
         visit(item, isElement, function(item) {
@@ -83,8 +84,8 @@ var editingModel = (function() {
       });
       let connections = [];
       visit(this.diagram, isWire, function(item) {
-        let contains1 = itemsAndChildren.has(item._srcId),
-            contains2 = itemsAndChildren.has(item._dstId);
+        let contains1 = itemsAndChildren.has(getReference(item, 'srcId')),
+            contains2 = itemsAndChildren.has(getReference(item, 'dstId'));
         if (copying) {
           if (contains1 && contains2)
             connections.push(item);
@@ -220,7 +221,6 @@ var editingModel = (function() {
         // Add the function's inputs and outputs.
         let master = srcPin._master;
         if (master) {
-          observableModel.removeElement(junction, 'inputs', 0);
           master.inputs.forEach(function(input) {
             observableModel.insertElement(
               junction, 'inputs', junction.inputs.length, { type: input.type });
@@ -229,8 +229,6 @@ var editingModel = (function() {
             observableModel.insertElement(
               junction, 'outputs', junction.outputs.length, { type: output.type });
           });
-          observableModel.insertElement(
-            junction, 'inputs', junction.inputs.length, { type: srcPin.type });
         } else {
           // Single output value.
           observableModel.insertElement(
@@ -258,10 +256,12 @@ var editingModel = (function() {
       });
       // Separate connections into incoming, outgoing, and internal. Populate
       // input/output maps, and incoming and outgoing pins.
-      let wires = [], incomingWires = [], outgoingWires = [], interiorWires = [];
+      let wires = [], incomingWires = [], outgoingWires = [], interiorWires = [],
+          getReference = this.model.referencingModel.getReference;
       visit(this.diagram, isWire, function(wire) {
         wires.push(wire);
-        let src = wire._srcId, dst = wire._dstId,
+        let src = getReference(wire, 'srcId'),
+            dst = getReference(wire, 'dstId'),
             srcInside = elementSet.has(src),
             dstInside = elementSet.has(dst);
         if (srcInside) {
@@ -472,7 +472,8 @@ var editingModel = (function() {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           selectionModel = model.selectionModel,
-          observableModel = model.observableModel;
+          observableModel = model.observableModel,
+          getReference = model.referencingModel.getReference;
 
       let groupInfo = this.collectGroupInfo(elements);
       // Adjust selection to contain just the grouped objects.
@@ -504,7 +505,7 @@ var editingModel = (function() {
       // there are multiple wires incoming from it.
       let incomingOutputMap = new Map();
       groupInfo.incomingWires.forEach(function(wire) {
-        let src = wire._srcId, index = wire.srcPin,
+        let src = getReference(wire, 'srcId'), index = wire.srcPin,
             srcPin = src._master.outputs[index],
             outputs = incomingOutputMap.get(src);
         if (outputs === undefined) {
@@ -523,7 +524,7 @@ var editingModel = (function() {
       groupInfo.outgoingWires.forEach(function(wire) {
         if (!elementOnly)
           observableModel.changeValue(wire, 'srcPin', outputs.length);
-        let dst = wire._dstId, dstPin = dst._master.inputs[wire.dstPin];
+        let dst = getReference(wire, 'dstId'), dstPin = dst._master.inputs[wire.dstPin];
         let name = self.makePinName(dst, dstPin);
         outputs.push({ type: dstPin.type, name: name });
       });
@@ -866,8 +867,8 @@ Renderer.prototype.hitTestElement = function(element, p, tol, mode) {
 
 Renderer.prototype.layoutWire = function(wire) {
   var referencingModel = this.model.referencingModel,
-      c1 = referencingModel.resolveReference(wire, 'srcId'),
-      c2 = referencingModel.resolveReference(wire, 'dstId'),
+      c1 = referencingModel.getReference(wire, 'srcId'),
+      c2 = referencingModel.getReference(wire, 'dstId'),
       p1 = wire._p1, p2 = wire._p2;
 
   if (c1)

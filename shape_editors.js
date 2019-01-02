@@ -1183,8 +1183,8 @@ Editor.prototype.updateVisibility = function(model) {
 Editor.prototype.updateEdge = function(edge) {
   var transformableModel = this.model.transformableModel,
       dx = edge.dx, dy = edge.dy;
-  edge._rotation = Math.atan2(-dy, dx);
-  edge._scale = Math.sqrt(dx * dx + dy * dy);
+  edge.rotation = Math.atan2(-dy, dx);
+  edge.scale = Math.sqrt(dx * dx + dy * dy);
   transformableModel.update(edge);
 }
 

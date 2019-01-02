@@ -294,22 +294,22 @@ test("referencingModel", function() {
   dataModels.observableModel.extend(model);
 
   var test = dataModels.referencingModel.extend(model);
-  deepEqual(child1._refId, root);
-  deepEqual(child1._refId, model.referencingModel.resolveId(child1.refId));
+  deepEqual(test.getReference(child1, 'refId'), root);
+  deepEqual(test.getReference(child1, 'refId'), model.referencingModel.resolveId(child1.refId));
 
   model.observableModel.changeValue(root, 'child', child2);
-  deepEqual(child2._refId, root);
+  deepEqual(test.getReference(child2, 'refId'), root);
 
   model.observableModel.changeValue(child2, 'refId', 2);
-  deepEqual(child2._refId, child1);
+  deepEqual(test.getReference(child2, 'refId'), child1);
 
   model.observableModel.insertElement(root, 'items', root.items.length - 1, child3);
-  deepEqual(child3._firstId, root);
-  deepEqual(child3._secondId, child2);
+  deepEqual(test.getReference(child3, 'firstId'), root);
+  deepEqual(test.getReference(child3, 'secondId'), child2);
 
   // unresolvable id causes ref to be set to 'null'.
   model.observableModel.changeValue(child2, 'refId', 88);
-  deepEqual(child2._refId, undefined);
+  deepEqual(test.getReference(child2, 'refId'), undefined);
   deepEqual(model.referencingModel.resolveId(child2.refId), undefined);
 });
 

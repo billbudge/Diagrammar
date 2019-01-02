@@ -76,6 +76,7 @@ var editingModel = (function() {
 
     getConnectedConnections: function (items, copying) {
       var model = this.model,
+          getReference = model.referencingModel.getReference,
           itemsAndChildren = new Set();
       items.forEach(function(item) {
         visit(item, isContainable, function(item) {
@@ -84,8 +85,8 @@ var editingModel = (function() {
       });
       var connections = [];
       visit(this.statechart, isConnection, function(item) {
-        var contains1 = itemsAndChildren.has(item._srcId);
-        var contains2 = itemsAndChildren.has(item._dstId);
+        var contains1 = itemsAndChildren.has(getReference(item, 'srcId'));
+        var contains2 = itemsAndChildren.has(getReference(item, 'dstId'));
         if (copying) {
           if (contains1 && contains2)
             connections.push(item);
