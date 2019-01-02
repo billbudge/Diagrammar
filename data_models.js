@@ -27,14 +27,13 @@ let dataModel = (function () {
       return value && typeof value == 'object';
     },
 
-    // Returns true iff. item.attr is a true property (not cached state.)
+    // Returns true iff. item[attr] is a true property.
     isProperty: function (item, attr) {
       return attr != 'id' &&
-             item.hasOwnProperty(attr) &&
-             (attr.toString().charAt(0) != '_');
+             item.hasOwnProperty(attr);
     },
 
-    // Returns true iff. item.attr is a property that references an item.
+    // Returns true iff. item[attr] is a property that references an item.
     isReference: function (item, attr) {
       let attrName = attr.toString(),
           position = attrName.length - 2;
