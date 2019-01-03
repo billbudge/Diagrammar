@@ -299,7 +299,8 @@ let editingModel = (function() {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           selectionModel = model.selectionModel,
-          observableModel = model.observableModel;
+          observableModel = model.observableModel,
+          viewModel = model.viewModel;
 
       let groupInfo = this.collectGroupInfo(elements);
       console.log(groupInfo);
@@ -313,7 +314,7 @@ let editingModel = (function() {
           let junction = {
             type: 'element',
             name: self.makePinName(element, dstPin),
-            x: element.x - 32, y: element.y,  // TODO add pin y
+            x: element.x - 32, y: viewModel.pinToPoint(element, pin, true).y,
             master: '$',
             junction: 'input',
             inputs: [],
@@ -342,7 +343,7 @@ let editingModel = (function() {
           let junction = {
             type: 'element',
             name: self.makePinName(element, srcPin),
-            x: element.x + 128, y: element.y,  // TODO add pin y
+            x: element.x + 128, y: viewModel.pinToPoint(element, pin, false).y,
             master: '$',
             junction: 'output',
             inputs: [
@@ -471,9 +472,10 @@ let editingModel = (function() {
     makeGroup: function(elements, elementOnly, abstract) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
+          getReference = model.referencingModel.getReference,
           selectionModel = model.selectionModel,
           observableModel = model.observableModel,
-          getReference = model.referencingModel.getReference;
+          viewModel = model.viewModel;
 
       let groupInfo = this.collectGroupInfo(elements);
       // Adjust selection to contain just the grouped objects.
@@ -488,6 +490,8 @@ let editingModel = (function() {
       });
 
       let groupItems = selectionModel.contents();
+      let extents = viewModel.getItemRects(groupInfo.elementSet);
+
       // Add input/output pins for connected 'input' and 'output' junctions.
       let inputs = [], outputs = [];
       groupItems.forEach(function(item) {
@@ -557,8 +561,8 @@ let editingModel = (function() {
         type: 'element',
         name: name,
         master: '$',
-        x: 160,
-        y: 160,
+        x: extents.x, // TODO center properly
+        y: extents.y,
         inputs: inputs,
         outputs: outputs,
       };
@@ -627,7 +631,7 @@ let editingModel = (function() {
     dataModels.instancingModel.extend(model);
     dataModels.editingModel.extend(model);
 
-    var instance = Object.create(model.editingModel);
+    let instance = Object.create(model.editingModel);
     instance.prototype = Object.getPrototypeOf(instance);
     Object.assign(instance, proto);
 
@@ -635,6 +639,71 @@ let editingModel = (function() {
     instance.diagram = model.root;
 
     model.editingModel = instance;
+    return instance;
+  }
+
+  return {
+    extend: extend,
+  }
+})();
+
+//------------------------------------------------------------------------------
+
+let viewModel = (function() {
+  let proto = {
+    getItemRect: function (item) {
+      let transform = this.model.transformableModel.getAbsolute(item),
+          x = transform[4], y = transform[5], w, h;
+      switch (item.type) {
+        case 'element':
+          w = item[_master][_width];
+          h = item[_master][_height];
+          break;
+      }
+      return { x: x, y: y, w: w, h: h };
+    },
+
+    getItemRects: function(items) {
+      let xMin = Number.POSITIVE_INFINITY, yMin = Number.POSITIVE_INFINITY,
+          xMax = -Number.POSITIVE_INFINITY, yMax = -Number.POSITIVE_INFINITY;
+      for (let item of items) {
+        let rect = this.getItemRect(item);
+        xMin = Math.min(xMin, rect.x);
+        yMin = Math.min(yMin, rect.y);
+        xMax = Math.max(xMax, rect.x + rect.w);
+        yMax = Math.max(yMax, rect.y + rect.h);
+      }
+      return { x: xMin, y: yMin, w: xMax - xMin, h: yMax - yMin };
+    },
+
+    pinToPoint: function(item, index, input) {
+      let rect = this.getItemRect(item),
+          x = rect.x, y = rect.y, w = rect.w, h = rect.h,
+          pin;
+      if (input) {
+        pin = item[_master].inputs[index];
+      } else {
+        pin = item[_master].outputs[index];
+        x += w;
+      }
+      y += pin[_y] + pin[_height] / 2;
+
+      return {
+        x: x,
+        y: y,
+        nx: input ? -1 : 1,
+        ny: 0,
+      }
+    },
+  }
+
+  function extend(model) {
+    dataModels.transformableModel.extend(model);
+
+    let instance = Object.create(proto);
+    instance.model = model;
+
+    model.viewModel = instance;
     return instance;
   }
 
@@ -689,9 +758,7 @@ Renderer.prototype.getItemRect = function(item) {
 
 Renderer.prototype.pinToPoint = function(item, pin, input) {
   let rect = this.getItemRect(item),
-      x = rect.x, y = rect.y, w = rect.w, h = rect.h,
-      textSize = this.theme.fontSize,
-      offset = pin[_height] / 2;
+      x = rect.x, y = rect.y, w = rect.w, h = rect.h;
   // Element.
   if (input) {
     pin = item[_master].inputs[pin];
@@ -1196,9 +1263,11 @@ function Editor(model, textInputController) {
   dataModels.transformableModel.extend(palette);
   palette.dataModel.addInitializer(initialize);
   palette.dataModel.initialize();
+  viewModel.extend(palette);
 
   model.dataModel.addInitializer(initialize);
   model.dataModel.initialize();
+  viewModel.extend(model);
 
   // Track changes fields that require re-initialization.
   model.observableModel.addHandler('changed', function (change) {

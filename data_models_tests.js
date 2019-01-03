@@ -30,7 +30,7 @@ test("dataModel properties", function() {
     id: 1,
     prop: 'foo',
     arrayProp: [ 1, 2, 3 ],
-    _nonProp: 'bar',
+    _anotherProp: 'bar',
     someId: 42,
   }
   var model = { root: testData };
@@ -38,11 +38,11 @@ test("dataModel properties", function() {
   ok(!test.isProperty(testData, 'id'));
   ok(test.isProperty(testData, 'prop'));
   ok(test.isProperty(testData, 'arrayProp'));
-  ok(!test.isProperty(testData, '_nonProp'));
+  ok(test.isProperty(testData, '_anotherProp'));
   ok(test.isReference(testData, 'someId'));
   var nameValues = [];
   test.visitProperties(testData, function(item, attr) { nameValues.push(attr); });
-  deepEqual(nameValues, [ 'prop', 'arrayProp', 'someId' ]);
+  deepEqual(nameValues, [ 'prop', 'arrayProp', '_anotherProp', 'someId' ]);
   var refValues = [];
   test.visitReferences(testData, function(item, attr) { refValues.push(attr); });
   deepEqual(refValues, [ 'someId' ]);
