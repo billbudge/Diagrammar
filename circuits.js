@@ -206,32 +206,48 @@ let editingModel = (function() {
       return itemToAdd;
     },
 
-    canConnectPins: function(srcItem, srcPin, dstItem, dstPin) {
+    // TODO implement connection checking
+    canConnect: function(wire) {
+      let getReference = this.model.referencingModel.getReference,
+          srcItem = getReference(wire, 'srcId'),
+          srcPin = srcItem[_master].outputs[wire.srcPin],
+          dstItem = getReference(wire, 'dstId'),
+          dstPin = dstItem[_master].inputs[wire.dstPin];
       return srcPin.type == '*' || dstPin.type == '*' ||
              srcPin.type == dstPin.type;
     },
 
-    connectPins: function(srcItem, srcPin, dstItem, dstPin) {
-      let model = this.model, observableModel = model.observableModel;
+    connect: function(wire) {
+      let model = this.model,
+          observableModel = model.observableModel,
+          getReference = this.model.referencingModel.getReference,
+          srcItem = getReference(wire, 'srcId'),
+          srcPin = srcItem[_master].outputs[wire.srcPin],
+          dstItem = getReference(wire, 'dstId'),
+          dstPin = dstItem[_master].inputs[wire.dstPin];
       if (srcPin.type == '*') {
         // srcPin takes dstPin's type.
-        observableModel.changeValue(srcPin, 'type', dstPin.type);
-        model.dataModel.initialize(srcItem);
+        if (dstPin.type != '*') {
+          observableModel.changeValue(srcPin, 'type', dstPin.type);
+          model.dataModel.initialize(srcItem);
+        }
       } else if (dstPin.type == '*') {
-        // dstPin takes srcPin's type.
         observableModel.changeValue(dstPin, 'type', srcPin.type);
-        if (isJunction(dstItem) && dstItem.junction == 'apply') {
+        // dstPin takes srcPin's type.
+        if (isJunction(dstItem) && dstItem.junction == 'opener') {
           // If srcPin is a function, add those inputs and output pins.
           let master = srcPin[_master];
           if (master) {
             master.inputs.forEach(function(input) {
+              // Note we're inserting before the original input 0.
               observableModel.insertElement(
-                dstItem, 'inputs', dstItem.inputs.length, { type: input.type });
+                dstItem, 'inputs', dstItem.inputs.length - 1, { type: input.type });
             });
             master.outputs.forEach(function(output) {
               observableModel.insertElement(
                 dstItem, 'outputs', dstItem.outputs.length, { type: output.type });
             });
+            observableModel.changeValue(wire, 'dstPin', dstItem.inputs.length - 1);
           }
         }
         model.dataModel.initialize(dstItem);
@@ -303,7 +319,6 @@ let editingModel = (function() {
           viewModel = model.viewModel;
 
       let groupInfo = this.collectGroupInfo(elements);
-      console.log(groupInfo);
 
       // Add junctions for disconnected pins on selected elements.
       groupInfo.inputMap.forEach(function(elementInputs, element) {
@@ -366,7 +381,7 @@ let editingModel = (function() {
       });
     },
 
-    getClosureType: function(element, inputWires) {
+    getClosedType: function(element, inputWires) {
       // Create a function type whose inputs are the disconnected inputs,
       // and whose outputs are all the outputs, connected or not.
       let fnType = '[';
@@ -379,11 +394,56 @@ let editingModel = (function() {
         fnType += output.type;
       });
       fnType += ']';
-      console.log('closure', fnType);
+      console.log('closedType', fnType);
       return fnType;
     },
 
-    getAbstractType: function(element) {
+    closeFunction: function(element, incomingWires, outgoingWireArrays) {
+      let self = this, model = this.model,
+          dataModel = model.dataModel,
+          observableModel = model.observableModel;
+      let newElement = {
+        type: 'element',
+        master: '$',
+        element: element,
+        x: element.x,
+        y: element.y,
+        inputs: [],
+        outputs: [],
+      };
+
+      let id = dataModel.assignId(newElement);
+
+      // Add only connected input pins to inputs.
+      element[_master].inputs.forEach(function(pin, i) {
+        let incomingWire = incomingWires[i];
+        if (incomingWire) {
+          newElement.inputs.push({ type: pin.type, name: pin.name });
+          // remap wire to new element and pin.
+          observableModel.changeValue(incomingWire, 'dstId', id);
+          observableModel.changeValue(incomingWire, 'dstPin', inputs.length - 1);
+        }
+      });
+      // Add only connected output pins to outputs.
+      element[_master].outputs.forEach(function(pin, i) {
+        let outgoingWires = outgoingWireArrays[i];
+        if (outgoingWires.length > 0) {
+          newElement.outputs.push({ type: pin.type, name: pin.name });
+          outgoingWires.forEach(function(outgoingWire, j) {
+            // remap wire to new element and pin.
+            observableModel.changeValue(outgoingWire, 'srcId', id);
+            observableModel.changeValue(outgoingWire, 'srcPin', outputs.length - 1);
+          });
+        }
+      });
+
+      newElement.outputs.push({ type: self.getClosedType(element, incomingWires) });
+
+      dataModel.initialize(newElement);
+      return newElement;
+    },
+
+    getOpenedType: function(element) {
       // Create a function type whose inputs are all inputs, and whose outputs
       // are all outputs.
       let fnType = '[';
@@ -395,15 +455,57 @@ let editingModel = (function() {
         fnType += output.type;
       });
       fnType += ']';
-      console.log('abstract', fnType);
+      console.log('openedType', fnType);
       return fnType;
+    },
+
+    openFunction: function(element, incomingWires, outgoingWireArrays) {
+      let self = this, model = this.model,
+          dataModel = model.dataModel,
+          observableModel = model.observableModel;
+
+      let newElement = {
+        type: 'element',
+        master: '$',
+        element: element,
+        x: element.x,
+        y: element.y,
+        inputs: [],
+        outputs: [],
+      };
+
+      let id = dataModel.assignId(newElement);
+
+      // Add all input pins to inputs.
+      element[_master].inputs.forEach(function(pin, i) {
+        let incomingWire = incomingWires[i];
+        newElement.inputs.push({ type: pin.type, name: pin.name });
+        // remap wire to new element and pin.
+        if (incomingWire) {
+          observableModel.changeValue(incomingWire, 'dstId', id);
+          observableModel.changeValue(incomingWire, 'dstPin', inputs.length - 1);
+        }
+      });
+      // Add all output pins to outputs.
+      element[_master].outputs.forEach(function(pin, i) {
+        let outgoingWires = outgoingWireArrays[i];
+        newElement.outputs.push({ type: pin.type, name: pin.name });
+        outgoingWires.forEach(function(outgoingWire, j) {
+          // remap wires to new element and pin.
+          observableModel.changeValue(outgoingWire, 'srcId', id);
+          observableModel.changeValue(outgoingWire, 'srcPin', outputs.length - 1);
+        });
+      });
+
+      newElement.inputs.push({type: self.getOpenedType(element) });
+
+      dataModel.initialize(newElement);
+      return newElement;
     },
 
     closeOrOpenFunctions: function(elements, closing) {
       let self = this, model = this.model,
-          dataModel = model.dataModel,
-          selectionModel = model.selectionModel,
-          observableModel = model.observableModel;
+          selectionModel = model.selectionModel;
 
       let groupInfo = this.collectGroupInfo(elements);
       // Adjust selection to contain just the elements.
@@ -413,61 +515,18 @@ let editingModel = (function() {
       // Open or close each non-junction element.
       groupInfo.elementSet.forEach(function(element) {
         if (isJunction(element)) return;
-        let inputMap = groupInfo.inputMap.get(element),
-            outputMap = groupInfo.outputMap.get(element);
+        let incomingWires = groupInfo.inputMap.get(element),
+            outgoingWireArrays = groupInfo.outputMap.get(element);
 
-        let inputs = [], outputs = [];
-        let closureElement = {
-          type: 'element',
-          master: '$',
-          x: element.x,
-          y: element.y,
-          inputs: inputs,
-          outputs: outputs,
-        };
-
-        dataModel.assignId(closureElement);
-        let id = dataModel.getId(closureElement);
-
-        // Add only connected input pins to closure's inputs.
-        element[_master].inputs.forEach(function(pin, i) {
-          let incomingWire = inputMap[i];
-          if (incomingWire || !closing) {
-            inputs.push({ type: pin.type, name: pin.name });
-            // remap wire to new closure element and pin.
-            if (incomingWire) {
-              observableModel.changeValue(incomingWire, 'dstId', id);
-              observableModel.changeValue(incomingWire, 'dstPin', inputs.length - 1);
-            }
-          }
-        });
-        // Add all output pins to closure's outputs.
-        element[_master].outputs.forEach(function(pin, i) {
-          let outgoingWires = outputMap[i];
-          if (outgoingWires.length > 0 || !closing) {
-            console.log(outgoingWires);
-            outputs.push({ type: pin.type, name: pin.name });
-            outgoingWires.forEach(function(outgoingWire, j) {
-              // remap wires to new closure element.
-              observableModel.changeValue(outgoingWire, 'srcId', id);
-            });
-          }
-        });
-
-        if (closing)
-          outputs.push({ type: self.getClosureType(element, inputMap) });
-        else
-          inputs.push({type: self.getAbstractType(element) });
-
-        closureElement.element = element;
-
-        dataModel.initialize(closureElement);
+        let newElement = closing ?
+          self.closeFunction(element, incomingWires, outgoingWireArrays) :
+          self.openFunction(element, incomingWires, outgoingWireArrays);
 
         selectionModel.remove(element);
-        selectionModel.add(closureElement)
+        selectionModel.add(newElement)
 
         self.deleteItem(element);
-        self.addItem(closureElement, self.diagram);
+        self.addItem(newElement, self.diagram);
       });
     },
 
@@ -1144,7 +1203,7 @@ function Editor(model, textInputController) {
         { type: 'element',
           x: 72, y: 8,
           master: '$',
-          junction: 'apply',
+          junction: 'opener',
           inputs: [
             { type: '*' },
           ],
@@ -1684,13 +1743,7 @@ Editor.prototype.onEndDrag = function(p) {
       editingModel.deleteItem(dragItem);
       selectionModel.remove(dragItem);
     } else {
-      // Adjust pins on junction elements.
-      let referencingModel = model.referencingModel,
-      srcItem = referencingModel.getReference(dragItem, 'srcId'),
-      srcPin = srcItem[_master].outputs[dragItem.srcPin],
-      dstItem = referencingModel.getReference(dragItem, 'dstId'),
-      dstPin = dstItem[_master].inputs[dragItem.dstPin];
-      editingModel.connectPins(srcItem, srcPin, dstItem, dstPin);
+      editingModel.connect(dragItem);
     }
   }
 

@@ -20,7 +20,8 @@ test("dataModel ids", function() {
   deepEqual(test, model.dataModel);
   deepEqual(21, test.nextId);
   var item = {};
-  test.assignId(item);
+  let id = test.assignId(item);
+  deepEqual(21, id);
   deepEqual(21, item.id);
   deepEqual(22, test.nextId);
 });

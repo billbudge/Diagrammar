@@ -20,7 +20,9 @@ let dataModel = (function () {
 
     assignId: function (item) {
       // 0 is not a valid id in this model.
-      item.id = this.nextId++;
+      let id = this.nextId++;
+      item.id = id;
+      return id;
     },
 
     isItem: function (value) {
