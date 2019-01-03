@@ -66,7 +66,11 @@ function reverseVisit(item, filterFn, itemFn) {
 
 //------------------------------------------------------------------------------
 
-let _master = Symbol('master');
+let _master = Symbol('master'),
+    _y = Symbol('y'), _baseline = Symbol('baseline'),
+    _width = Symbol('width'), _height = Symbol('height'),
+    _p1 = Symbol('p1'), _p2 = Symbol('p2'), _bezier = Symbol('bezier');
+
 
 let editingModel = (function() {
   let proto = {
@@ -558,10 +562,10 @@ let editingModel = (function() {
       groupItems.forEach(function(item) {
         if (isInputJunction(item) && groupInfo.outputMap.get(item)[0].length) {
           let pin = item.outputs[0];
-          inputs.push({ type: pin.type, name: item.name });
+          inputs.push({ type: pin.type, name: item.name, [_y]: item.y });
         } else if (isOutputJunction(item) && groupInfo.inputMap.get(item)[0]) {
           let pin = item.inputs[0];
-          outputs.push({ type: pin.type, name: item.name });
+          outputs.push({ type: pin.type, name: item.name, [_y]: item.y });
         }
         if (!elementOnly)
           self.deleteItem(item);
@@ -580,7 +584,7 @@ let editingModel = (function() {
         let name = self.makePinName(src, srcPin);
         if (outputs[index] === undefined) {
           outputs[index] = inputs.length;
-          inputs.push({ type: srcPin.type, name: name });
+          inputs.push({ type: srcPin.type, name: name, [_y]: viewModel.pinToPoint(src, index, false) });
         }
         if (!elementOnly)
           observableModel.changeValue(wire, 'dstPin', outputs[index]);
@@ -589,26 +593,19 @@ let editingModel = (function() {
       groupInfo.outgoingWires.forEach(function(wire) {
         if (!elementOnly)
           observableModel.changeValue(wire, 'srcPin', outputs.length);
-        let dst = getReference(wire, 'dstId'), dstPin = dst[_master].inputs[wire.dstPin];
+        let dst = getReference(wire, 'dstId'), index = wire.dstPin,
+            dstPin = dst[_master].inputs[index];
         let name = self.makePinName(dst, dstPin);
-        outputs.push({ type: dstPin.type, name: name });
+        outputs.push({ type: dstPin.type, name: name, [_y]: viewModel.pinToPoint(dst, index, true)  });
       });
-      // groupInfo.inputMap.forEach(function(elementInputs, element) {
-      //   elementInputs.forEach(function(connected, i) {
-      //     if (connected) return;
-      //     let dstPin = element[_master].inputs[i];
-      //     let name = self.makePinName(element, dstPin);
-      //     inputs.push({ type: dstPin.type, name: name });
-      //   });
-      // });
-      // groupInfo.outputMap.forEach(function(elementOutputs, element) {
-      //   elementOutputs.forEach(function(connected, i) {
-      //     if (connected) return;
-      //     let srcPin = element[_master].outputs[i];
-      //     let name = self.makePinName(element, srcPin);
-      //     outputs.push({ type: srcPin.type, name: name });
-      //   });
-      // });
+
+      // Sort inputs and outputs by y.
+      function comparePins(a, b) {
+        return a[_y] - b[_y];
+      }
+      inputs.sort(comparePins);
+      outputs.sort(comparePins);
+
       // Create the new group element.
       let name = '';
       if (groupInfo.elementSet.size == 1) {
@@ -775,10 +772,6 @@ let viewModel = (function() {
 let normalMode = 1,
     highlightMode = 2,
     hotTrackMode = 3;
-
-let _y = Symbol('y'), _baseline = Symbol('baseline'),
-    _width = Symbol('width'), _height = Symbol('height'),
-    _p1 = Symbol('p1'), _p2 = Symbol('p2'), _bezier = Symbol('bezier');
 
 function Renderer(theme) {
   this.theme = theme || diagrams.theme.create();
