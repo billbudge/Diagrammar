@@ -399,7 +399,7 @@ let editingModel = (function() {
       return fnType;
     },
 
-    closeOrOpenFunctions: function(elements, close) {
+    closeOrOpenFunctions: function(elements, closing) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           selectionModel = model.selectionModel,
@@ -410,12 +410,11 @@ let editingModel = (function() {
       groupInfo.wires.forEach(function(wire) {
         selectionModel.remove(wire);
       });
-      // Close each non-junction element.
+      // Open or close each non-junction element.
       groupInfo.elementSet.forEach(function(element) {
         if (isJunction(element)) return;
         let inputMap = groupInfo.inputMap.get(element),
-            outputMap = groupInfo.outputMap.get(element),
-            closureType = close ? self.getClosureType(element, inputMap) : self.getAbstractType(element);
+            outputMap = groupInfo.outputMap.get(element);
 
         let inputs = [], outputs = [];
         let closureElement = {
@@ -433,7 +432,7 @@ let editingModel = (function() {
         // Add only connected input pins to closure's inputs.
         element[_master].inputs.forEach(function(pin, i) {
           let incomingWire = inputMap[i];
-          if (incomingWire || !close) {
+          if (incomingWire || !closing) {
             inputs.push({ type: pin.type, name: pin.name });
             // remap wire to new closure element and pin.
             if (incomingWire) {
@@ -444,18 +443,21 @@ let editingModel = (function() {
         });
         // Add all output pins to closure's outputs.
         element[_master].outputs.forEach(function(pin, i) {
-          outputs.push({ type: pin.type, name: pin.name });
           let outgoingWires = outputMap[i];
-          outgoingWires.forEach(function(outgoingWire, j) {
-            // remap wires to new closure element.
-            observableModel.changeValue(outgoingWire, 'srcId', id);
-          });
+          if (outgoingWires.length > 0 || !closing) {
+            console.log(outgoingWires);
+            outputs.push({ type: pin.type, name: pin.name });
+            outgoingWires.forEach(function(outgoingWire, j) {
+              // remap wires to new closure element.
+              observableModel.changeValue(outgoingWire, 'srcId', id);
+            });
+          }
         });
 
-        if (close)
-          outputs.push({ type: closureType });
+        if (closing)
+          outputs.push({ type: self.getClosureType(element, inputMap) });
         else
-          inputs.push({type: closureType });
+          inputs.push({type: self.getAbstractType(element) });
 
         closureElement.element = element;
 
@@ -469,7 +471,7 @@ let editingModel = (function() {
       });
     },
 
-    makeGroup: function(elements, elementOnly, abstract) {
+    makeGroup: function(elements, elementOnly) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           getReference = model.referencingModel.getReference,
@@ -548,9 +550,6 @@ let editingModel = (function() {
       //     outputs.push({ type: srcPin.type, name: name });
       //   });
       // });
-      if (abstract) {
-        inputs.push({ type: this.getAbstractType(groupInfo) });
-      }
       // Create the new group element.
       let name = '';
       if (groupInfo.elementSet.size == 1) {
