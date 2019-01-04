@@ -345,6 +345,7 @@ let editingModel = (function() {
           };
           self.newItem(junction);
           self.addItem(junction, self.diagram);
+          selectionModel.add(junction);
           let wire = {
             type: 'wire',
             srcId: junction.id,
@@ -374,6 +375,7 @@ let editingModel = (function() {
           };
           self.newItem(junction);
           self.addItem(junction, self.diagram);
+          selectionModel.add(junction);
           let wire = {
             type: 'wire',
             srcId: element.id,
@@ -1705,6 +1707,7 @@ Editor.prototype.onEndDrag = function(p) {
     // Clone the new item, since we're about to roll back the transaction. We
     // do this to collapse all of the edits into a single insert operation.
     newItem = dragItem = model.instancingModel.clone(newItem);
+    model.dataModel.initialize(newItem);
     transactionModel.cancelTransaction();
     transactionModel.beginTransaction(drag.name);
   }

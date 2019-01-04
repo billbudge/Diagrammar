@@ -796,14 +796,11 @@ let instancingModel = (function () {
       if (!this.model.dataModel.isItem(item))
         return item;
 
-      let self = this, dataModel = this.model.dataModel,
-          copy = {};
-        if (item.type == 'wire') {
-          console.log(item);
-        }
+      let copy = item.constructor(),
+          self = this, dataModel = this.model.dataModel;
       dataModel.visitProperties(item, function (item, attr) {
         copy[attr] = self.clone(item[attr], map);
-     });
+      });
       // Assign unique id after cloning all properties.
       if (!Array.isArray(copy)) {
         dataModel.assignId(copy);
