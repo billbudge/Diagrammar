@@ -414,6 +414,7 @@ let editingModel = (function() {
       let newElement = {
         type: 'element',
         master: '$',
+        name: element[_master].name,
         element: element,
         x: element.x,
         y: element.y,
@@ -476,6 +477,7 @@ let editingModel = (function() {
       let newElement = {
         type: 'element',
         master: '$',
+        name: element[_master].name,
         element: element,
         x: element.x,
         y: element.y,
@@ -506,7 +508,7 @@ let editingModel = (function() {
         });
       });
 
-      inputs.push({type: self.getOpenedType(element) });
+      inputs.push({ type: self.getOpenedType(element) });
 
       dataModel.initialize(newElement);
       return newElement;
@@ -674,6 +676,9 @@ let editingModel = (function() {
       this.reduceSelection();
       this.model.transactionModel.beginTransaction(
         'group' + elementOnly ? '(elementOnly)' : '');
+      // TODO make elementOnly compatible with grouping
+      if (!elementOnly)
+        this.completeGroup(this.model.selectionModel.contents());
       this.makeGroup(this.model.selectionModel.contents(), elementOnly);
       this.model.transactionModel.endTransaction();
     },
@@ -1648,6 +1653,14 @@ Editor.prototype.onDrag = function(p0, p) {
       src, dst, srcId, dstId, t1, t2;
   switch (drag.type) {
     case 'paletteItem':
+      if (isElement(dragItem))
+        hitInfo = this.getFirstHit(hitList, isContainerTarget);
+      var snapshot = transactionModel.getSnapshot(dragItem);
+      if (snapshot) {
+        observableModel.changeValue(dragItem, 'x', snapshot.x + dx);
+        observableModel.changeValue(dragItem, 'y', snapshot.y + dy);
+      }
+      break;
     case 'moveSelection':
       if (isElement(dragItem)) {
         hitInfo = this.getFirstHit(hitList, isContainerTarget);
@@ -1871,3 +1884,4 @@ var circuit_data =
   "items": [
   ]
 }
+

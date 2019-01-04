@@ -181,7 +181,7 @@ canvas.addEventListener("touchmove", onMouseMove);
 canvas.addEventListener('dblclick', onDoubleClick);
 
 document.addEventListener('keydown', function(e) {
-  if (e.keyCode == 85) {  // 'u'
+  if (e.keyCode == 85 && (e.ctrlKey || e.metaKey)) {  // command 'u'
     switch (editorName) {
       case 'shapes':
         editorName = 'circuits';
