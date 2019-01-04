@@ -1705,9 +1705,8 @@ Editor.prototype.onEndDrag = function(p) {
       newItem = this.removeTemporaryItem();
   if (newItem) {
     // Clone the new item, since we're about to roll back the transaction. We
-    // do this to collapse all of the edits into a single insert operation.
+    // do this to collapse all of the changes into a single insert transaction.
     newItem = dragItem = model.instancingModel.clone(newItem);
-    model.dataModel.initialize(newItem);
     transactionModel.cancelTransaction();
     transactionModel.beginTransaction(drag.name);
   }
