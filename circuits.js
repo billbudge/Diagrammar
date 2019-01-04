@@ -193,10 +193,11 @@ let editingModel = (function() {
           oldParent = hierarchicalModel.getParent(item);
       if (oldParent === parent)
         return;
-      let transformableModel = model.transformableModel,
-          toParent = transformableModel.getToParent(item, parent);
-      geometry.matMulPt(item, toParent);
-      var itemToAdd = item;
+      if (!isWire(item)) {
+        let transformableModel = model.transformableModel,
+            toParent = transformableModel.getToParent(item, parent);
+        geometry.matMulPt(item, toParent);
+      }
       if (isDiagram(parent)) {
         if (!Array.isArray(parent.items))
           model.observableModel.changeValue(parent, 'items', []);
@@ -204,13 +205,13 @@ let editingModel = (function() {
       if (oldParent !== parent) {
         if (oldParent)            // if null, it's a new item.
           this.deleteItem(item);  // notifies observer
-        parent.items.push(itemToAdd);
+        parent.items.push(item);
         model.observableModel.onElementInserted(parent, 'items', parent.items.length - 1);
       }
-      return itemToAdd;
+      return item;
     },
 
-    // TODO implement connection checking
+    // TODO implement connection checking / coercing
     canConnect: function(wire) {
       let getReference = this.model.referencingModel.getReference,
           srcItem = getReference(wire, 'srcId'),
@@ -252,6 +253,7 @@ let editingModel = (function() {
                 dstItem, 'outputs', dstItem.outputs.length, { type: output.type });
             });
             observableModel.changeValue(wire, 'dstPin', dstItem.inputs.length - 1);
+            observableModel.changeValue(dstItem, 'junction', undefined);
           }
         }
         model.dataModel.initialize(dstItem);
@@ -405,15 +407,16 @@ let editingModel = (function() {
     closeFunction: function(element, incomingWires, outgoingWireArrays) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
-          observableModel = model.observableModel;
+          observableModel = model.observableModel,
+          inputs = [], outputs = [];
       let newElement = {
         type: 'element',
         master: '$',
         element: element,
         x: element.x,
         y: element.y,
-        inputs: [],
-        outputs: [],
+        inputs: inputs,
+        outputs: outputs,
       };
 
       let id = dataModel.assignId(newElement);
@@ -422,7 +425,7 @@ let editingModel = (function() {
       element[_master].inputs.forEach(function(pin, i) {
         let incomingWire = incomingWires[i];
         if (incomingWire) {
-          newElement.inputs.push({ type: pin.type, name: pin.name });
+          inputs.push({ type: pin.type, name: pin.name });
           // remap wire to new element and pin.
           observableModel.changeValue(incomingWire, 'dstId', id);
           observableModel.changeValue(incomingWire, 'dstPin', inputs.length - 1);
@@ -432,7 +435,7 @@ let editingModel = (function() {
       element[_master].outputs.forEach(function(pin, i) {
         let outgoingWires = outgoingWireArrays[i];
         if (outgoingWires.length > 0) {
-          newElement.outputs.push({ type: pin.type, name: pin.name });
+          outputs.push({ type: pin.type, name: pin.name });
           outgoingWires.forEach(function(outgoingWire, j) {
             // remap wire to new element and pin.
             observableModel.changeValue(outgoingWire, 'srcId', id);
@@ -441,7 +444,7 @@ let editingModel = (function() {
         }
       });
 
-      newElement.outputs.push({ type: self.getClosedType(element, incomingWires) });
+      outputs.push({ type: self.getClosedType(element, incomingWires) });
 
       dataModel.initialize(newElement);
       return newElement;
@@ -466,16 +469,16 @@ let editingModel = (function() {
     openFunction: function(element, incomingWires, outgoingWireArrays) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
-          observableModel = model.observableModel;
-
+          observableModel = model.observableModel,
+          inputs = [], outputs = [];
       let newElement = {
         type: 'element',
         master: '$',
         element: element,
         x: element.x,
         y: element.y,
-        inputs: [],
-        outputs: [],
+        inputs: inputs,
+        outputs: outputs,
       };
 
       let id = dataModel.assignId(newElement);
@@ -483,7 +486,7 @@ let editingModel = (function() {
       // Add all input pins to inputs.
       element[_master].inputs.forEach(function(pin, i) {
         let incomingWire = incomingWires[i];
-        newElement.inputs.push({ type: pin.type, name: pin.name });
+        inputs.push({ type: pin.type, name: pin.name });
         // remap wire to new element and pin.
         if (incomingWire) {
           observableModel.changeValue(incomingWire, 'dstId', id);
@@ -493,7 +496,7 @@ let editingModel = (function() {
       // Add all output pins to outputs.
       element[_master].outputs.forEach(function(pin, i) {
         let outgoingWires = outgoingWireArrays[i];
-        newElement.outputs.push({ type: pin.type, name: pin.name });
+        outputs.push({ type: pin.type, name: pin.name });
         outgoingWires.forEach(function(outgoingWire, j) {
           // remap wires to new element and pin.
           observableModel.changeValue(outgoingWire, 'srcId', id);
@@ -501,7 +504,7 @@ let editingModel = (function() {
         });
       });
 
-      newElement.inputs.push({type: self.getOpenedType(element) });
+      inputs.push({type: self.getOpenedType(element) });
 
       dataModel.initialize(newElement);
       return newElement;
@@ -827,10 +830,17 @@ Renderer.prototype.pinToPoint = function(item, pin, input) {
   }
 }
 
-function drawValue(renderer, x, y) {
-  var ctx = renderer.ctx, r = renderer.knobbyRadius, d = 2 * r;
+function drawValue(renderer, x, y, type) {
+  let ctx = renderer.ctx, r = renderer.knobbyRadius;
   ctx.lineWidth = 0.5;
-  ctx.strokeRect(x, y, d, d);
+  if (type == 'v') {
+    let d = 2 * r;
+    ctx.strokeRect(x, y, d, d);
+  } else {
+    ctx.beginPath();
+    ctx.arc(x + r, y + r, r, 0, Math.PI * 2, true);
+    ctx.stroke();
+  }
 }
 
 const spacing = 6;
@@ -956,7 +966,7 @@ Renderer.prototype.drawMaster = function(master, x, y, mode) {
 
 Renderer.prototype.drawPin = function(pin, x, y, mode) {
   if (pin.type == 'v' || pin.type == '*') {
-    drawValue(this, x, y);
+    drawValue(this, x, y, pin.type);
   } else {
     let master = pin[_master];
     this.ctx.scale(shrink, shrink);
@@ -1563,7 +1573,7 @@ Editor.prototype.onBeginDrag = function(p0) {
       type: 'wire',
       dstId: circuitId,
       dstPin: mouseHitInfo.input,
-      _p2: cp0,
+      [_p2]: cp0,
     };
     drag = {
       type: 'connectingW1',
@@ -1579,7 +1589,7 @@ Editor.prototype.onBeginDrag = function(p0) {
       type: 'wire',
       srcId: circuitId,
       srcPin: mouseHitInfo.output,
-      _p2: cp0,
+      [_p2]: cp0,
     };
     drag = {
       type: 'connectingW2',
@@ -1636,24 +1646,17 @@ Editor.prototype.onDrag = function(p0, p) {
       src, dst, srcId, dstId, t1, t2;
   switch (drag.type) {
     case 'paletteItem':
-      if (isElement(dragItem))
-        hitInfo = this.getFirstHit(hitList, isContainerTarget);
-      var snapshot = transactionModel.getSnapshot(dragItem);
-      if (snapshot) {
-        observableModel.changeValue(dragItem, 'x', snapshot.x + dx);
-        observableModel.changeValue(dragItem, 'y', snapshot.y + dy);
-      }
-      break;
     case 'moveSelection':
-      if (isElement(dragItem))
+      if (isElement(dragItem)) {
         hitInfo = this.getFirstHit(hitList, isContainerTarget);
-      selectionModel.forEach(function(item) {
-        var snapshot = transactionModel.getSnapshot(item);
-        if (snapshot) {
-          observableModel.changeValue(item, 'x', snapshot.x + dx);
-          observableModel.changeValue(item, 'y', snapshot.y + dy);
-        }
-      });
+        selectionModel.forEach(function(item) {
+          let snapshot = transactionModel.getSnapshot(item);
+          if (snapshot) {
+            observableModel.changeValue(item, 'x', snapshot.x + dx);
+            observableModel.changeValue(item, 'y', snapshot.y + dy);
+          }
+        });
+      }
       break;
     case 'connectingW1':
       hitInfo = this.getFirstHit(hitList, isOutputPin);
@@ -1702,7 +1705,6 @@ Editor.prototype.onEndDrag = function(p) {
     // Clone the new item, since we're about to roll back the transaction. We
     // do this to collapse all of the edits into a single insert operation.
     newItem = dragItem = model.instancingModel.clone(newItem);
-    model.dataModel.initialize(newItem);
     transactionModel.cancelTransaction();
     transactionModel.beginTransaction(drag.name);
   }
@@ -1867,5 +1869,3 @@ var circuit_data =
   "items": [
   ]
 }
-
-

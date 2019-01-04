@@ -796,11 +796,14 @@ let instancingModel = (function () {
       if (!this.model.dataModel.isItem(item))
         return item;
 
-      let copy = item.constructor(),
-          self = this, dataModel = this.model.dataModel;
+      let self = this, dataModel = this.model.dataModel,
+          copy = {};
+        if (item.type == 'wire') {
+          console.log(item);
+        }
       dataModel.visitProperties(item, function (item, attr) {
         copy[attr] = self.clone(item[attr], map);
-      });
+     });
       // Assign unique id after cloning all properties.
       if (!Array.isArray(copy)) {
         dataModel.assignId(copy);
@@ -1076,7 +1079,8 @@ let transformableModel = (function () {
     // Getter functions which determine transform parameters. Override if these
     // don't fit your model.
     hasTransform: function (item) {
-      return item.x !== undefined && item.y !== undefined;
+      return (typeof item.x == 'number') &&
+             (typeof item.y == 'number');
     },
 
     getX: function(item) {
