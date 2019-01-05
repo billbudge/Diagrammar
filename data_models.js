@@ -796,8 +796,9 @@ let instancingModel = (function () {
       if (!this.model.dataModel.isItem(item))
         return item;
 
-      let copy = item.constructor(),
-          self = this, dataModel = this.model.dataModel;
+      let self = this, dataModel = this.model.dataModel;
+      // Use constructor() to properly clone arrays, sets, maps, etc.
+      let copy = item.constructor();
       dataModel.visitProperties(item, function (item, attr) {
         copy[attr] = self.clone(item[attr], map);
       });

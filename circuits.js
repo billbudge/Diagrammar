@@ -580,8 +580,8 @@ let editingModel = (function() {
         }
       });
       // Add pins for incoming wires. Only add a single pin for each source pin,
-      // even if there are multiple wires incoming from it.
-      function addUniqueSource(wire, srcMap, groupPins, wireAttr) {
+      // even if there are multiple wires incoming from it. Reroute wires.
+      function addUniqueSource(wire, srcMap, groupPins, wirePin) {
         let src = getReference(wire, 'srcId'),
             srcPins = src[_master].outputs,
             srcIndices = srcMap.get(src);
@@ -589,16 +589,18 @@ let editingModel = (function() {
           srcIndices = new Array(srcPins.length);
           srcMap.set(src, srcIndices);
         }
-        let index = wire.srcPin, srcPin = srcPins[index],
-            name = self.makePinName(src, srcPin);
+        let index = wire.srcPin, srcPin = srcPins[index];
         if (srcIndices[index] === undefined) {
           srcIndices[index] = groupPins.length;
-          groupPins.push({ type: srcPin.type, name: name, [_y]: viewModel.pinToPoint(src, index, false) });
+          groupPins.push({
+            type: srcPin.type,
+            name: self.makePinName(src, srcPin),
+            [_y]: viewModel.pinToPoint(src, index, false),
+          });
         }
         if (!elementOnly)
-          observableModel.changeValue(wire, wireAttr, srcIndices[index]);
+          observableModel.changeValue(wire, wirePin, srcIndices[index]);
       }
-
       let incomingSrcMap = new Map();
       groupInfo.incomingWires.forEach(function(wire) {
         addUniqueSource(wire, incomingSrcMap, inputs, 'dstPin');
@@ -607,7 +609,8 @@ let editingModel = (function() {
       groupInfo.outgoingWires.forEach(function(wire) {
         addUniqueSource(wire, outgoingSrcMap, outputs, 'srcPin');
       });
-      // Add pins for disconnected input and output pins.
+
+      // TODO Add pins for disconnected input and output pins.
       groupItems.forEach(function(item) {
         if (!elementOnly)
           self.deleteItem(item);
