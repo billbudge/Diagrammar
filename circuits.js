@@ -189,7 +189,8 @@ let editingModel = (function() {
     },
 
     addItem: function(item, parent) {
-      let model = this.model, hierarchicalModel = model.hierarchicalModel,
+      let model = this.model,
+          hierarchicalModel = model.hierarchicalModel,
           oldParent = hierarchicalModel.getParent(item);
       if (oldParent === parent)
         return;
@@ -314,7 +315,7 @@ let editingModel = (function() {
     },
 
     makePinName: function(element, pin) {
-      return pin.name;// || element.name || element[_master].name;
+      return pin.name || element.name;// || element[_master].name;
     },
 
     completeGroup: function(elements) {
@@ -550,38 +551,33 @@ let editingModel = (function() {
           viewModel = model.viewModel;
 
       let groupInfo = this.collectGroupInfo(elements);
-      // Adjust selection to contain just the grouped objects.
-      groupInfo.incomingWires.forEach(function(wire) {
-        selectionModel.remove(wire);
-      });
-      groupInfo.outgoingWires.forEach(function(wire) {
-        selectionModel.remove(wire);
-      });
-      groupInfo.interiorWires.forEach(function(wire) {
-        selectionModel.add(wire);
-      });
-
+      // Adjust selection to contain just the interior elements and wires.
+      groupInfo.incomingWires.forEach(wire => selectionModel.remove(wire));
+      groupInfo.outgoingWires.forEach(wire => selectionModel.remove(wire));
+      groupInfo.interiorWires.forEach(wire => selectionModel.add(wire));
       let groupItems = selectionModel.contents();
-      let extents = viewModel.getItemRects(groupInfo.elementSet);
 
-      let inputs = [], outputs = [];
-      // Add input/output pins for 'input' and 'output' junctions that are
-      // connected to other group items.
-      groupInfo.interiorWires.forEach(function(wire) {
-        let src = getReference(wire, 'srcId'),
-            dst = getReference(wire, 'dstId'),
-            srcPin = src[_master].outputs[wire.srcPin],
-            dstPin = dst[_master].inputs[wire.dstPin];
-        if (isInputJunction(src)) {
-          inputs.push({ type: srcPin.type, name: src.name, [_y]: src.y });
-        }
-        if (isOutputJunction(dst)) {
-          outputs.push({ type: dstPin.type, name: dst.name, [_y]: dst.y });
-        }
-      });
-      // Add pins for incoming wires. Only add a single pin for each source pin,
-      // even if there are multiple wires incoming from it. Reroute wires.
-      function addUniqueSource(wire, srcMap, groupPins, wirePin) {
+      // Create the new group element.
+      let extents = viewModel.getItemRects(groupInfo.elementSet),
+          inputs = [], outputs = [];
+      let groupElement = {
+        type: 'element',
+        master: '$',
+        x: extents.x + extents.width / 2,
+        y: extents.y + extents.height / 2,
+        inputs: inputs,
+        outputs: outputs,
+      };
+
+      if (!elementOnly) {
+        groupElement.groupItems = groupItems;
+        groupItems.forEach(item => self.deleteItem(item));
+      }
+
+      this.newItem(groupElement);
+      let groupId = dataModel.getId(groupElement);
+
+      function addUniqueSource(wire, srcMap, groupPins) {
         let src = getReference(wire, 'srcId'),
             srcPins = src[_master].outputs,
             srcIndices = srcMap.get(src);
@@ -598,67 +594,59 @@ let editingModel = (function() {
             [_y]: viewModel.pinToPoint(src, index, false),
           });
         }
-        if (!elementOnly)
-          observableModel.changeValue(wire, wirePin, srcIndices[index]);
+        return srcIndices[index];
       }
-      let incomingSrcMap = new Map();
-      groupInfo.incomingWires.forEach(function(wire) {
-        addUniqueSource(wire, incomingSrcMap, inputs, 'dstPin');
-      });
-      let outgoingSrcMap = new Map();
-      groupInfo.outgoingWires.forEach(function(wire) {
-        addUniqueSource(wire, outgoingSrcMap, outputs, 'srcPin');
-      });
+      let incomingSrcMap = new Map(), outgoingSrcMap = new Map();
+      // Add input/output pins for 'input' and 'output' junctions that are
+      // connected by interior wires to other group items.
+      groupInfo.interiorWires.forEach(function(wire) {
+        let src = getReference(wire, 'srcId'),
+            dst = getReference(wire, 'dstId'),
+            srcPin = src[_master].outputs[wire.srcPin],
+            dstPin = dst[_master].inputs[wire.dstPin];
+        if (isInputJunction(src)) {
+          let index = addUniqueSource(wire, incomingSrcMap, inputs);
+          if (!elementOnly) {
+            observableModel.changeValue(wire, 'srcId', groupId);
+            observableModel.changeValue(wire, 'srcPin', index);
+          }
+        }
+        if (isOutputJunction(dst)) {
+          outputs.push({ type: dstPin.type, name: dst.name, [_y]: dst.y });
+          if (!elementOnly) {
+            observableModel.changeValue(wire, 'dstId', groupId);
+            observableModel.changeValue(wire, 'dstPin', outputs.length - 1);
+          }
+        }
 
-      // TODO Add pins for disconnected input and output pins.
-      groupItems.forEach(function(item) {
-        if (!elementOnly)
-          self.deleteItem(item);
+      });
+      // Add pins for incoming wires. Only add a single pin for each source pin,
+      // even if there are multiple wires incoming from it. Reroute wires.
+      groupInfo.incomingWires.forEach(function(wire) {
+        let index = addUniqueSource(wire, incomingSrcMap, inputs);
+        if (!elementOnly) {
+          observableModel.changeValue(wire, 'dstId', groupId);
+          observableModel.changeValue(wire, 'dstPin', index);
+        }
+      });
+      groupInfo.outgoingWires.forEach(function(wire) {
+        let index = addUniqueSource(wire, outgoingSrcMap, outputs);
+        if (!elementOnly) {
+          observableModel.changeValue(wire, 'srcId', groupId);
+          observableModel.changeValue(wire, 'srcPin', index);
+        }
       });
 
       // Sort inputs and outputs by y.
-      function comparePins(a, b) {
-        return a[_y] - b[_y];
-      }
+      let comparePins = (a, b) => a[_y] - b[_y];
       inputs.sort(comparePins);
       outputs.sort(comparePins);
 
-      // Create the new group element.
-      let name = '';
-      if (groupInfo.elementSet.size == 1) {
-        let element = groupInfo.elementSet.values().next().value;
-        name = element.name || element[_master].name;
-      }
-      let groupElement = {
-        type: 'element',
-        name: name,
-        master: '$',
-        x: extents.x, // TODO center properly
-        y: extents.y,
-        inputs: inputs,
-        outputs: outputs,
-      };
-      if (!elementOnly) {
-        // 'groupItems' is part of data model but not traversed in editor.
-        groupElement.groupItems = groupItems;
-      }
-      this.newItem(groupElement);
-      this.addItem(groupElement, this.diagram);
-      if (elementOnly)
-        selectionModel.add(groupElement);
-      else
-        selectionModel.set(groupElement);
+      selectionModel.set(groupElement);
 
-      if (!elementOnly) {
-        // Remap the external connections.
-        let id = dataModel.getId(groupElement);
-        groupInfo.incomingWires.forEach(function(wire) {
-          observableModel.changeValue(wire, 'dstId', id);
-        });
-        groupInfo.outgoingWires.forEach(function(wire) {
-          observableModel.changeValue(wire, 'srcId', id);
-        });
-      }
+      this.addItem(groupElement, this.diagram);
+      dataModel.initialize(groupElement);
+      return groupElement;
     },
 
     doComplete: function() {
@@ -745,7 +733,7 @@ let viewModel = (function() {
         xMax = Math.max(xMax, rect.x + rect.w);
         yMax = Math.max(yMax, rect.y + rect.h);
       }
-      return { x: xMin, y: yMin, w: xMax - xMin, h: yMax - yMin };
+      return { x: xMin, y: yMin, width: xMax - xMin, height: yMax - yMin };
     },
 
     pinToPoint: function(item, index, input) {
