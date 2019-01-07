@@ -32,6 +32,10 @@ function isOutputJunction(item) {
   return item.type == 'element' && item.junction == 'output';
 }
 
+function isGroup(item) {
+  return isElement(item) && item.groupItems;
+}
+
 function needsLayout(item) {
   return isWire(item) || isImmediate(item);
 }
@@ -184,10 +188,6 @@ let editingModel = (function() {
       this.prototype.doPaste.call(this);
     },
 
-    setAttr: function(item, attr, value) {
-      this.model.observableModel.changeValue(item, attr, value);
-    },
-
     addItem: function(item, parent) {
       let model = this.model,
           hierarchicalModel = model.hierarchicalModel,
@@ -223,10 +223,46 @@ let editingModel = (function() {
              srcPin.type == dstPin.type;
     },
 
+    backPropagateType: function(dstPin, srcItem, srcIndex) {
+      let self = this, model = this.model, dataModel = model.dataModel,
+          getReference = model.referencingModel.getReference,
+          observableModel = model.observableModel,
+          srcPin = srcItem[_master].outputs[srcIndex];
+      if (srcPin.type == dstPin.type) return;
+      observableModel.changeValue(srcPin, 'type', dstPin.type);
+      if (isGroup(srcItem)) {
+        let groupId = dataModel.getId(srcItem);
+        srcItem.groupItems.forEach(function(item) {
+          if (!isWire(item) || item.dstId != groupId) return;
+          self.backPropagateType(dstPin, getReference(item, 'srcId'), item.srcPin);
+        });
+      }
+      model.dataModel.initialize(srcItem);
+    },
+
+    frontPropagateType: function(srcPin, dstPin, dstItem, dstIndex) {
+      let self = this, model = this.model, dataModel = model.dataModel,
+          getReference = model.referencingModel.getReference,
+          observableModel = model.observableModel;
+      observableModel.changeValue(dstPin, 'type', srcPin.type);
+      if (dstItem && isGroup(dstItem)) {
+        let groupId = dataModel.getId(dstItem);
+        dstItem.groupItems.forEach(function(item) {
+          if (!isWire(item) || item.srcId != groupId || item.srcPin != dstIndex) return;
+          if (item.dstId != groupId) {
+            let subItem =
+          }
+          let dstPin = dstItem[_master].outputs[item.srcPin];
+          self.frontPropagateType(srcPin, dstPin);
+        });
+      }
+      model.dataModel.initialize(dstItem);
+    },
+
     connect: function(wire) {
       let model = this.model,
           observableModel = model.observableModel,
-          getReference = this.model.referencingModel.getReference,
+          getReference = model.referencingModel.getReference,
           srcItem = getReference(wire, 'srcId'),
           srcPin = srcItem[_master].outputs[wire.srcPin],
           dstItem = getReference(wire, 'dstId'),
@@ -234,11 +270,10 @@ let editingModel = (function() {
       if (srcPin.type == '*') {
         // srcPin takes dstPin's type.
         if (dstPin.type != '*') {
-          observableModel.changeValue(srcPin, 'type', dstPin.type);
-          model.dataModel.initialize(srcItem);
+          this.backPropagateType(dstPin, srcItem, wire.srcPin);
         }
       } else if (dstPin.type == '*') {
-        observableModel.changeValue(dstPin, 'type', srcPin.type);
+        this.frontPropagateType(srcPin, dstPin, dstItem, wire.dstPin);
         // dstPin takes srcPin's type.
         if (isJunction(dstItem) && dstItem.junction == 'opener') {
           // If srcPin is a function, add those inputs and output pins.
@@ -256,8 +291,8 @@ let editingModel = (function() {
             observableModel.changeValue(wire, 'dstPin', dstItem.inputs.length - 1);
             observableModel.changeValue(dstItem, 'junction', undefined);
           }
+          model.dataModel.initialize(dstItem);
         }
-        model.dataModel.initialize(dstItem);
       }
     },
 
@@ -650,32 +685,36 @@ let editingModel = (function() {
     },
 
     doComplete: function() {
+      let model = this.model;
       this.reduceSelection();
-      this.model.transactionModel.beginTransaction('complete');
-      this.completeGroup(this.model.selectionModel.contents());
-      this.model.transactionModel.endTransaction();
+      model.transactionModel.beginTransaction('complete');
+      this.completeGroup(model.selectionModel.contents());
+      model.transactionModel.endTransaction();
     },
 
     doClosure: function() {
+      let model = this.model;
       this.reduceSelection();
-      this.model.transactionModel.beginTransaction('closure');
-      this.closeOrOpenFunctions(this.model.selectionModel.contents(), true);
-      this.model.transactionModel.endTransaction();
+      model.transactionModel.beginTransaction('closure');
+      this.closeOrOpenFunctions(model.selectionModel.contents(), true);
+      model.transactionModel.endTransaction();
     },
 
     doAbstract: function() {
+      let model = this.model;
       this.reduceSelection();
-      this.model.transactionModel.beginTransaction('abstract');
-      this.closeOrOpenFunctions(this.model.selectionModel.contents(), false);
-      this.model.transactionModel.endTransaction();
+      model.transactionModel.beginTransaction('abstract');
+      this.closeOrOpenFunctions(model.selectionModel.contents(), false);
+      model.transactionModel.endTransaction();
     },
 
     doGroup: function(elementOnly) {
+      let model = this.model;
       this.reduceSelection();
-      this.model.transactionModel.beginTransaction(
+      model.transactionModel.beginTransaction(
         'group' + elementOnly ? '(elementOnly)' : '');
-      this.makeGroup(this.model.selectionModel.contents(), elementOnly);
-      this.model.transactionModel.endTransaction();
+      this.makeGroup(model.selectionModel.contents(), elementOnly);
+      model.transactionModel.endTransaction();
     },
   }
 
@@ -999,7 +1038,7 @@ Renderer.prototype.hitTestElement = function(element, p, tol, mode) {
 }
 
 Renderer.prototype.layoutWire = function(wire) {
-  var referencingModel = this.model.referencingModel,
+  let referencingModel = this.model.referencingModel,
       c1 = referencingModel.getReference(wire, 'srcId'),
       c2 = referencingModel.getReference(wire, 'dstId'),
       p1 = wire[_p1], p2 = wire[_p2];
