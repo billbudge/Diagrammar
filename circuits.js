@@ -32,6 +32,10 @@ function isOutputJunction(item) {
   return item.type == 'element' && item.junction == 'output';
 }
 
+function isOpenerJunction(item) {
+  return item.type == 'element' && item.junction == 'opener';
+}
+
 function isGroup(item) {
   return isElement(item) && item.groupItems;
 }
@@ -250,7 +254,7 @@ let editingModel = (function() {
       return pin.name || element.name;// || element[_master].name;
     },
 
-    makeConnectedInputJunction: function(element, pin) {
+    connectInput: function(element, pin) {
       let viewModel = this.model.viewModel,
           dstPin = element[_master].inputs[pin],
           pinPoint = viewModel.pinToPoint(element, pin, true);
@@ -277,10 +281,10 @@ let editingModel = (function() {
       };
       this.newItem(wire);
       this.addItem(wire);
-      return junction;
+      return { junction: junction, wire: wire };
     },
 
-    makeConnectedOutputJunction: function(element, pin) {
+    connectOutput: function(element, pin) {
       let viewModel = this.model.viewModel,
           srcPin = element[_master].outputs[pin],
           pinPoint = viewModel.pinToPoint(element, pin, false);
@@ -307,7 +311,7 @@ let editingModel = (function() {
       };
       this.newItem(wire);
       this.addItem(wire);
-      return junction;
+      return { junction: junction, wire: wire };
     },
 
     completeGroup: function(elements) {
@@ -320,16 +324,16 @@ let editingModel = (function() {
         elementInputs.forEach(function(connectedWire, pin) {
           if (connectedWire)
             return;
-          let junction = self.makeConnectedInputJunction(element, pin);
-          selectionModel.add(junction);
+          let connection = self.connectInput(element, pin);
+          selectionModel.add(connection.junction);
         });
       });
       graphInfo.outputMap.forEach(function(elementOutputs, element) {
         elementOutputs.forEach(function(wires, pin) {
           if (wires.length > 0)
             return;
-          let junction = self.makeConnectedOutputJunction(element, pin);
-          selectionModel.add(junction);
+          let connection = self.connectOutput(element, pin);
+          selectionModel.add(connection.junction);
         });
       });
     },
@@ -566,21 +570,16 @@ let editingModel = (function() {
       graphInfo.incomingWires.forEach(function(wire) {
         let index = addUniqueSource(wire, incomingSrcMap, inputs);
         if (!elementOnly) {
+          // If this is the first instance of the source...
           if (index == inputs.length - 1) {
             // Add an input junction to represent the source.
-            groupItems.push({
-              type: 'element',
-              junction: 'input',
-            });
+            let element = referencingModel.getReference(wire, 'dstId'),
+                pin = wire.dstPin,
+                connection = self.connectInput(element, pin);
+            connection.junction.pinIndex = index;
+            groupItems.push(connection.junction, connection.wire);
+            graphInfo.interiorWires.push(connection.wire);
           }
-          // Add an internal wire to record the connection.
-          groupItems.push({
-            type: 'wire',
-            srcId: groupId,
-            srcPin: index,
-            dstId: wire.dstId,
-            dstPin: wire.dstPin,
-          });
           observableModel.changeValue(wire, 'dstId', groupId);
           observableModel.changeValue(wire, 'dstPin', index);
         }
@@ -588,18 +587,48 @@ let editingModel = (function() {
       graphInfo.outgoingWires.forEach(function(wire) {
         let index = addUniqueSource(wire, outgoingSrcMap, outputs);
         if (!elementOnly) {
-          // Add an internal wire to record the connection.
-          groupItems.push({
-            type: 'wire',
-            srcId: wire.srcId,
-            srcPin: wire.srcPin,
-            dstId: groupId,
-            dstPin: index,
-          });
+          // If this is the first instance of the source...
+          if (index == outputs.length - 1) {
+            // Add an input junction to represent the source.
+            let element = referencingModel.getReference(wire, 'srcId'),
+                pin = wire.srcPin,
+                connection = self.connectOutput(element, pin);
+            connection.junction.pinIndex = index;
+            groupItems.push(connection.junction, connection.wire);
+            graphInfo.interiorWires.push(connection.wire);
+          }
           observableModel.changeValue(wire, 'srcId', groupId);
           observableModel.changeValue(wire, 'srcPin', index);
         }
       });
+      // Compute wildcard pass throughs.
+      let passThroughs = new Set();
+      graphInfo.interiorWires.forEach(function(wire) {
+        let src = referencingModel.getReference(wire, 'srcId'),
+            srcPin = src[_master].outputs[wire.srcPin];
+        // Trace wires, starting at input junctions.
+        if (!isInputJunction(src) || srcPin.type != '*')
+          return;
+        let srcPinIndex = src.pinIndex,
+            activeWires = [];
+        activeWires.push(wire);
+        while (activeWires.length) {
+          wire = activeWires.pop();
+          let dst = referencingModel.getReference(wire, 'dstId'),
+              dstPin = dst[_master].inputs[wire.dstPin];
+          if (isOutputJunction(dst) && dstPin.type == '*') {
+            passThroughs.add([srcPinIndex, dst.pinIndex]);
+          } else if (dst.passThroughs) {
+            dst.passThroughs.forEach(function(passThrough) {
+              if (passThrough[0] == wire.dstPin) {
+                let outgoingWires = graphInfo.outputMap.get(dst)[passThrough[1]];
+                outgoingWires.forEach(wire => activeWires.push(wire));
+              }
+            });
+          }
+        }
+      });
+      groupElement.passThroughs = Array.from(passThroughs);
 
       // Sort inputs and outputs by y.
       let comparePins = (a, b) => a[_y] - b[_y];
@@ -639,86 +668,113 @@ let editingModel = (function() {
       model.dataModel.initialize(dstItem);
     },
 
-    // Returns a single input pin index, or undefined.
-    backTrace: function(srcItem, srcIndex) {
-      if (!isGroup(srcItem)) return;
+    makeWireConsistent: function(wire, graphInfo) {
+      let self = this, model = this.model,
+          dataModel = model.dataModel,
+          observableModel = model.observableModel,
+          referencingModel = model.referencingModel,
+          srcItem = referencingModel.getReference(wire, 'srcId'),
+          srcPin = srcItem[_master].outputs[wire.srcPin],
+          dstItem = referencingModel.getReference(wire, 'dstId'),
+          dstPin = dstItem[_master].inputs[wire.dstPin];
+      if (srcPin.type != dstPin.type) {
+        if(srcPin.type == '*') {
+          this.makeConsistentForward(wire, graphInfo);
+          observableModel.changeValue(srcPin, 'type', dstPin.type);
+          // if (isGroup(srcItem)) {
+          //   this.makeGroupSourcesConsistent(srcItem, wire.srcPin, dstPin);
+          // }
+          dataModel.initialize(srcItem);
+        } else if (dstPin.type == '*') {
+          observableModel.changeValue(dstPin, 'type', srcPin.type);
+          if (isOpenerJunction(dstItem)) {
+            self.expandOpener(wire);
+          } else if (isGroup(dstItem)) {
 
-      // TODO add junction and wire to incoming and outgoing wires when grouping
-      // TODO add helper functions to complete a particular input/output pin (see CompleteGroup).
-
-      // let self = this, model = this.model, dataModel = model.dataModel,
-      //     referencingModel = model.referencingModel,
-      //     observableModel = model.observableModel;
-      // let groupId = dataModel.getId(srcItem);
-      // // Search for corresponding junction, or wire.
-      // let junction = srcItem.groupItems.find(function(item, i) {
-      //   return isOutputJunction(item) &&
-      // });
-      // srcItem.groupItems.forEach(function(subItem) {
-      //   if (isWire(subItem)) {
-      //     if (subItem.dstId == groupId && subItem.dstPin == srcIndex) {
-      //       let wireSrcItem = referencingModel.getReference(subItem, 'srcId'),
-      //           wireSrcIndex = subItem.srcPin;
-      //       if (isInputJunction(wireSrcItem))
-      //         return subItem.pinIndex;
-      //       return self.backTrace(
-      //         referencingModel.getReference(subItem, 'srcId'), subItem.dstPin);
-      //     }
-      //   } else if (isOutputJunction(subItem)) {
-      //   }
-      //   if (!isWire(subItem) || item.dstId != groupId) return;  // TODO enter sub-groups
-      //   self.backPropagateType(dstPin, getReference(item, 'srcId'), item.srcPin);
-      // });
+          }
+          dataModel.initialize(dstItem);
+        }
+      }
     },
 
-    // frontTrace: function(srcPin, dstPin, dstItem, dstIndex) {
-    //   let self = this, model = this.model, dataModel = model.dataModel,
-    //       getReference = model.referencingModel.getReference,
-    //       observableModel = model.observableModel;
-    //   observableModel.changeValue(dstPin, 'type', srcPin.type);
-    //   if (dstItem && isGroup(dstItem)) {
-    //     let groupId = dataModel.getId(dstItem);
-    //     dstItem.groupItems.forEach(function(item) {
-    //       if (!isWire(item) || item.srcId != groupId || item.srcPin != dstIndex) return;
-    //       // if (item.dstId != groupId) {
-    //       //   let subItem =
-    //       // }
-    //       let dstPin = dstItem[_master].outputs[item.srcPin];
-    //       self.frontPropagateType(srcPin, dstPin);
-    //     });
-    //   }
-    //   model.dataModel.initialize(dstItem);
-    // },
-    makeConsistent: function(transaction) {
+    makeWireConsistentForward: function(wire, graphInfo) {
       let self = this, model = this.model,
+          dataModel = model.dataModel,
           observableModel = model.observableModel,
           referencingModel = model.referencingModel;
-      // Get graph info for the entire diagram.
-      let graphInfo = this.collectGraphInfo(this.diagram.items);
-      // Propagate types along wires with wildcards.
-      let wiresToUpdate = [];
-      graphInfo.interiorWires.forEach(function(wire) {
-        let srcItem = referencingModel.getReference(wire, 'srcId'),
-            srcPin = srcItem[_master].outputs[wire.srcPin],
-            dstItem = referencingModel.getReference(wire, 'dstId'),
-            dstPin = dstItem[_master].inputs[wire.dstPin];
-        if (srcPin.type != dstPin.type) {
-          if(srcPin.type == '*') {
-            observableModel.changeValue(srcPin, 'type', dstPin.type);
-            // let connectedIndex = self.backTrace(srcItem, wire.srcPin);
-            // if (connectedIndex !== undefined) {
-            //   wire = graphInfo.inputMap.get(srcItem)[connectedIndex];
-            // }
-            model.dataModel.initialize(srcItem);
-          } else if (dstPin.type == '*') {
-            observableModel.changeValue(dstPin, 'type', srcPin.type);
-            if (isJunction(dstItem) && dstItem.junction == 'opener') {
-              self.expandOpener(wire);
+      let origSrc = referencingModel.getReference(wire, 'srcId'),
+          origSrcPin = origSrc[_master].outputs[wire.srcPin];
+      let activeWires = [wire];
+      while (activeWires.length) {
+        wire = activeWires.pop();
+        let src = referencingModel.getReference(wire, 'srcId'),
+            srcPin = src[_master].outputs[wire.srcPin],
+            dst = referencingModel.getReference(wire, 'dstId'),
+            dstPin = dst[_master].inputs[wire.dstPin];
+        if (srcPin.type == dstPin.type) return;
+        observableModel.changeValue(dstPin, 'type', origSrcPin.type);
+        if (isOpenerJunction(dst)) {
+          this.expandOpener(wire);
+        } else if (dst.passThroughs) {
+          dst.passThroughs.forEach(function(passThrough) {
+            if (passThrough[0] == wire.dstPin) {
+              dstPin = dst[_master].outputs[passThrough[1]];
+              observableModel.changeValue(dstPin, 'type', origSrcPin.type);
+              let outgoingWires = graphInfo.outputMap.get(dst)[passThrough[1]];
+              outgoingWires.forEach(wire => activeWires.push(wire));
             }
-            model.dataModel.initialize(dstItem);
-          }
+          });
         }
-      });
+        dataModel.initialize(dst);
+      }
+    },
+
+    makeWireConsistentBackward: function(wire, graphInfo) {
+      let self = this, model = this.model,
+          dataModel = model.dataModel,
+          observableModel = model.observableModel,
+          referencingModel = model.referencingModel;
+      let origDst = referencingModel.getReference(wire, 'dstId'),
+          origDstPin = origDst[_master].inputs[wire.dstPin];
+      let activeWires = [wire];
+      while (activeWires.length) {
+        wire = activeWires.pop();
+        let src = referencingModel.getReference(wire, 'srcId'),
+            srcPin = src[_master].outputs[wire.srcPin],
+            dst = referencingModel.getReference(wire, 'dstId'),
+            dstPin = dst[_master].inputs[wire.dstPin];
+        if (srcPin.type == dstPin.type) return;
+        observableModel.changeValue(srcPin, 'type', origDstPin.type);
+        if (src.passThroughs) {
+          src.passThroughs.forEach(function(passThrough) {
+            if (passThrough[1] == wire.srcPin) {
+              srcPin = src[_master].inputs[passThrough[0]];
+              observableModel.changeValue(srcPin, 'type', origDstPin.type);
+              let incomingWire = graphInfo.inputMap.get(src)[passThrough[0]];
+              activeWires.push(incomingWire);
+            }
+          });
+        }
+        dataModel.initialize(src);
+      }
+    },
+
+    makeWireConsistent: function(wire) {
+      let self = this, model = this.model,
+          referencingModel = model.referencingModel,
+          srcItem = referencingModel.getReference(wire, 'srcId'),
+          srcPin = srcItem[_master].outputs[wire.srcPin],
+          dstItem = referencingModel.getReference(wire, 'dstId'),
+          dstPin = dstItem[_master].inputs[wire.dstPin];
+      if (srcPin.type != dstPin.type) {
+        // Collect info for entire graph.
+        let graphInfo = this.collectGraphInfo(this.diagram.items);
+        if (srcPin.type == '*') {
+          this.makeWireConsistentBackward(wire, graphInfo);
+        } else if (dstPin.type == '*') {
+          this.makeWireConsistentForward(wire, graphInfo);
+        }
+      }
     },
 
     doComplete: function() {
@@ -770,9 +826,6 @@ let editingModel = (function() {
     let instance = Object.create(model.editingModel);
     instance.prototype = Object.getPrototypeOf(instance);
     Object.assign(instance, proto);
-
-    model.transactionModel.addHandler('transactionEnding',
-      transaction => instance.makeConsistent(transaction));
 
     instance.model = model;
     instance.diagram = model.root;
@@ -1841,6 +1894,8 @@ Editor.prototype.onEndDrag = function(p) {
     if (!dragItem.srcId || !dragItem.dstId) {
       editingModel.deleteItem(dragItem);
       selectionModel.remove(dragItem);
+    } else {
+      editingModel.makeWireConsistent(dragItem);
     }
   }
 
