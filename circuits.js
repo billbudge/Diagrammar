@@ -2,7 +2,7 @@
 
 'use strict';
 
-var circuits = (function() {
+let circuits = (function() {
 
 function isContainer(item) {
   return item.type == 'diagram';
@@ -51,9 +51,13 @@ function isDiagram(item) {
 //------------------------------------------------------------------------------
 
 let _master = Symbol('master'),
-    _y = Symbol('y'), _baseline = Symbol('baseline'),
-    _width = Symbol('width'), _height = Symbol('height'),
-    _p1 = Symbol('p1'), _p2 = Symbol('p2'), _bezier = Symbol('bezier');
+    _y = Symbol('y'),
+    _baseline = Symbol('baseline'),
+    _width = Symbol('width'),
+    _height = Symbol('height'),
+    _p1 = Symbol('p1'),
+    _p2 = Symbol('p2'),
+    _bezier = Symbol('bezier');
 
 
 let editingModel = (function() {
@@ -63,9 +67,16 @@ let editingModel = (function() {
       model.selectionModel.set(model.hierarchicalModel.reduceSelection());
     },
 
+    getWireSrc: function(wire) {
+      return this.model.referencingModel.getReference(wire, 'srcId');
+    },
+
+    getWireDst: function(wire) {
+      return this.model.referencingModel.getReference(wire, 'dstId');
+    },
+
     getConnectedWires: function (items, copying) {
       let self = this, model = this.model,
-          referencingModel = model.referencingModel,
           itemSet = new Set();
       items.forEach(function(item) {
         if (isElement(item)) {
@@ -75,8 +86,8 @@ let editingModel = (function() {
       let wires = [];
       this.diagram.items.forEach(function(item) {
         if (isWire(item)) {
-          let containsSrc = itemSet.has(referencingModel.getReference(item, 'srcId')),
-              containsDst = itemSet.has(referencingModel.getReference(item, 'dstId'));
+          let containsSrc = itemSet.has(self.getWireSrc(item)),
+              containsDst = itemSet.has(self.getWireDst(item));
           if (copying) {
             if (containsSrc && containsDst)
               wires.push(item);
@@ -199,6 +210,7 @@ let editingModel = (function() {
     // wires, outgoing wires, for each element, an array of input wires
     // and an array of arrays of output wires.
     collectGraphInfo: function(items) {
+      let self = this;
       // Get elements and initialize input/output maps.
       let elementSet = new Set();
       let inputMap = new Map(), outputMap = new Map();
@@ -213,13 +225,12 @@ let editingModel = (function() {
       });
       // Separate wires into incoming, outgoing, and interior. Populate
       // input/output maps, and incoming and outgoing pins.
-      let wires = [], incomingWires = [], outgoingWires = [], interiorWires = [],
-          referencingModel = this.model.referencingModel;
+      let wires = [], incomingWires = [], outgoingWires = [], interiorWires = [];
       this.diagram.items.forEach(function(item) {
         if (isWire(item)) {
           wires.push(item);
-          let src = referencingModel.getReference(item, 'srcId'),
-              dst = referencingModel.getReference(item, 'dstId'),
+          let src = self.getWireSrc(item),
+              dst = self.getWireDst(item),
               srcInside = elementSet.has(src),
               dstInside = elementSet.has(dst);
           if (srcInside) {
@@ -493,7 +504,6 @@ let editingModel = (function() {
     makeGroup: function(elements, elementOnly) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
-          referencingModel = model.referencingModel,
           selectionModel = model.selectionModel,
           observableModel = model.observableModel,
           viewModel = model.viewModel;
@@ -517,16 +527,11 @@ let editingModel = (function() {
         outputs: outputs,
       };
 
-      if (!elementOnly) {
-        groupElement.groupItems = groupItems;
-        groupItems.forEach(item => self.deleteItem(item));
-      }
-
       this.newItem(groupElement);
       let groupId = dataModel.getId(groupElement);
 
       function addUniqueSource(wire, srcMap, inputsOrOutputs) {
-        let src = referencingModel.getReference(wire, 'srcId'),
+        let src = self.getWireSrc(wire),
             srcPins = src[_master].outputs,
             srcIndices = srcMap.get(src);
         if (srcIndices === undefined) {
@@ -539,7 +544,6 @@ let editingModel = (function() {
           inputsOrOutputs.push({
             type: srcPin.type,
             name: self.makePinName(src, srcPin),
-            [_y]: viewModel.pinToPoint(src, index, false).y,
           });
         }
         return srcIndices[index];
@@ -548,8 +552,8 @@ let editingModel = (function() {
       // Add input/output pins for 'input' and 'output' junctions that are
       // connected by interior wires to other group items.
       graphInfo.interiorWires.forEach(function(wire) {
-        let src = referencingModel.getReference(wire, 'srcId'),
-            dst = referencingModel.getReference(wire, 'dstId'),
+        let src = self.getWireSrc(wire),
+            dst = self.getWireDst(wire),
             srcPin = src[_master].outputs[wire.srcPin],
             dstPin = dst[_master].inputs[wire.dstPin];
         if (isInputJunction(src)) {
@@ -573,7 +577,7 @@ let editingModel = (function() {
           // If this is the first instance of the source...
           if (index == inputs.length - 1) {
             // Add an input junction to represent the source.
-            let element = referencingModel.getReference(wire, 'dstId'),
+            let element = self.getWireDst(wire),
                 pin = wire.dstPin,
                 connection = self.connectInput(element, pin);
             connection.junction.pinIndex = index;
@@ -590,7 +594,7 @@ let editingModel = (function() {
           // If this is the first instance of the source...
           if (index == outputs.length - 1) {
             // Add an input junction to represent the source.
-            let element = referencingModel.getReference(wire, 'srcId'),
+            let element = self.getWireSrc(wire),
                 pin = wire.srcPin,
                 connection = self.connectOutput(element, pin);
             connection.junction.pinIndex = index;
@@ -604,17 +608,16 @@ let editingModel = (function() {
       // Compute wildcard pass throughs.
       let passThroughs = new Set();
       graphInfo.interiorWires.forEach(function(wire) {
-        let src = referencingModel.getReference(wire, 'srcId'),
+        let src = self.getWireSrc(wire),
             srcPin = src[_master].outputs[wire.srcPin];
         // Trace wires, starting at input junctions.
         if (!isInputJunction(src) || srcPin.type != '*')
           return;
         let srcPinIndex = src.pinIndex,
-            activeWires = [];
-        activeWires.push(wire);
+            activeWires = [wire];
         while (activeWires.length) {
           wire = activeWires.pop();
-          let dst = referencingModel.getReference(wire, 'dstId'),
+          let dst = self.getWireDst(wire),
               dstPin = dst[_master].inputs[wire.dstPin];
           if (isOutputJunction(dst) && dstPin.type == '*') {
             passThroughs.add([srcPinIndex, dst.pinIndex]);
@@ -628,27 +631,34 @@ let editingModel = (function() {
           }
         }
       });
-      groupElement.passThroughs = Array.from(passThroughs);
+      if (passThroughs.size) {
+        groupElement.passThroughs = Array.from(passThroughs);
+      }
 
-      // Sort inputs and outputs by y.
-      let comparePins = (a, b) => a[_y] - b[_y];
-      inputs.sort(comparePins);
-      outputs.sort(comparePins);
+      // TODO order pins by y and set pinIndex after sorting.
+      // // Sort inputs and outputs by y.
+      // inputs.sort(viewModel.comparePins);
+      // outputs.sort(viewModel.comparePins);
 
-      selectionModel.set(groupElement);
+      if (!elementOnly) {
+        groupElement.groupItems = groupItems;
+        groupItems.forEach(item => self.deleteItem(item));
+      }
 
       this.addItem(groupElement);
       dataModel.initialize(groupElement);
+
+      selectionModel.set(groupElement);
+
       return groupElement;
     },
 
     expandOpener: function(wire) {
       let self = this, model = this.model,
           observableModel = model.observableModel,
-          referencingModel = model.referencingModel,
-          srcItem = referencingModel.getReference(wire, 'srcId'),
+          srcItem = this.getWireSrc(wire),
           srcPin = srcItem[_master].outputs[wire.srcPin],
-          dstItem = referencingModel.getReference(wire, 'dstId'),
+          dstItem = this.getWireDst(wire),
           dstPin = dstItem[_master].inputs[wire.dstPin];
       // If srcPin is a function, add those inputs and output pins.
       let master = srcPin[_master];
@@ -672,18 +682,14 @@ let editingModel = (function() {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           observableModel = model.observableModel,
-          referencingModel = model.referencingModel,
-          srcItem = referencingModel.getReference(wire, 'srcId'),
+          srcItem = this.getWireSrc(wire),
           srcPin = srcItem[_master].outputs[wire.srcPin],
-          dstItem = referencingModel.getReference(wire, 'dstId'),
+          dstItem = this.getWireDst(wire),
           dstPin = dstItem[_master].inputs[wire.dstPin];
       if (srcPin.type != dstPin.type) {
         if(srcPin.type == '*') {
           this.makeConsistentForward(wire, graphInfo);
           observableModel.changeValue(srcPin, 'type', dstPin.type);
-          // if (isGroup(srcItem)) {
-          //   this.makeGroupSourcesConsistent(srcItem, wire.srcPin, dstPin);
-          // }
           dataModel.initialize(srcItem);
         } else if (dstPin.type == '*') {
           observableModel.changeValue(dstPin, 'type', srcPin.type);
@@ -701,15 +707,14 @@ let editingModel = (function() {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           observableModel = model.observableModel,
-          referencingModel = model.referencingModel;
-      let origSrc = referencingModel.getReference(wire, 'srcId'),
+          origSrc = this.getWireSrc(wire),
           origSrcPin = origSrc[_master].outputs[wire.srcPin];
       let activeWires = [wire];
       while (activeWires.length) {
         wire = activeWires.pop();
-        let src = referencingModel.getReference(wire, 'srcId'),
+        let src = this.getWireSrc(wire),
             srcPin = src[_master].outputs[wire.srcPin],
-            dst = referencingModel.getReference(wire, 'dstId'),
+            dst = this.getWireDst(wire),
             dstPin = dst[_master].inputs[wire.dstPin];
         if (srcPin.type == dstPin.type) return;
         observableModel.changeValue(dstPin, 'type', origSrcPin.type);
@@ -732,16 +737,15 @@ let editingModel = (function() {
     makeWireConsistentBackward: function(wire, graphInfo) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
-          observableModel = model.observableModel,
-          referencingModel = model.referencingModel;
-      let origDst = referencingModel.getReference(wire, 'dstId'),
+          observableModel = model.observableModel;
+          origDst = this.getWireDst(wire),
           origDstPin = origDst[_master].inputs[wire.dstPin];
       let activeWires = [wire];
       while (activeWires.length) {
         wire = activeWires.pop();
-        let src = referencingModel.getReference(wire, 'srcId'),
+        let src = this.getWireSrc(wire),
             srcPin = src[_master].outputs[wire.srcPin],
-            dst = referencingModel.getReference(wire, 'dstId'),
+            dst = this.getWireDst(wire),
             dstPin = dst[_master].inputs[wire.dstPin];
         if (srcPin.type == dstPin.type) return;
         observableModel.changeValue(srcPin, 'type', origDstPin.type);
@@ -761,10 +765,9 @@ let editingModel = (function() {
 
     makeWireConsistent: function(wire) {
       let self = this, model = this.model,
-          referencingModel = model.referencingModel,
-          srcItem = referencingModel.getReference(wire, 'srcId'),
+          srcItem = this.getWireSrc(wire),
           srcPin = srcItem[_master].outputs[wire.srcPin],
-          dstItem = referencingModel.getReference(wire, 'dstId'),
+          dstItem = this.getWireDst(wire),
           dstPin = dstItem[_master].inputs[wire.dstPin];
       if (srcPin.type != dstPin.type) {
         // Collect info for entire graph.
@@ -886,6 +889,10 @@ let viewModel = (function() {
         nx: isInput ? -1 : 1,
         ny: 0,
       }
+    },
+
+    comparePins: function(pin1, pin2) {
+      return pin1[_y] - pin2[_y];
     },
   }
 
@@ -1356,7 +1363,7 @@ function Editor(model, textInputController) {
             { type: 'v' },
           ],
         },
-        // Special 'self' element.
+        // TODO Special 'self' element.
         { type: 'element',
           x: 8, y: 40,
           master: '$',
