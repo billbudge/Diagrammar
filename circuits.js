@@ -225,7 +225,8 @@ let editingModel = (function() {
       });
       // Separate wires into incoming, outgoing, and interior. Populate
       // input/output maps, and incoming and outgoing pins.
-      let wires = [], incomingWires = [], outgoingWires = [], interiorWires = [];
+      let wires = [], incomingWires = [], outgoingWires = [], interiorWires = [],
+          inputWires = [], outputWires = [];
       this.diagram.items.forEach(function(item) {
         if (isWire(item)) {
           wires.push(item);
@@ -237,6 +238,10 @@ let editingModel = (function() {
             outputMap.get(src)[item.srcPin].push(item);
             if (dstInside) {
               interiorWires.push(item);
+              if (isInputJunction(src))
+                inputWires.push(item);
+              if (isOutputJunction(dst))
+                outputWires.push(item);
             } else {
               outgoingWires.push(item);
             }
@@ -256,6 +261,8 @@ let editingModel = (function() {
         outputMap: outputMap,
         wires: wires,
         interiorWires: interiorWires,
+        inputWires: inputWires,
+        outputWires: outputWires,
         incomingWires: incomingWires,
         outgoingWires: outgoingWires,
       }
@@ -526,6 +533,22 @@ let editingModel = (function() {
       this.newItem(groupElement);
       let groupId = dataModel.getId(groupElement);
 
+      // Sort wire arrays so we encounter pins in increasing y-order.
+      function compareIncomingWires(wire1, wire2) {
+        let src1 = self.getWireSrc(wire1), src2 = self.getWireSrc(wire2);
+        return viewModel.pinToPoint(src1, wire1.srcPin, false).y -
+               viewModel.pinToPoint(src2, wire2.srcPin, false).y;
+      }
+      function compareOutgoingWires(wire1, wire2) {
+        let dst1 = self.getWireDst(wire1), dst2 = self.getWireDst(wire2);
+        return viewModel.pinToPoint(dst1, wire1.dstPin, true).y -
+               viewModel.pinToPoint(dst2, wire2.dstPin, true).y;
+      }
+      graphInfo.inputWires.sort(compareIncomingWires);
+      graphInfo.incomingWires.sort(compareIncomingWires);
+      graphInfo.outputWires.sort(compareOutgoingWires);
+      graphInfo.outgoingWires.sort(compareOutgoingWires);
+
       // Use srcMap to ensure that an internal or external source is only
       // represented once in inputs and outputs.
       function addUniqueSource(wire, srcMap, inputsOrOutputs) {
@@ -547,25 +570,22 @@ let editingModel = (function() {
         }
         return srcIndices[index];
       }
+
       let incomingSrcMap = new Map(), outgoingSrcMap = new Map();
-      // Add input/output pins for 'input' and 'output' junctions that are
-      // connected by interior wires to other group items.
-      graphInfo.interiorWires.forEach(function(wire) {
-        let src = self.getWireSrc(wire),
-            dst = self.getWireDst(wire),
-            srcPin = src[_master].outputs[wire.srcPin],
-            dstPin = dst[_master].inputs[wire.dstPin];
-        if (isInputJunction(src)) {
-          let index = addUniqueSource(wire, incomingSrcMap, inputs);
-          if (!elementOnly) {
-            observableModel.changeValue(src, 'pinIndex', index);
-          }
+      // Add input pins for inputWires.
+      graphInfo.inputWires.forEach(function(wire) {
+        let index = addUniqueSource(wire, incomingSrcMap, inputs);
+        if (!elementOnly) {
+          let src = self.getWireSrc(wire);
+          observableModel.changeValue(src, 'pinIndex', index);
         }
-        if (isOutputJunction(dst)) {
-          let index = addUniqueSource(wire, outgoingSrcMap, outputs);
-          if (!elementOnly) {
-            observableModel.changeValue(dst, 'pinIndex', index);
-          }
+      });
+      // Add output pins for outputWires.
+      graphInfo.outputWires.forEach(function(wire) {
+        let index = addUniqueSource(wire, outgoingSrcMap, outputs);
+        if (!elementOnly) {
+          let dst = self.getWireDst(wire);
+          observableModel.changeValue(dst, 'pinIndex', index);
         }
       });
       // Add pins for incoming wires. Only add a single pin for each source pin,
@@ -633,11 +653,6 @@ let editingModel = (function() {
       if (passThroughs.size) {
         groupElement.passThroughs = Array.from(passThroughs);
       }
-
-      // TODO order pins by y and set pinIndex after sorting.
-      // // Sort inputs and outputs by y.
-      // inputs.sort(viewModel.comparePins);
-      // outputs.sort(viewModel.comparePins);
 
       if (!elementOnly) {
         groupElement.groupItems = groupItems;
@@ -888,10 +903,6 @@ let viewModel = (function() {
         nx: isInput ? -1 : 1,
         ny: 0,
       }
-    },
-
-    comparePins: function(pin1, pin2) {
-      return pin1[_y] - pin2[_y];
     },
   }
 
@@ -1661,9 +1672,9 @@ Editor.prototype.setEditableText = function() {
       selectionModel = this.model.selectionModel,
       item = selectionModel.lastSelected();
   if (item && isElement(item)) {
-    // if (isJunction(item)) {
-    //   item = item.inputs[0] || item.outputs[0];
-    // }
+    if (isJunction(item)) {
+      item = item.inputs[0] || item.outputs[0];
+    }
     textInputController.start(item.name, function(newText) {
       if (item.name != newText) {
         self.model.transactionModel.beginTransaction('rename');
