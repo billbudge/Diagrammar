@@ -261,17 +261,13 @@ let editingModel = (function() {
       }
     },
 
-    makePinName: function(element, pin) {
-      return pin.name || element.name;// || element[_master].name;
-    },
-
     connectInput: function(element, pin) {
       let viewModel = this.model.viewModel,
           dstPin = element[_master].inputs[pin],
           pinPoint = viewModel.pinToPoint(element, pin, true);
       let junction = {
         type: 'element',
-        name: this.makePinName(element, dstPin),
+        name: dstPin.name,
         x: pinPoint.x - 32,
         y: pinPoint.y,
         master: '$',
@@ -301,7 +297,7 @@ let editingModel = (function() {
           pinPoint = viewModel.pinToPoint(element, pin, false);
       let junction = {
         type: 'element',
-        name: this.makePinName(element, srcPin),
+        name: srcPin.name,
         x: pinPoint.x + 32,
         y: pinPoint.y,
         master: '$',
@@ -530,6 +526,8 @@ let editingModel = (function() {
       this.newItem(groupElement);
       let groupId = dataModel.getId(groupElement);
 
+      // Use srcMap to ensure that an internal or external source is only
+      // represented once in inputs and outputs.
       function addUniqueSource(wire, srcMap, inputsOrOutputs) {
         let src = self.getWireSrc(wire),
             srcPins = src[_master].outputs,
@@ -538,12 +536,13 @@ let editingModel = (function() {
           srcIndices = new Array(srcPins.length);
           srcMap.set(src, srcIndices);
         }
-        let index = wire.srcPin, srcPin = srcPins[index];
+        let index = wire.srcPin;
         if (srcIndices[index] === undefined) {
           srcIndices[index] = inputsOrOutputs.length;
+          let srcPin = srcPins[index];
           inputsOrOutputs.push({
             type: srcPin.type,
-            name: self.makePinName(src, srcPin),
+            name: srcPin.name,
           });
         }
         return srcIndices[index];
@@ -737,7 +736,7 @@ let editingModel = (function() {
     makeWireConsistentBackward: function(wire, graphInfo) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
-          observableModel = model.observableModel;
+          observableModel = model.observableModel,
           origDst = this.getWireDst(wire),
           origDstPin = origDst[_master].inputs[wire.dstPin];
       let activeWires = [wire];
