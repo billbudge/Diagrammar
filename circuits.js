@@ -794,6 +794,31 @@ let editingModel = (function() {
       }
     },
 
+    findSrcType: function(wire, graphInfo) {
+      let self = this, model = this.model,
+          origDst = this.getWireDst(wire),
+          origDstPin = origDst[_master].inputs[wire.dstPin];
+      let activeWires = [wire];
+      while (activeWires.length) {
+        wire = activeWires.pop();
+        let src = this.getWireSrc(wire),
+            srcPin = src[_master].outputs[wire.srcPin],
+            dst = this.getWireDst(wire),
+            dstPin = dst[_master].inputs[wire.dstPin];
+        if (srcPin.type != '*') return srcPin.type;
+        if (src.passThroughs) {
+          src.passThroughs.forEach(function(passThrough) {
+            if (passThrough[1] == wire.srcPin) {
+              srcPin = src[_master].inputs[passThrough[0]];
+              let incomingWire = graphInfo.inputMap.get(src)[passThrough[0]];
+              activeWires.push(incomingWire);
+            }
+          });
+        }
+      }
+      return '*';
+    },
+
     doComplete: function() {
       let model = this.model;
       this.reduceSelection();
