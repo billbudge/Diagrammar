@@ -244,12 +244,14 @@ let editingModel = (function() {
                 outputWires.push(item);
             } else {
               outgoingWires.push(item);
+              outputWires.push(item);
             }
           }
           if (dstInside) {
             inputMap.get(dst)[item.dstPin] = item;
             if (!srcInside) {
               incomingWires.push(item);
+              inputWires.push(item);
             }
           }
         }
@@ -545,9 +547,7 @@ let editingModel = (function() {
                viewModel.pinToPoint(dst2, wire2.dstPin, true).y;
       }
       graphInfo.inputWires.sort(compareIncomingWires);
-      graphInfo.incomingWires.sort(compareIncomingWires);
       graphInfo.outputWires.sort(compareOutgoingWires);
-      graphInfo.outgoingWires.sort(compareOutgoingWires);
 
       // Use srcMap to ensure that an internal or external source is only
       // represented once in inputs and outputs.
@@ -577,7 +577,22 @@ let editingModel = (function() {
         let index = addUniqueSource(wire, incomingSrcMap, inputs);
         if (!elementOnly) {
           let src = self.getWireSrc(wire);
-          observableModel.changeValue(src, 'pinIndex', index);
+          if (graphInfo.elementSet.has(src)) {
+            observableModel.changeValue(src, 'pinIndex', index);
+          } else {
+            // If this is the first instance of the source...
+            if (index == inputs.length - 1) {
+              // Add an input junction to represent the source.
+              let element = self.getWireDst(wire),
+                  pin = wire.dstPin,
+                  connection = self.connectInput(element, pin);
+              connection.junction.pinIndex = index;
+              groupItems.push(connection.junction, connection.wire);
+              graphInfo.interiorWires.push(connection.wire);
+            }
+            observableModel.changeValue(wire, 'dstId', groupId);
+            observableModel.changeValue(wire, 'dstPin', index);
+          }
         }
       });
       // Add output pins for outputWires.
@@ -585,43 +600,22 @@ let editingModel = (function() {
         let index = addUniqueSource(wire, outgoingSrcMap, outputs);
         if (!elementOnly) {
           let dst = self.getWireDst(wire);
-          observableModel.changeValue(dst, 'pinIndex', index);
-        }
-      });
-      // Add pins for incoming wires. Only add a single pin for each source pin,
-      // even if there are multiple wires incoming from it. Reroute wires.
-      graphInfo.incomingWires.forEach(function(wire) {
-        let index = addUniqueSource(wire, incomingSrcMap, inputs);
-        if (!elementOnly) {
-          // If this is the first instance of the source...
-          if (index == inputs.length - 1) {
-            // Add an input junction to represent the source.
-            let element = self.getWireDst(wire),
-                pin = wire.dstPin,
-                connection = self.connectInput(element, pin);
-            connection.junction.pinIndex = index;
-            groupItems.push(connection.junction, connection.wire);
-            graphInfo.interiorWires.push(connection.wire);
+          if (graphInfo.elementSet.has(dst)) {
+            observableModel.changeValue(dst, 'pinIndex', index);
+          } else {
+            // If this is the first instance of the source...
+            if (index == outputs.length - 1) {
+              // Add an input junction to represent the source.
+              let element = self.getWireSrc(wire),
+                  pin = wire.srcPin,
+                  connection = self.connectOutput(element, pin);
+              connection.junction.pinIndex = index;
+              groupItems.push(connection.junction, connection.wire);
+              graphInfo.interiorWires.push(connection.wire);
+            }
+            observableModel.changeValue(wire, 'srcId', groupId);
+            observableModel.changeValue(wire, 'srcPin', index);
           }
-          observableModel.changeValue(wire, 'dstId', groupId);
-          observableModel.changeValue(wire, 'dstPin', index);
-        }
-      });
-      graphInfo.outgoingWires.forEach(function(wire) {
-        let index = addUniqueSource(wire, outgoingSrcMap, outputs);
-        if (!elementOnly) {
-          // If this is the first instance of the source...
-          if (index == outputs.length - 1) {
-            // Add an input junction to represent the source.
-            let element = self.getWireSrc(wire),
-                pin = wire.srcPin,
-                connection = self.connectOutput(element, pin);
-            connection.junction.pinIndex = index;
-            groupItems.push(connection.junction, connection.wire);
-            graphInfo.interiorWires.push(connection.wire);
-          }
-          observableModel.changeValue(wire, 'srcId', groupId);
-          observableModel.changeValue(wire, 'srcPin', index);
         }
       });
       // Compute wildcard pass throughs.
