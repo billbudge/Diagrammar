@@ -32,8 +32,8 @@ function isOutputJunction(item) {
   return item.type == 'element' && item.junction == 'output';
 }
 
-function isOpenerJunction(item) {
-  return item.type == 'element' && item.junction == 'opener';
+function isApplyJunction(item) {
+  return item.type == 'element' && item.junction == 'apply';
 }
 
 function isGroup(item) {
@@ -653,7 +653,7 @@ let editingModel = (function() {
       return groupElement;
     },
 
-    expandOpener: function(wire) {
+    setApply: function(wire) {
       let self = this, model = this.model,
           observableModel = model.observableModel,
           srcItem = this.getWireSrc(wire),
@@ -673,9 +673,37 @@ let editingModel = (function() {
             dstItem, 'outputs', dstItem.outputs.length, { type: output.type });
         });
         observableModel.changeValue(wire, 'dstPin', dstItem.inputs.length - 1);
-        observableModel.changeValue(dstItem, 'junction', undefined);
       }
-      model.dataModel.initialize(dstItem);
+      observableModel.changeValue(dstPin, 'type', srcPin.type);
+    },
+
+    resetApply: function(element, graphInfo) {
+      let self = this, model = this.model,
+          observableModel = model.observableModel;
+      // Delete all wires except the incoming function input.
+      let inputWires = graphInfo.inputMap.get(element),
+          outputWires = graphInfo.outputMap.get(element);
+      for (let i = 0; i < inputWires.length - 1; i++) {
+        let wire = inputWires[i];
+        if (wire) {
+          self.deleteItem(wire);
+        }
+        observableModel.removeElement(element, 'inputs', 0);
+      }
+      for (let i = 0; i < outputWires.length; i++) {
+        let wires = outputWires[i];
+        for (let j = 0; j < wires.length; j++) {
+          self.deleteItem(wires[j]);
+        }
+        observableModel.removeElement(element, 'outputs', 0);
+      }
+      let wire = inputWires[inputWires.length - 1],
+          dstPin = element[_master].inputs[0];
+
+      if (wire) {
+        observableModel.changeValue(wire, 'dstPin', 0);
+      }
+      observableModel.changeValue(dstPin, 'type', '*');
     },
 
     findSrcType: function(wire, graphInfo) {
@@ -769,12 +797,12 @@ let editingModel = (function() {
         if (isJunction(element)) {
           switch (element.junction) {
             case 'input': {
-              // Input junction pin 0 type should map all of its eventual
-              // destinations. Just trace the first one.
-              let wires = graphInfo.outputMap.get(element)[0];
+              // Input junction pin 0 type should match all of its destinations.
+              // Just trace the first one.
               let outputPin = element[_master].outputs[0],
                   type = outputPin.type,
-                  dstType = '*';
+                  dstType = '*',
+                  wires = graphInfo.outputMap.get(element)[0];
               if (wires.length > 0) {
                 dstType = self.findDstType(wires[0], graphInfo);
               }
@@ -785,11 +813,11 @@ let editingModel = (function() {
               break;
             }
             case 'output': {
-              // Output junction pin 0 type should map its unique source.
-              let wire = graphInfo.inputMap.get(element)[0];
+              // Output junction pin 0 type should match its unique source.
               let inputPin = element[_master].inputs[0],
                   type = inputPin.type,
-                  srcType = '*';
+                  srcType = '*',
+                  wire = graphInfo.inputMap.get(element)[0];
               if (wire) {
                 srcType = self.findSrcType(wire, graphInfo);
               }
@@ -799,11 +827,30 @@ let editingModel = (function() {
               }
               break;
             }
-            case 'opener': {
-              // TODO refactor expandOpener.
+            case 'apply': {
+              let inputPins = element[_master].inputs,
+                  lastIndex = inputPins.length - 1,
+                  inputPin = inputPins[lastIndex],
+                  type = inputPin.type,
+                  srcType = '*',
+                  wire = graphInfo.inputMap.get(element)[lastIndex];
+              if (wire) {
+                srcType = self.findSrcType(wire, graphInfo);
+              }
+              if (type != srcType) {
+                if (type != '*') {
+                  self.resetApply(element, graphInfo);
+                }
+                if (srcType != '*') {
+                  self.setApply(wire);
+                }
+                dataModel.initialize(element);
+              }
               break;
             }
             case 'self': {
+              // Traverse connected subgraph to element, form type.
+              // If type doesn't match, reset and set.
               break;
             }
           }
@@ -1353,7 +1400,7 @@ function Editor(model, textInputController) {
         { type: 'element',
           x: 72, y: 8,
           master: '$',
-          junction: 'opener',
+          junction: 'apply',
           inputs: [
             { type: '*' },
           ],
