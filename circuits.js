@@ -20,6 +20,10 @@ function isImmediate(item) {
   return item.type == 'element' && item.master == '$';
 }
 
+function isLiteral(item) {
+  return item.type == 'element' && item.literal;
+}
+
 function isJunction(item) {
   return item.type == 'element' && item.junction;
 }
@@ -434,7 +438,7 @@ let editingModel = (function() {
       let newElement = {
         type: 'element',
         master: '$',
-        name: element[_master].name,
+        // We shouldn't name the abstraction based on the concrete function.
         element: element,
         x: element.x,
         y: element.y,
@@ -796,7 +800,8 @@ let editingModel = (function() {
       elementSet.forEach(function(element) {
         if (isJunction(element)) {
           switch (element.junction) {
-            case 'input': {
+            case 'input':
+            case 'recursion': {
               // Input junction pin 0 type should match all of its destinations.
               // Just trace the first one.
               let outputPin = element[_master].outputs[0],
@@ -846,11 +851,6 @@ let editingModel = (function() {
                 }
                 dataModel.initialize(element);
               }
-              break;
-            }
-            case 'self': {
-              // Traverse connected subgraph to element, form type.
-              // If type doesn't match, reset and set.
               break;
             }
           }
@@ -1402,30 +1402,27 @@ function Editor(model, textInputController) {
           master: '$',
           junction: 'apply',
           inputs: [
-            { type: '*' },
+            { type: '*', name: 'λ' },
           ],
           outputs: [],
         },
-        // TODO Literal object needs work.
-        { type: 'element',
-          x: 102, y: 8,
-          master: '$',
-          name: '0',
-          inputs: [],
-          outputs: [
-            { type: 'v' },
-          ],
-        },
-        // TODO Special 'self' element.
         { type: 'element',
           x: 8, y: 40,
           master: '$',
-          junction: 'self',
-          inputs: [
-            { type: '*' },
-          ],
+          junction: 'recursion',
+          inputs: [],
           outputs: [
-            { type: '*' },
+            { type: '*', name: 'γ' },
+          ],
+        },
+        // TODO Literal object needs work.
+        { type: 'element',
+          x: 56, y: 40,
+          master: '$',
+          literal: true,
+          inputs: [],
+          outputs: [
+            { type: 'v', name: '0' },
           ],
         },
         {
