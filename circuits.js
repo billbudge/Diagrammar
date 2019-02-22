@@ -16,28 +16,32 @@ function isWire(item) {
   return item.type == 'wire';
 }
 
-function isImmediate(item) {
+function isUnmastered(item) {
   return item.type == 'element' && item.master == '$';
 }
 
 function isLiteral(item) {
-  return item.type == 'element' && item.literal;
+  return item.elementType == 'literal';
 }
 
 function isJunction(item) {
-  return item.type == 'element' && item.junction;
+  // item.type == 'element'
+  return item.elementType == 'junction';
 }
 
 function isInputJunction(item) {
-  return item.type == 'element' && item.junction == 'input';
+  // item.type == 'element' && item.elementType == 'junction'
+  return item.junctionType == 'input';
 }
 
 function isOutputJunction(item) {
-  return item.type == 'element' && item.junction == 'output';
+  // item.type == 'element' && item.elementType == 'junction'
+  return item.junctionType == 'output';
 }
 
 function isApplyJunction(item) {
-  return item.type == 'element' && item.junction == 'apply';
+  // item.type == 'element' && item.elementType == 'junction'
+  return iitem.junctionType == 'apply';
 }
 
 function isGroup(item) {
@@ -45,7 +49,7 @@ function isGroup(item) {
 }
 
 function needsLayout(item) {
-  return isWire(item) || isImmediate(item);
+  return isWire(item) || isUnmastered(item);
 }
 
 function isDiagram(item) {
@@ -272,11 +276,12 @@ let editingModel = (function() {
           pinPoint = viewModel.pinToPoint(element, pin, true);
       let junction = {
         type: 'element',
+        elementType: 'junction',
+        junctionType: 'input',
         name: dstPin.name,
         x: pinPoint.x - 32,
         y: pinPoint.y,
         master: '$',
-        junction: 'input',
         inputs: [],
         outputs: [
           { type: dstPin.type },
@@ -302,11 +307,12 @@ let editingModel = (function() {
           pinPoint = viewModel.pinToPoint(element, pin, false);
       let junction = {
         type: 'element',
+        elementType: 'junction',
+        junctionType: 'output',
         name: srcPin.name,
         x: pinPoint.x + 32,
         y: pinPoint.y,
         master: '$',
-        junction: 'output',
         inputs: [
           { type: srcPin.type },
         ],
@@ -799,7 +805,7 @@ let editingModel = (function() {
       // Make sure junctions are consistent.
       elementSet.forEach(function(element) {
         if (isJunction(element)) {
-          switch (element.junction) {
+          switch (element.junctionType) {
             case 'input':
             case 'recursion': {
               // Input junction pin 0 type should match all of its destinations.
@@ -1380,46 +1386,49 @@ function Editor(model, textInputController) {
       y: 0,
       items: [
         { type: 'element',
+          elementType: 'junction',
+          junctionType: 'input',
           x: 8, y: 8,
           master: '$',
-          junction: 'input',
           inputs: [],
           outputs: [
             { type: '*' },
           ],
         },
         { type: 'element',
+          elementType: 'junction',
+          junctionType: 'output',
           x: 38, y: 8,
           master: '$',
-          junction: 'output',
           inputs: [
             { type: '*' },
           ],
           outputs: [],
         },
         { type: 'element',
+          elementType: 'junction',
+          junctionType: 'apply',
           x: 72, y: 8,
           master: '$',
-          junction: 'apply',
           inputs: [
             { type: '*', name: 'λ' },
           ],
           outputs: [],
         },
         { type: 'element',
+          elementType: 'junction',
+          junctionType: 'recursion',
           x: 8, y: 40,
           master: '$',
-          junction: 'recursion',
           inputs: [],
           outputs: [
             { type: '*', name: 'γ' },
           ],
         },
-        // TODO Literal object needs work.
         { type: 'element',
+          elementType: 'literal',
           x: 56, y: 40,
           master: '$',
-          literal: true,
           inputs: [],
           outputs: [
             { type: 'v', name: '0' },
@@ -1504,8 +1513,7 @@ function Editor(model, textInputController) {
     if (item.type == 'element') {
       // Only initialize once.
       // if (!item[_master]) {
-        if (item.master == '$') {
-          // Self master (junction).
+        if (isUnmastered(item)) {
           initializePins(item);
           item[_master] = item;
         } else {
@@ -1712,7 +1720,7 @@ Editor.prototype.setEditableText = function() {
       selectionModel = this.model.selectionModel,
       item = selectionModel.lastSelected();
   if (item && isElement(item)) {
-    if (isJunction(item)) {
+    if (isJunction(item) || isLiteral(item)) {
       item = item.inputs[0] || item.outputs[0];
     }
     textInputController.start(item.name, function(newText) {
