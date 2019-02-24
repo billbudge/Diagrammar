@@ -381,7 +381,7 @@ let editingModel = (function() {
       let newElement = {
         type: 'element',
         master: '$',
-        name: element[_master].name,
+        // We shouldn't name the closure based on the closed function.
         element: element,
         x: element.x,
         y: element.y,
