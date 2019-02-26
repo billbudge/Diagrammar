@@ -75,14 +75,6 @@ let editingModel = (function() {
       model.selectionModel.set(model.hierarchicalModel.reduceSelection());
     },
 
-    getWireSrc: function(wire) {
-      return this.model.referencingModel.getReference(wire, 'srcId');
-    },
-
-    getWireDst: function(wire) {
-      return this.model.referencingModel.getReference(wire, 'dstId');
-    },
-
     getInteriorWires: function (items) {
       let self = this, model = this.model,
           itemSet = new Set();
@@ -890,6 +882,9 @@ let editingModel = (function() {
 
     instance.model = model;
     instance.diagram = model.root;
+
+    instance.getWireSrc = model.referencingModel.getReferenceFn('srcId');
+    instance.getWireDst = model.referencingModel.getReferenceFn('dstId');
 
     model.transactionModel.addHandler('transactionEnding', function (transaction) {
       instance.onTransactionEnding_(transaction);

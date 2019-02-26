@@ -296,6 +296,7 @@ test("referencingModel", function() {
 
   var test = dataModels.referencingModel.extend(model);
   deepEqual(test.getReference(child1, 'refId'), root);
+  deepEqual(test.getReferenceFn('refId')(child1), root);
   deepEqual(test.getReference(child1, 'refId'), model.referencingModel.resolveId(child1.refId));
 
   model.observableModel.changeValue(root, 'child', child2);
@@ -306,7 +307,9 @@ test("referencingModel", function() {
 
   model.observableModel.insertElement(root, 'items', root.items.length - 1, child3);
   deepEqual(test.getReference(child3, 'firstId'), root);
+  deepEqual(test.getReferenceFn('firstId')(child3), root);
   deepEqual(test.getReference(child3, 'secondId'), child2);
+  deepEqual(test.getReferenceFn('secondId')(child3), child2);
 
   // unresolvable id causes ref to be set to 'null'.
   model.observableModel.changeValue(child2, 'refId', 88);

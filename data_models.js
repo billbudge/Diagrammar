@@ -552,6 +552,13 @@ let referencingModel = (function () {
       return item[Symbol.for(attr)] || this.resolveReference(item, attr);
     },
 
+    getReferenceFn: function (attr) {
+      let self = this, s = Symbol.for(attr);
+      return function(item) {
+        return item[s] || self.resolveReference(item, attr);
+      }
+    },
+
     // Resolves an id to a target item if possible.
     resolveId: function (id) {
       return this.targets_.get(id);
