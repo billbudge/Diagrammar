@@ -270,7 +270,7 @@ let editingModel = (function() {
         type: 'element',
         elementType: 'junction',
         junctionType: 'input',
-        name: dstPin.name,
+        // Let user name pin.
         x: pinPoint.x - 32,
         y: pinPoint.y,
         master: '$',
@@ -301,7 +301,7 @@ let editingModel = (function() {
         type: 'element',
         elementType: 'junction',
         junctionType: 'output',
-        name: srcPin.name,
+        // Let user name pin.
         x: pinPoint.x + 32,
         y: pinPoint.y,
         master: '$',
@@ -645,6 +645,12 @@ let editingModel = (function() {
       if (!elementOnly) {
         groupElement.groupItems = groupItems;
         groupItems.forEach(item => self.deleteItem(item));
+      } else {
+        let groupType = this.getOpenedType(groupElement);
+        outputs.push({
+          type: groupType,
+          name: 'γ',
+        });
       }
 
       this.addItem(groupElement);
@@ -798,8 +804,7 @@ let editingModel = (function() {
       elementSet.forEach(function(element) {
         if (isJunction(element)) {
           switch (element.junctionType) {
-            case 'input':
-            case 'recursion': {
+            case 'input': {
               // Input junction pin 0 type should match all of its destinations.
               // Just trace the first one.
               let outputPin = element[_master].outputs[0],
@@ -1409,16 +1414,6 @@ function Editor(model, textInputController) {
             { type: '*', name: 'λ' },
           ],
           outputs: [],
-        },
-        { type: 'element',
-          elementType: 'junction',
-          junctionType: 'recursion',
-          x: 8, y: 40,
-          master: '$',
-          inputs: [],
-          outputs: [
-            { type: '*', name: 'γ' },
-          ],
         },
         { type: 'element',
           elementType: 'literal',
