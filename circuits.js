@@ -334,16 +334,14 @@ let editingModel = (function() {
         elementInputs.forEach(function(connectedWire, pin) {
           if (connectedWire)
             return;
-          let connection = self.connectInput(element, pin);
-          selectionModel.add(connection.junction);
+          self.connectInput(element, pin);
         });
       });
       graphInfo.outputMap.forEach(function(elementOutputs, element) {
         elementOutputs.forEach(function(wires, pin) {
           if (wires.length > 0)
             return;
-          let connection = self.connectOutput(element, pin);
-          selectionModel.add(connection.junction);
+          self.connectOutput(element, pin);
         });
       });
     },
@@ -596,6 +594,10 @@ let editingModel = (function() {
           let dst = self.getWireDst(wire);
           if (graphInfo.elementSet.has(dst)) {
             observableModel.changeValue(dst, 'pinIndex', index);
+            if (isOutputJunction(dst)) {
+              // name output pin after this destination.
+              outputs[index].name = dst[_master].inputs[0].name;
+            }
           } else {
             // If this is the first instance of the source...
             if (index == outputs.length - 1) {
