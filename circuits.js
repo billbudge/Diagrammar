@@ -135,6 +135,7 @@ let editingModel = (function() {
       items.forEach(function(item) {
         let copy = map.get(dataModel.getId(item));
         if (isElement(copy)) {
+          copy.state = 'normal';
           let toGlobal = transformableModel.getToParent(item, diagram);
           geometry.matMulPt(copy, toGlobal);
         }
@@ -975,8 +976,9 @@ let viewModel = (function() {
 //------------------------------------------------------------------------------
 
 let normalMode = 1,
-    highlightMode = 2,
-    hotTrackMode = 3;
+    paletteMode = 2,
+    highlightMode = 3,
+    hotTrackMode = 4;
 
 function Renderer(theme) {
   this.theme = theme || diagrams.theme.create();
@@ -1123,9 +1125,11 @@ Renderer.prototype.drawMaster = function(master, x, y, mode) {
       width = master[_width], height = master[_height];
   switch (mode) {
     case normalMode:
+    case paletteMode:
       let textSize = theme.fontSize, name = master.name,
           inputs = master.inputs, outputs = master.outputs;
       ctx.fillStyle = theme.bgColor;
+      ctx.fillStyle = mode == normalMode ? theme.bgColor : theme.altBgColor;
       ctx.fillRect(x, y, width, height);
       ctx.strokeStyle = theme.strokeColor;
       ctx.lineWidth = 0.5;
@@ -1253,6 +1257,8 @@ Renderer.prototype.draw = function(item, mode) {
   switch (item.type) {
     case 'element':
       rect = this.getItemRect(item);
+      if (item.state == 'palette' && mode == normalMode)
+        mode = paletteMode;
       this.drawMaster(item[_master], rect.x, rect.y, mode);
       break;
     case 'wire':
@@ -1535,13 +1541,14 @@ Editor.prototype.initialize = function(canvasController) {
       model = this.model, diagram = this.diagram;
   renderer.beginDraw(model, ctx);
 
-  // Create an instance of every junction.
+  // Create an instance of every primitive.
   let x, y;
   x = 16, y = 280,
   this.primitives.forEach(function(primitives) {
     let item = Object.assign(primitives);
     item.x = x;
     item.y = y;
+    item.state = 'palette';
     model.editingModel.newItem(item);
     model.editingModel.addItem(item);
     renderer.layoutMaster(item);
@@ -1555,6 +1562,7 @@ Editor.prototype.initialize = function(canvasController) {
       type: 'element',
       master: master.name,
       [_master]: master,
+      state: 'palette',
       x: x,
       y: y,
     };
@@ -1712,9 +1720,12 @@ Editor.prototype.onClick = function(p) {
       hitList = this.hitTest(p),
       mouseHitInfo = this.mouseHitInfo = this.getFirstHit(hitList, isDraggable);
   if (mouseHitInfo) {
-    if (cmdKeyDown)
+    let item = mouseHitInfo.item;
+    if (cmdKeyDown || item.state == 'palette') {
       mouseHitInfo.moveCopy = true;
-    var item = mouseHitInfo.item;
+      // No wire dragging in this mode.
+      mouseHitInfo.input = mouseHitInfo.output = undefined;
+    }
     if (!selectionModel.contains(item)) {
       if (!shiftKeyDown)
         selectionModel.clear();
@@ -2030,6 +2041,7 @@ return {
   editingModel: editingModel,
 
   normalMode: normalMode,
+  paletteMode: paletteMode,
   highlightMode: highlightMode,
   hotTrackMode: hotTrackMode,
 
