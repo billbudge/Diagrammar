@@ -474,6 +474,7 @@ CanvasController.prototype.onDoubleClick = function(e) {
 CanvasController.prototype.onKeyDown = function(e) {
   var self = this;
   this.shiftKeyDown = e.shiftKey;
+  this.cmdKeyDown = e.ctrlKey || e.metaKey;
   this.layers.some(function(layer) {
     if (!layer.onKeyDown || !layer.onKeyDown(e))
       return false;
@@ -490,6 +491,7 @@ CanvasController.prototype.onKeyDown = function(e) {
 
 CanvasController.prototype.onKeyUp = function(e) {
   this.shiftKeyDown = e.shiftKey;
+  this.cmdKeyDown = e.ctrlKey || e.metaKey;
   var keyOwner = this.keyOwner;
   if (keyOwner) {
     if (keyOwner.onKeyUp)

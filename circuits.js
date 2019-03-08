@@ -161,12 +161,12 @@ let editingModel = (function() {
       });
     },
 
-    doPaste: function() {
+    doPaste: function(dx, dy) {
       this.getScrap().forEach(function(item) {
         // Offset pastes so the user can see them.
         if (isElement(item)) {
-          item.x += 16;
-          item.y += 16;
+          item.x += dx;
+          item.y += dy;
         }
       });
       this.prototype.doPaste.call(this);
@@ -1314,13 +1314,56 @@ function Editor(model, textInputController) {
   let masterMap = new Map();
   this.masterMap = masterMap;
 
+  this.primitives = [
+    { type: 'element',
+      elementType: 'junction',
+      junctionType: 'input',
+      x: 8, y: 8,
+      master: '$',
+      inputs: [],
+      outputs: [
+        { type: '*' },
+      ],
+    },
+    { type: 'element',
+      elementType: 'junction',
+      junctionType: 'output',
+      x: 38, y: 8,
+      master: '$',
+      inputs: [
+        { type: '*' },
+      ],
+      outputs: [],
+    },
+    { type: 'element',
+      elementType: 'junction',
+      junctionType: 'apply',
+      x: 72, y: 8,
+      master: '$',
+      inputs: [
+        { type: '*', name: 'λ' },
+      ],
+      outputs: [],
+    },
+    { type: 'element',
+      elementType: 'literal',
+      x: 56, y: 40,
+      master: '$',
+      inputs: [],
+      outputs: [
+        { type: 'v', name: '0' },
+      ],
+    },
+  ];
+
   let unaryOps = ['!', '~', '-' ];
   let binaryOps = ['+', '-', '*', '/', '%', '==', '!=', '<', '<=', '>', '>=',
                    '|', '&', '||', '&&'];
   let ternaryOps = ['?'];
 
+  this.masters = [];
   unaryOps.forEach(function(op) {
-    masterMap.set(op, {
+    let master = {
       name: op,
       type: 'element',
       inputs: [
@@ -1329,10 +1372,12 @@ function Editor(model, textInputController) {
       outputs: [
         { type: 'v' },
       ]
-    });
+    };
+    self.masters.push(master);
+    masterMap.set(op, master);
   });
   binaryOps.forEach(function(op) {
-    masterMap.set(op, {
+    let master = {
       name: op,
       type: 'element',
       inputs: [
@@ -1342,10 +1387,12 @@ function Editor(model, textInputController) {
       outputs: [
         { type: 'v' },
       ]
-    });
+    };
+    self.masters.push(master);
+    masterMap.set(op, master);
   });
   // Just one ternary op for now.
-  masterMap.set('?', {
+  let cond = {
       name: '?',
       type: 'element',
       inputs: [
@@ -1356,9 +1403,12 @@ function Editor(model, textInputController) {
       outputs: [
         { type: 'v' },
       ]
-  });
+  };
+  self.masters.push(cond);
+  masterMap.set('?', cond);
+
   // Local storage.
-  masterMap.set('@', {
+  let local = {
       name: '@',
       type: 'element',
       inputs: [],
@@ -1366,9 +1416,11 @@ function Editor(model, textInputController) {
         { type: '[,v]' },
         { type: '[v,v]' },
       ]
-  });
+  };
+  self.masters.push(local);
+  masterMap.set('@', local);
   // Array storage.
-  masterMap.set('[]', {
+  let array = {
       name: '[ ]',
       type: 'element',
       inputs: [
@@ -1379,66 +1431,9 @@ function Editor(model, textInputController) {
         { type: '[v,v]' },
         { type: '[vv,v]' },
       ]
-  });
-
-  var palette = this.palette = {
-    root: {
-      type: 'palette',
-      x: 0,
-      y: 0,
-      items: [
-        { type: 'element',
-          elementType: 'junction',
-          junctionType: 'input',
-          x: 8, y: 8,
-          master: '$',
-          inputs: [],
-          outputs: [
-            { type: '*' },
-          ],
-        },
-        { type: 'element',
-          elementType: 'junction',
-          junctionType: 'output',
-          x: 38, y: 8,
-          master: '$',
-          inputs: [
-            { type: '*' },
-          ],
-          outputs: [],
-        },
-        { type: 'element',
-          elementType: 'junction',
-          junctionType: 'apply',
-          x: 72, y: 8,
-          master: '$',
-          inputs: [
-            { type: '*', name: 'λ' },
-          ],
-          outputs: [],
-        },
-        { type: 'element',
-          elementType: 'literal',
-          x: 56, y: 40,
-          master: '$',
-          inputs: [],
-          outputs: [
-            { type: 'v', name: '0' },
-          ],
-        },
-        {
-          type: 'element',
-          x: 8, y: 80,
-          master: '@',
-        },
-        {
-          type: 'element',
-          x: 56, y: 80,
-          master: '[]',
-        },
-      ],
-    }
-  }
+  };
+  self.masters.push(array);
+  masterMap.set('[ ]', array);
 
   // Decodes and atomizes pin types into master map.
   function decodePinType(s) {
@@ -1495,12 +1490,11 @@ function Editor(model, textInputController) {
   }
 
   // Initialize the built in masters.
-  masterMap.forEach(function(master, name) {
+  this.masters.forEach(function(master) {
     initializePins(master);
-    // console.log(name, master);
   });
 
-  // Initialize items in models (e.g. palette and documents).
+  // Initialize items.
   function initialize(item) {
     if (item.type == 'element') {
       // Only initialize once.
@@ -1516,13 +1510,6 @@ function Editor(model, textInputController) {
   }
 
   editingModel.extend(model);
-
-  dataModels.observableModel.extend(palette);
-  dataModels.hierarchicalModel.extend(palette);
-  dataModels.transformableModel.extend(palette);
-  palette.dataModel.addInitializer(initialize);
-  palette.dataModel.initialize();
-  viewModel.extend(palette);
 
   model.dataModel.addInitializer(initialize);
   model.dataModel.initialize();
@@ -1544,39 +1531,38 @@ Editor.prototype.initialize = function(canvasController) {
   this.ctx = canvasController.ctx;
   this.renderer = new Renderer(canvasController.theme);
 
-  let renderer = this.renderer, ctx = this.ctx;
-  renderer.beginDraw(this.palette, ctx);
-  this.masterMap.forEach(function(master, name) {
-    renderer.layoutMaster(master);
-  });
-  // TODO clean this up
-  this.palette.root.items.forEach(function(item) {
-    if (item.master == '$') {
-      renderer.layoutMaster(item);
-    }
-  });
-  renderer.endDraw();
+  let renderer = this.renderer, ctx = this.ctx,
+      model = this.model, diagram = this.diagram;
+  renderer.beginDraw(model, ctx);
 
+  // Create an instance of every junction.
+  let x, y;
+  x = 16, y = 280,
+  this.primitives.forEach(function(primitives) {
+    let item = Object.assign(primitives);
+    item.x = x;
+    item.y = y;
+    model.editingModel.newItem(item);
+    model.editingModel.addItem(item);
+    renderer.layoutMaster(item);
+    x += 40;
+  });
   // Create an instance of every master.
-  // TODO make palette awesome.
-  let x = 160, y = 320, model = this.model, diagram = this.diagram;
-  this.masterMap.forEach(function(master, name) {
+  x = 16, y = 320;
+  this.masters.forEach(function(master) {
+    renderer.layoutMaster(master);
     let item = {
       type: 'element',
-      master: name,
+      master: master.name,
+      [_master]: master,
       x: x,
       y: y,
     };
-
     model.editingModel.newItem(item);
     model.editingModel.addItem(item);
     x += 48;
   });
-}
-
-Editor.prototype.isPaletteItem = function(item) {
-  var hierarchicalModel = this.palette.hierarchicalModel;
-  return hierarchicalModel.getParent(item) === this.palette.root;
+  renderer.endDraw();
 }
 
 Editor.prototype.addTemporaryItem = function(item) {
@@ -1593,8 +1579,8 @@ Editor.prototype.getTemporaryItem = function() {
 
 Editor.prototype.draw = function() {
   var renderer = this.renderer, diagram = this.diagram,
-      model = this.model, palette = this.palette,
-      ctx = this.ctx, canvasController = this.canvasController;
+      model = this.model, ctx = this.ctx,
+      canvasController = this.canvasController;
   renderer.beginDraw(model, ctx);
   canvasController.applyTransform();
 
@@ -1618,14 +1604,6 @@ Editor.prototype.draw = function() {
   });
   if (this.hotTrackInfo)
     renderer.draw(this.hotTrackInfo.item, hotTrackMode);
-  renderer.endDraw();
-
-  renderer.beginDraw(palette, ctx);
-  ctx.fillStyle = renderer.theme.altBgColor;
-  ctx.fillRect(palette.root.x, palette.root.y, 128, 300);
-  palette.root.items.forEach(function(item) {
-    renderer.draw(item, normalMode);
-  });
   renderer.endDraw();
 
   var temporary = this.getTemporaryItem();
@@ -1666,8 +1644,6 @@ Editor.prototype.hitTest = function(p) {
         fn(item);
     }
   }
-  reverseForEach(this.palette.root.items, null,
-    item => pushInfo(renderer.hitTest(item, p, tol, normalMode)));
   // TODO hit test selection first, in highlight, first.
   reverseForEach(diagram.items, isWire,
     item => pushInfo(renderer.hitTest(item, cp, cTol, normalMode)));
@@ -1732,13 +1708,14 @@ Editor.prototype.onClick = function(p) {
   let model = this.model,
       selectionModel = model.selectionModel,
       shiftKeyDown = this.canvasController.shiftKeyDown,
+      cmdKeyDown = this.canvasController.cmdKeyDown,
       hitList = this.hitTest(p),
       mouseHitInfo = this.mouseHitInfo = this.getFirstHit(hitList, isDraggable);
   if (mouseHitInfo) {
+    if (cmdKeyDown)
+      mouseHitInfo.moveCopy = true;
     var item = mouseHitInfo.item;
-    if (this.isPaletteItem(item)) {
-      selectionModel.clear();
-    } else if (!selectionModel.contains(item)) {
+    if (!selectionModel.contains(item)) {
       if (!shiftKeyDown)
         selectionModel.clear();
       selectionModel.add(item);
@@ -1759,18 +1736,10 @@ Editor.prototype.onBeginDrag = function(p0) {
   let canvasController = this.canvasController,
       dragItem = mouseHitInfo.item, type = dragItem.type,
       model = this.model,
+      selectionModel = model.selectionModel,
+      editingModel = model.editingModel,
       newItem, drag;
-  if (this.isPaletteItem(dragItem)) {
-    newItem = model.instancingModel.clone(dragItem);
-    drag = {
-      type: 'paletteItem',
-      name: 'Add new ' + dragItem.type,
-      isNewItem: true,
-    }
-    let cp = canvasController.viewToCanvas(newItem);
-    newItem.x = cp.x;
-    newItem.y = cp.y;
-  } else if (mouseHitInfo.input !== undefined) {
+  if (mouseHitInfo.input !== undefined) {
     // Wire from input pin.
     let circuitId = model.dataModel.getId(dragItem),
         cp0 = canvasController.viewToCanvas(p0);
@@ -1805,7 +1774,11 @@ Editor.prototype.onBeginDrag = function(p0) {
   } else {
     switch (type) {
       case 'element':
-        drag = { type: 'moveSelection', name: 'Move selection' };
+        if (mouseHitInfo.moveCopy) {
+          drag = { type: 'moveCopySelection', name: 'Move copy of selection' };
+        } else {
+          drag = { type: 'moveSelection', name: 'Move selection' };
+        }
         break;
       case 'wire':
         if (mouseHitInfo.p1)
@@ -1817,8 +1790,8 @@ Editor.prototype.onBeginDrag = function(p0) {
   }
   this.drag = drag;
   if (drag) {
-    if (drag.type === 'moveSelection')
-      model.editingModel.reduceSelection();
+    if (drag.type === 'moveSelection' || drag.type == 'moveCopySelection')
+      editingModel.reduceSelection();
     model.transactionModel.beginTransaction(drag.name);
     if (newItem) {
       drag.item = newItem;
@@ -1826,6 +1799,12 @@ Editor.prototype.onBeginDrag = function(p0) {
       this.addTemporaryItem(newItem);
     } else {
       drag.item = dragItem;
+      if (mouseHitInfo.moveCopy) {
+        let map = new Map(),
+            copies = editingModel.copyItems(selectionModel.contents(), map);
+        selectionModel.clear();
+        editingModel.addItems(copies);
+      }
     }
   }
 }
@@ -1851,16 +1830,8 @@ Editor.prototype.onDrag = function(p0, p) {
       hitList = this.hitTest(p), hitInfo,
       src, dst, srcId, dstId, t1, t2;
   switch (drag.type) {
-    case 'paletteItem':
-      if (isElement(dragItem))
-        hitInfo = this.getFirstHit(hitList, isContainerTarget);
-      var snapshot = transactionModel.getSnapshot(dragItem);
-      if (snapshot) {
-        observableModel.changeValue(dragItem, 'x', snapshot.x + dx);
-        observableModel.changeValue(dragItem, 'y', snapshot.y + dy);
-      }
-      break;
     case 'moveSelection':
+    case 'moveCopySelection':
       if (isElement(dragItem)) {
         hitInfo = this.getFirstHit(hitList, isContainerTarget);
         selectionModel.forEach(function(item) {
@@ -2021,7 +1992,7 @@ Editor.prototype.onKeyDown = function(e) {
         return true;
       case 86:  // 'v'
         if (editingModel.getScrap()) {
-          editingModel.doPaste();
+          editingModel.doPaste(24, 24);
           return true;
         }
         return false;
