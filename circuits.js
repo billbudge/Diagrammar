@@ -795,6 +795,17 @@ let editingModel = (function() {
       model.transactionModel.endTransaction();
     },
 
+    doToggleMaster: function() {
+      let model = this.model;
+      this.reduceSelection();
+      model.transactionModel.beginTransaction('toggle master state');
+      model.selectionModel.contents().forEach(function(element) {
+        model.observableModel.changeValue(element, 'state',
+          (element.state == 'palette') ? 'normal' : 'palette');
+      })
+      model.transactionModel.endTransaction();
+    },
+
     onTransactionEnding_: function (transaction) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
@@ -1537,13 +1548,15 @@ Editor.prototype.initialize = function(canvasController) {
   this.ctx = canvasController.ctx;
   this.renderer = new Renderer(canvasController.theme);
 
-  let renderer = this.renderer, ctx = this.ctx,
-      model = this.model, diagram = this.diagram;
+  let model = this.model, diagram = this.diagram;
+  if (diagram.items.length != 0) return;
+
+    let renderer = this.renderer, ctx = this.ctx;
   renderer.beginDraw(model, ctx);
 
   // Create an instance of every primitive.
   let x, y;
-  x = 16, y = 280,
+  x = 16, y = 16,
   this.primitives.forEach(function(primitives) {
     let item = Object.assign(primitives);
     item.x = x;
@@ -1555,7 +1568,7 @@ Editor.prototype.initialize = function(canvasController) {
     x += 40;
   });
   // Create an instance of every master.
-  x = 16, y = 320;
+  x = 16, y = 56;
   this.masters.forEach(function(master) {
     renderer.layoutMaster(master);
     let item = {
@@ -1569,6 +1582,9 @@ Editor.prototype.initialize = function(canvasController) {
     model.editingModel.newItem(item);
     model.editingModel.addItem(item);
     x += 48;
+    if (x > 256) {
+      x = 16, y += 56;
+    }
   });
   renderer.endDraw();
 }
@@ -2007,6 +2023,9 @@ Editor.prototype.onKeyDown = function(e) {
           return true;
         }
         return false;
+      case 72:  // 'm'
+        editingModel.doToggleMaster();
+        return true;
       case 74:  // 'j'
         editingModel.doComplete();
         return true;
