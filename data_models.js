@@ -904,9 +904,9 @@ let editingModel = (function () {
     },
 
     doCopy: function () {
-      let model = this.model, selectionModel = model.selectionModel,
+      let model = this.model,
           map = new Map(),
-          copies = this.copyItems(selectionModel.contents(), map);
+          copies = this.copyItems(model.selectionModel.contents(), map);
       this.setScrap(copies);
       return copies;
     },
@@ -925,6 +925,7 @@ let editingModel = (function () {
           items = this.copyItems(this.getScrap(), map);
       selectionModel.clear();
       this.addItems(items);
+      selectionModel.set(items);
       transactionModel.endTransaction();
     },
   }

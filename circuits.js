@@ -75,130 +75,6 @@ let editingModel = (function() {
       model.selectionModel.set(model.hierarchicalModel.reduceSelection());
     },
 
-    getInteriorWires: function (items) {
-      let self = this, model = this.model,
-          itemSet = new Set();
-      items.forEach(function(item) {
-        if (isElement(item)) {
-          itemSet.add(item);
-        }
-      });
-      let wires = [];
-      this.diagram.items.forEach(function(item) {
-        if (isWire(item)) {
-          let containsSrc = itemSet.has(self.getWireSrc(item)),
-              containsDst = itemSet.has(self.getWireDst(item));
-          if (containsSrc && containsDst)
-            wires.push(item);
-        }
-      });
-      return wires;
-    },
-
-    newItem: function(item) {
-      let dataModel = this.model.dataModel;
-      dataModel.assignId(item);
-      dataModel.initialize(item);
-    },
-
-    deleteItem: function(item) {
-      let model = this.model,
-          hierarchicalModel = model.hierarchicalModel,
-          parent = hierarchicalModel.getParent(item);
-      if (parent) {
-        let items = parent.items,
-            index = items.indexOf(item);
-        if (index >= 0)
-          model.observableModel.removeElement(parent, 'items', index);
-      }
-    },
-
-    deleteItems: function(items) {
-      let self = this;
-      items.forEach(function(item) {
-        self.deleteItem(item);
-      });
-    },
-
-    doDelete: function() {
-      this.reduceSelection();
-      this.prototype.doDelete.call(this);
-    },
-
-    copyItems: function(items, map) {
-      let model = this.model, dataModel = model.dataModel,
-          transformableModel = model.transformableModel,
-          connected = this.getInteriorWires(items),
-          copies = this.prototype.copyItems(items.concat(connected), map),
-          diagram = this.diagram;
-
-      items.forEach(function(item) {
-        let copy = map.get(dataModel.getId(item));
-        if (isElement(copy)) {
-          copy.state = 'normal';
-          let toGlobal = transformableModel.getToParent(item, diagram);
-          geometry.matMulPt(copy, toGlobal);
-        }
-      });
-      return copies;
-    },
-
-    doCopy: function() {
-      let selectionModel = this.model.selectionModel;
-      this.reduceSelection();
-      selectionModel.contents().forEach(function(item) {
-        if (!isElement(item))
-          selectionModel.remove(item);
-      });
-      this.prototype.doCopy.call(this);
-    },
-
-    addItems: function(items) {
-      var model = this.model, diagram = this.diagram;
-      items.forEach(function(item) {
-        diagram.items.push(item);
-        model.selectionModel.add(item);
-        model.observableModel.onElementInserted(diagram, 'items', diagram.items.length - 1);
-      });
-    },
-
-    doPaste: function(dx, dy) {
-      this.getScrap().forEach(function(item) {
-        // Offset pastes so the user can see them.
-        if (isElement(item)) {
-          item.x += dx;
-          item.y += dy;
-        }
-      });
-      this.prototype.doPaste.call(this);
-    },
-
-    addItem: function(item, parent) {
-      let model = this.model,
-          hierarchicalModel = model.hierarchicalModel,
-          oldParent = hierarchicalModel.getParent(item);
-      if (!parent)
-        parent = this.diagram;
-      if (oldParent === parent)
-        return;
-      if (!isWire(item)) {
-        let transformableModel = model.transformableModel,
-            toParent = transformableModel.getToParent(item, parent);
-        geometry.matMulPt(item, toParent);
-      }
-      if (isDiagram(parent)) {
-        if (!Array.isArray(parent.items))
-          model.observableModel.changeValue(parent, 'items', []);
-      }
-      if (oldParent !== parent) {
-        if (oldParent)            // if null, it's a new item.
-          this.deleteItem(item);  // notifies observer
-        parent.items.push(item);
-        model.observableModel.onElementInserted(parent, 'items', parent.items.length - 1);
-      }
-      return item;
-    },
-
     // Collects subgraph information such as elements, interior wires, incoming
     // wires, outgoing wires, for each element, an array of input wires
     // and an array of arrays of output wires.
@@ -261,6 +137,121 @@ let editingModel = (function() {
         incomingWires: incomingWires,
         outgoingWires: outgoingWires,
       }
+    },
+
+    closeSelection: function() {
+      let model = this.model,
+          selectionModel = model.selectionModel,
+          graphInfo = this.collectGraphInfo(selectionModel.contents());
+      let elements = Array.from(graphInfo.elementSet.values());
+      let closure = graphInfo.interiorWires.concat(elements);
+      selectionModel.set(closure);
+    },
+
+    newItem: function(item) {
+      let dataModel = this.model.dataModel;
+      dataModel.assignId(item);
+      dataModel.initialize(item);
+    },
+
+    newItems: function(items) {
+      let self = this;
+      items.forEach(item => self.newItem(item));
+    },
+
+    deleteItem: function(item) {
+      let model = this.model,
+          hierarchicalModel = model.hierarchicalModel,
+          parent = hierarchicalModel.getParent(item);
+      if (parent) {
+        let items = parent.items,
+            index = items.indexOf(item);
+        if (index >= 0)
+          model.observableModel.removeElement(parent, 'items', index);
+      }
+    },
+
+    deleteItems: function(items) {
+      let self = this;
+      items.forEach(function(item) {
+        self.deleteItem(item);
+      });
+    },
+
+    doDelete: function() {
+      this.reduceSelection();
+      this.prototype.doDelete.call(this);
+    },
+
+    copyItems: function(items, map) {
+      let model = this.model, dataModel = model.dataModel,
+          diagram = this.diagram,
+          transformableModel = model.transformableModel,
+          copies = this.prototype.copyItems(items, map);
+      items.forEach(function(item) {
+        let copy = map.get(dataModel.getId(item));
+        if (isElement(copy)) {
+          copy.state = 'normal';
+          let toGlobal = transformableModel.getToParent(item, diagram);
+          geometry.matMulPt(copy, toGlobal);
+        }
+      });
+      return copies;
+    },
+
+    doCopy: function() {
+      let selectionModel = this.model.selectionModel;
+      this.reduceSelection();
+      selectionModel.contents().forEach(function(item) {
+        if (!isElement(item))
+          selectionModel.remove(item);
+      });
+      this.closeSelection();
+      this.prototype.doCopy.call(this);
+    },
+
+    addItem: function(item, parent) {
+      let model = this.model,
+          hierarchicalModel = model.hierarchicalModel,
+          oldParent = hierarchicalModel.getParent(item);
+      if (!parent)
+        parent = this.diagram;
+      if (oldParent === parent)
+        return;
+      if (!isWire(item)) {
+        let transformableModel = model.transformableModel,
+            toParent = transformableModel.getToParent(item, parent);
+        geometry.matMulPt(item, toParent);
+      }
+      if (isDiagram(parent)) {
+        if (!Array.isArray(parent.items))
+          model.observableModel.changeValue(parent, 'items', []);
+      }
+      if (oldParent !== parent) {
+        if (oldParent)            // if non-null, first remove from old parent.
+          this.deleteItem(item);  // notifies observer
+        model.observableModel.insertElement(
+          parent, 'items', parent.items.length - 1, item);
+      }
+      return item;
+    },
+
+    addItems: function(items, parent) {
+      let self = this;
+      items.forEach(function(item) {
+        self.addItem(item, parent);
+      });
+    },
+
+    doPaste: function(dx, dy) {
+      this.getScrap().forEach(function(item) {
+        // Offset pastes so the user can see them.
+        if (isElement(item)) {
+          item.x += dx;
+          item.y += dy;
+        }
+      });
+      this.prototype.doPaste.call(this);
     },
 
     connectInput: function(element, pin) {
@@ -1827,10 +1818,22 @@ Editor.prototype.onBeginDrag = function(p0) {
     } else {
       drag.item = dragItem;
       if (mouseHitInfo.moveCopy) {
+        editingModel.reduceSelection();
+        editingModel.closeSelection();
         let map = new Map(),
             copies = editingModel.copyItems(selectionModel.contents(), map);
-        selectionModel.clear();
         editingModel.addItems(copies);
+        selectionModel.set(copies);
+        // TODO clean up.
+        // Any cloned items may need layout.
+        let renderer = this.renderer;
+        renderer.beginDraw(model, this.ctx);
+        copies.forEach(function(copy) {
+          if (needsLayout(copy)) {
+            renderer.layout(copy);
+          }
+        });
+        renderer.endDraw();
       }
     }
   }
@@ -1938,11 +1941,6 @@ Editor.prototype.onEndDrag = function(p) {
       });
     }
   }
-
-  // var renderer = this.renderer;
-  // renderer.beginDraw(model, this.ctx);
-  // editingModel.layout(this.diagram, renderer);
-  // renderer.endDraw();
 
   if (isWire(dragItem)) {
     // If dragItem is a disconnected wire, delete it.
