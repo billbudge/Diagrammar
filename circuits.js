@@ -140,6 +140,31 @@ let editingModel = (function() {
     },
 
     closeSelection: function() {
+      let self = this, model = this.model,
+          selectionModel = model.selectionModel,
+          graphInfo = this.collectGraphInfo(this.diagram.items),
+          toVisit = Array.from(selectionModel.contents());
+      while (toVisit.length > 0) {
+        let item = toVisit.pop();
+        if (!isElement(item)) continue;
+        selectionModel.add(item);
+        graphInfo.inputMap.get(item).forEach(function(wire) {
+          if (!wire) return;
+          let src = self.getWireSrc(wire);
+          if (!selectionModel.contains(src))
+            toVisit.push(src);
+        });
+        graphInfo.outputMap.get(item).forEach(function(wires) {
+          wires.forEach(function(wire) {
+            let dst = self.getWireDst(wire);
+            if (!selectionModel.contains(dst))
+              toVisit.push(dst);
+          });
+        });
+      }
+    },
+
+    selectInteriorWires: function() {
       let model = this.model,
           selectionModel = model.selectionModel,
           graphInfo = this.collectGraphInfo(selectionModel.contents());
@@ -206,7 +231,7 @@ let editingModel = (function() {
         if (!isElement(item))
           selectionModel.remove(item);
       });
-      this.closeSelection();
+      this.selectInteriorWires();
       this.prototype.doCopy.call(this);
     },
 
@@ -1819,7 +1844,7 @@ Editor.prototype.onBeginDrag = function(p0) {
       drag.item = dragItem;
       if (mouseHitInfo.moveCopy) {
         editingModel.reduceSelection();
-        editingModel.closeSelection();
+        editingModel.selectInteriorWires();
         let map = new Map(),
             copies = editingModel.copyItems(selectionModel.contents(), map);
         editingModel.addItems(copies);
@@ -2021,7 +2046,10 @@ Editor.prototype.onKeyDown = function(e) {
           return true;
         }
         return false;
-      case 72:  // 'm'
+      case 69:  // 'e'
+        editingModel.closeSelection();
+        return true;
+      case 72:  // 'h'
         editingModel.doToggleMaster();
         return true;
       case 74:  // 'j'
