@@ -5,7 +5,7 @@
 let circuits = (function() {
 
 function isContainer(item) {
-  return item.type == 'diagram';
+  return item.type == 'circuit';
 }
 
 function isElement(item) {
@@ -52,8 +52,8 @@ function needsLayout(item) {
   return isWire(item) || isUnmastered(item);
 }
 
-function isDiagram(item) {
-  return item.type == 'diagram';
+function isCircuit(item) {
+  return item.type == 'circuit';
 }
 
 //------------------------------------------------------------------------------
@@ -248,7 +248,7 @@ let editingModel = (function() {
             toParent = transformableModel.getToParent(item, parent);
         geometry.matMulPt(item, toParent);
       }
-      if (isDiagram(parent)) {
+      if (isCircuit(parent)) {
         if (!Array.isArray(parent.items))
           model.observableModel.changeValue(parent, 'items', []);
       }
@@ -256,7 +256,7 @@ let editingModel = (function() {
         if (oldParent)            // if non-null, first remove from old parent.
           this.deleteItem(item);  // notifies observer
         model.observableModel.insertElement(
-          parent, 'items', parent.items.length - 1, item);
+          parent, 'items', parent.items.length, item);
       }
       return item;
     },
@@ -924,7 +924,6 @@ let editingModel = (function() {
     model.transactionModel.addHandler('transactionEnding', function (transaction) {
       instance.onTransactionEnding_(transaction);
     });
-
 
     model.editingModel = instance;
     return instance;
@@ -1705,7 +1704,7 @@ Editor.prototype.getFirstHit = function(hitList, filterFn) {
 }
 
 function isDraggable(hitInfo, model) {
-  return !isDiagram(hitInfo.item);
+  return !isCircuit(hitInfo.item);
 }
 
 function isInputPin(hitInfo, model) {
@@ -2099,7 +2098,7 @@ return {
 
 var circuit_data =
 {
-  "type": "diagram",
+  "type": "circuit",
   "id": 1001,
   "x": 0,
   "y": 0,
