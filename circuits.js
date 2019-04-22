@@ -56,6 +56,10 @@ function isCircuit(item) {
   return item.type == 'circuit';
 }
 
+function getMaster(item) {
+  return item[_master];
+}
+
 //------------------------------------------------------------------------------
 
 let _master = Symbol('master'),
@@ -66,7 +70,6 @@ let _master = Symbol('master'),
     _p1 = Symbol('p1'),
     _p2 = Symbol('p2'),
     _bezier = Symbol('bezier');
-
 
 let editingModel = (function() {
   let proto = {
@@ -87,9 +90,9 @@ let editingModel = (function() {
         if (isElement(item)) {
           elementSet.add(item);
           // inputMap takes element to array of incoming wires.
-          inputMap.set(item, new Array(item[_master].inputs.length).fill(null));
+          inputMap.set(item, new Array(getMaster(item).inputs.length).fill(null));
           // outputMap takes element to array of array of outgoing wires.
-          outputMap.set(item, new Array(item[_master].outputs.length).fill([]));
+          outputMap.set(item, new Array(getMaster(item).outputs.length).fill([]));
         }
       });
       // Separate wires into incoming, outgoing, and interior. Populate
@@ -281,7 +284,7 @@ let editingModel = (function() {
 
     connectInput: function(element, pin) {
       let viewModel = this.model.viewModel,
-          dstPin = element[_master].inputs[pin],
+          dstPin = getMaster(element).inputs[pin],
           pinPoint = viewModel.pinToPoint(element, pin, true);
       let junction = {
         type: 'element',
@@ -312,7 +315,7 @@ let editingModel = (function() {
 
     connectOutput: function(element, pin) {
       let viewModel = this.model.viewModel,
-          srcPin = element[_master].outputs[pin],
+          srcPin = getMaster(element).outputs[pin],
           pinPoint = viewModel.pinToPoint(element, pin, false);
       let junction = {
         type: 'element',
@@ -367,12 +370,12 @@ let editingModel = (function() {
       // Create a function type whose inputs are the disconnected inputs,
       // and whose outputs are all the outputs, connected or not.
       let fnType = '[';
-      element[_master].inputs.forEach(function(input, i) {
+      getMaster(element).inputs.forEach(function(input, i) {
         if (!inputWires[i])
           fnType += input.type;
       });
       fnType += ',';
-      element[_master].outputs.forEach(function(output, i) {
+      getMaster(element).outputs.forEach(function(output, i) {
         fnType += output.type;
       });
       fnType += ']';
@@ -399,7 +402,7 @@ let editingModel = (function() {
       let id = dataModel.assignId(newElement);
 
       // Add only connected input pins to inputs.
-      element[_master].inputs.forEach(function(pin, i) {
+      getMaster(element).inputs.forEach(function(pin, i) {
         let incomingWire = incomingWires[i];
         if (incomingWire) {
           inputs.push({ type: pin.type, name: pin.name });
@@ -409,7 +412,7 @@ let editingModel = (function() {
         }
       });
       // Add only connected output pins to outputs.
-      element[_master].outputs.forEach(function(pin, i) {
+      getMaster(element).outputs.forEach(function(pin, i) {
         let outgoingWires = outgoingWireArrays[i];
         if (outgoingWires.length > 0) {
           outputs.push({ type: pin.type, name: pin.name });
@@ -431,11 +434,11 @@ let editingModel = (function() {
       // Create a function type whose inputs are all inputs, and whose outputs
       // are all outputs.
       let fnType = '[';
-      element[_master].inputs.forEach(function(input) {
+      getMaster(element).inputs.forEach(function(input) {
         fnType += input.type;
       });
       fnType += ',';
-      element[_master].outputs.forEach(function(output) {
+      getMaster(element).outputs.forEach(function(output) {
         fnType += output.type;
       });
       fnType += ']';
@@ -462,7 +465,7 @@ let editingModel = (function() {
       let id = dataModel.assignId(newElement);
 
       // Add all input pins to inputs.
-      element[_master].inputs.forEach(function(pin, i) {
+      getMaster(element).inputs.forEach(function(pin, i) {
         let incomingWire = incomingWires[i];
         inputs.push({ type: pin.type, name: pin.name });
         // remap wire to new element and pin.
@@ -472,7 +475,7 @@ let editingModel = (function() {
         }
       });
       // Add all output pins to outputs.
-      element[_master].outputs.forEach(function(pin, i) {
+      getMaster(element).outputs.forEach(function(pin, i) {
         let outgoingWires = outgoingWireArrays[i];
         outputs.push({ type: pin.type, name: pin.name });
         outgoingWires.forEach(function(outgoingWire, j) {
@@ -562,7 +565,7 @@ let editingModel = (function() {
       // represented once in inputs and outputs.
       function addUniqueSource(wire, srcMap, inputsOrOutputs) {
         let src = self.getWireSrc(wire),
-            srcPins = src[_master].outputs,
+            srcPins = getMaster(src).outputs,
             srcIndices = srcMap.get(src);
         if (srcIndices === undefined) {
           srcIndices = new Array(srcPins.length);
@@ -613,7 +616,7 @@ let editingModel = (function() {
             observableModel.changeValue(dst, 'pinIndex', index);
             if (isOutputJunction(dst)) {
               // name output pin after this destination.
-              outputs[index].name = dst[_master].inputs[0].name;
+              outputs[index].name = getMaster(dst).inputs[0].name;
             }
           } else {
             // If this is the first instance of the source...
@@ -635,7 +638,7 @@ let editingModel = (function() {
       let passThroughs = new Set();
       graphInfo.interiorWires.forEach(function(wire) {
         let src = self.getWireSrc(wire),
-            srcPin = src[_master].outputs[wire.srcPin];
+            srcPin = getMaster(src).outputs[wire.srcPin];
         // Trace wires, starting at input junctions.
         if (!isInputJunction(src) || srcPin.type != '*')
           return;
@@ -644,7 +647,7 @@ let editingModel = (function() {
         while (activeWires.length) {
           wire = activeWires.pop();
           let dst = self.getWireDst(wire),
-              dstPin = dst[_master].inputs[wire.dstPin];
+              dstPin = getMaster(dst).inputs[wire.dstPin];
           if (isOutputJunction(dst) && dstPin.type == '*') {
             passThroughs.add([srcPinIndex, dst.pinIndex]);
           } else if (dst.passThroughs) {
@@ -684,11 +687,11 @@ let editingModel = (function() {
       let self = this, model = this.model,
           observableModel = model.observableModel,
           srcItem = this.getWireSrc(wire),
-          srcPin = srcItem[_master].outputs[wire.srcPin],
+          srcPin = getMaster(srcItem).outputs[wire.srcPin],
           dstItem = this.getWireDst(wire),
-          dstPin = dstItem[_master].inputs[wire.dstPin];
+          dstPin = getMaster(dstItem).inputs[wire.dstPin];
       // If srcPin is a function, add those inputs and output pins.
-      let master = srcPin[_master];
+      let master = getMaster(srcPin);
       if (master) {
         master.inputs.forEach(function(input) {
           // Note we're inserting before the original input 0.
@@ -725,7 +728,7 @@ let editingModel = (function() {
         observableModel.removeElement(element, 'outputs', 0);
       }
       let wire = inputWires[inputWires.length - 1],
-          dstPin = element[_master].inputs[0];
+          dstPin = getMaster(element).inputs[0];
 
       if (wire) {
         observableModel.changeValue(wire, 'dstPin', 0);
@@ -739,14 +742,14 @@ let editingModel = (function() {
       while (activeWires.length) {
         wire = activeWires.pop();
         let src = this.getWireSrc(wire),
-            srcPin = src[_master].outputs[wire.srcPin],
+            srcPin = getMaster(src).outputs[wire.srcPin],
             dst = this.getWireDst(wire),
-            dstPin = dst[_master].inputs[wire.dstPin];
+            dstPin = getMaster(dst).inputs[wire.dstPin];
         if (srcPin.type != '*') return srcPin.type;
         if (src.passThroughs) {
           src.passThroughs.forEach(function(passThrough) {
             if (passThrough[1] == wire.srcPin) {
-              srcPin = src[_master].inputs[passThrough[0]];
+              srcPin = getMaster(src).inputs[passThrough[0]];
               let incomingWire = graphInfo.inputMap.get(src)[passThrough[0]];
               activeWires.push(incomingWire);
             }
@@ -761,14 +764,14 @@ let editingModel = (function() {
       while (activeWires.length) {
         wire = activeWires.pop();
         let src = this.getWireSrc(wire),
-            srcPin = src[_master].outputs[wire.srcPin],
+            srcPin = getMaster(src).outputs[wire.srcPin],
             dst = this.getWireDst(wire),
-            dstPin = dst[_master].inputs[wire.dstPin];
+            dstPin = getMaster(dst).inputs[wire.dstPin];
         if (dstPin.type != '*') return dstPin.type;
         if (dst.passThroughs) {
           dst.passThroughs.forEach(function(passThrough) {
             if (passThrough[0] == wire.dstPin) {
-              dstPin = dst[_master].outputs[passThrough[1]];
+              dstPin = getMaster(dst).outputs[passThrough[1]];
               let outgoingWires = graphInfo.outputMap.get(dst)[passThrough[1]];
               outgoingWires.forEach(wire => activeWires.push(wire));
             }
@@ -837,7 +840,7 @@ let editingModel = (function() {
             case 'input': {
               // Input junction pin 0 type should match all of its destinations.
               // Just trace the first one.
-              let outputPin = element[_master].outputs[0],
+              let outputPin = getMaster(element).outputs[0],
                   type = outputPin.type,
                   dstType = '*',
                   wires = graphInfo.outputMap.get(element)[0];
@@ -852,7 +855,7 @@ let editingModel = (function() {
             }
             case 'output': {
               // Output junction pin 0 type should match its unique source.
-              let inputPin = element[_master].inputs[0],
+              let inputPin = getMaster(element).inputs[0],
                   type = inputPin.type,
                   srcType = '*',
                   wire = graphInfo.inputMap.get(element)[0];
@@ -866,7 +869,7 @@ let editingModel = (function() {
               break;
             }
             case 'apply': {
-              let inputPins = element[_master].inputs,
+              let inputPins = getMaster(element).inputs,
                   lastIndex = inputPins.length - 1,
                   inputPin = inputPins[lastIndex],
                   type = inputPin.type,
@@ -943,8 +946,8 @@ let viewModel = (function() {
           x = transform[4], y = transform[5], w, h;
       switch (item.type) {
         case 'element':
-          w = item[_master][_width];
-          h = item[_master][_height];
+          w = getMaster(item)[_width];
+          h = getMaster(item)[_height];
           break;
       }
       return { x: x, y: y, w: w, h: h };
@@ -968,9 +971,9 @@ let viewModel = (function() {
           x = rect.x, y = rect.y, w = rect.w, h = rect.h,
           pin;
       if (isInput) {
-        pin = item[_master].inputs[index];
+        pin = getMaster(item).inputs[index];
       } else {
-        pin = item[_master].outputs[index];
+        pin = getMaster(item).outputs[index];
         x += w;
       }
       y += pin[_y] + pin[_height] / 2;
@@ -1033,8 +1036,8 @@ Renderer.prototype.getItemRect = function(item) {
   // TODO update
   switch (item.type) {
     case 'element':
-      w = item[_master][_width];
-      h = item[_master][_height];
+      w = getMaster(item)[_width];
+      h = getMaster(item)[_height];
       break;
   }
   return { x: x, y: y, w: w, h: h };
@@ -1045,9 +1048,9 @@ Renderer.prototype.pinToPoint = function(item, pin, input) {
       x = rect.x, y = rect.y, w = rect.w, h = rect.h;
   // Element.
   if (input) {
-    pin = item[_master].inputs[pin];
+    pin = getMaster(item).inputs[pin];
   } else {
-    pin = item[_master].outputs[pin];
+    pin = getMaster(item).outputs[pin];
     x += w;
   }
   y += pin[_y] + pin[_height] / 2;
@@ -1140,9 +1143,10 @@ Renderer.prototype.layoutPin = function(pin) {
   if (pin.type == 'v' || pin.type == '*') {
     pin[_width] = pin[_height] = 2 * this.knobbyRadius;
   } else {
-    this.layoutMaster(pin[_master]);
-    pin[_width] = pin[_master][_width] * shrink;
-    pin[_height] = pin[_master][_height] * shrink;
+    let master = getMaster(pin);
+    this.layoutMaster(master);
+    pin[_width] = master[_width] * shrink;
+    pin[_height] = master[_height] * shrink;
   }
 }
 
@@ -1200,7 +1204,7 @@ Renderer.prototype.drawPin = function(pin, x, y, mode) {
   if (pin.type == 'v' || pin.type == '*') {
     drawValue(this, x, y, pin.type);
   } else {
-    let master = pin[_master];
+    let master = getMaster(pin);
     this.ctx.scale(shrink, shrink);
     this.drawMaster(master, inv_shrink * x, inv_shrink * y, mode);
     this.ctx.scale(inv_shrink, inv_shrink);
@@ -1212,7 +1216,7 @@ Renderer.prototype.hitTestElement = function(element, p, tol, mode) {
       x = rect.x, y = rect.y, width = rect.w, height = rect.h,
       hitInfo = diagrams.hitTestRect(x, y, width, height, p, tol);
   if (hitInfo) {
-    var master = element[_master],
+    var master = getMaster(element),
         inputs = master.inputs, outputs = master.outputs,
         self = this;
     inputs.forEach(function(input, i) {
@@ -1285,7 +1289,7 @@ Renderer.prototype.draw = function(item, mode) {
       rect = this.getItemRect(item);
       if (item.state == 'palette' && mode == normalMode)
         mode = paletteMode;
-      this.drawMaster(item[_master], rect.x, rect.y, mode);
+      this.drawMaster(getMaster(item), rect.x, rect.y, mode);
       break;
     case 'wire':
       this.drawWire(item, mode);
@@ -1530,7 +1534,7 @@ function Editor(model, textInputController) {
   function initialize(item) {
     if (item.type == 'element') {
       // Only initialize once.
-      // if (!item[_master]) {
+      // if (!getMaster(item)) {
         if (isUnmastered(item)) {
           initializePins(item);
           item[_master] = item;
@@ -2083,6 +2087,7 @@ Editor.prototype.onKeyDown = function(e) {
 
 return {
   editingModel: editingModel,
+  viewModel: viewModel,
 
   normalMode: normalMode,
   paletteMode: paletteMode,

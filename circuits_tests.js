@@ -12,11 +12,14 @@ function newCircuit() {
   };
 }
 
-function newElement(x, y) {
+function newElement(x, y, inputs, outputs) {
   return {
     type: "element",
     x: x || 0,
     y: y || 0,
+    master: '$',
+    inputs: inputs || [{ type: 'v', }],
+    outputs: outputs || [{ type: 'v', }],
   };
 }
 
@@ -57,6 +60,19 @@ test("circuit.editingModel.addDeleteItem", function() {
   // Delete the item.
   test.deleteItem(item1);
   deepEqual(circuit.root.items, []);
+});
+
+test("circuit.editingModel.connectInput", function() {
+  let circuit = newCircuit();
+  let test = circuits.editingModel.extend(circuit);
+  circuit.dataModel.initialize();
+  // Add an item.
+  let item1 = newElement();
+  test.newItem(item1);
+  test.addItem(item1, circuit.root);
+  // Connect input 0.
+  test.connectInput(item1, 0);
+  deepEqual(circuit.root.items.length, 3);
 });
 
 
