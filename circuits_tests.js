@@ -81,13 +81,22 @@ test("circuit.editingAndMastering", function() {
   let editingModel = circuits.editingModel.extend(circuit);
   let test = circuits.masteringModel.extend(circuit);
   circuit.dataModel.initialize();
+  let types = [], masters = [];
+  function onMasterInserted(type, master) {
+    types.push(type);
+    masters.push(master);
+  }
+  test.addHandler('masterInserted', onMasterInserted);
+
   // Add an item.
   let item1 = newTypedElement('[vv,v]');
   editingModel.newItem(item1);
   editingModel.addItem(item1, circuit.root);
   // Check master
-  ok(test.getMaster(item1));
-  console.log(test.getMaster(item1));
+  let type = item1.master;
+  deepEqual(stringifyMaster(test.getMaster(item1)), type);
+  deepEqual(types, [type]);
+  deepEqual(masters, [test.getMaster(item1)]);
 });
 
 test("circuit.editingModel", function() {

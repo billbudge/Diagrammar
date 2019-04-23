@@ -79,17 +79,17 @@ let masteringModel = (function() {
       return item[_master];
     },
 
-    onMasterInserted: function (master) {
+    onMasterInserted: function (type, master) {
       // console.log(master);
       this.onEvent('masterInserted', function (handler) {
-        handler(master);
+        handler(type, master);
       });
     },
 
     // Type description: [inputs,outputs] with optional names, e.g.
     // [v(a)v(b),v(sum)] for a binop.
     decodeType: function(s) {
-      let masterMap = this.masterMap_;
+      let self = this;
       let j = 0, level = 0;
       // close over j to avoid extra return values.
       function decodeName() {
@@ -137,7 +137,7 @@ let masteringModel = (function() {
             type = s.substring(i, j);
             name = decodeName();
           }
-          let master = masterMap.get(type);
+          let master = self.masterMap_.get(type);
           if (!master) {
             master = {
               type: type,
@@ -145,7 +145,8 @@ let masteringModel = (function() {
               inputs: inputs,
               outputs: outputs,
             };
-            masterMap.set(type, master);
+            self.masterMap_.set(type, master);
+            self.onMasterInserted(type, master);
           }
           return master;
         }
@@ -167,7 +168,7 @@ let masteringModel = (function() {
     instance.model = model;
     instance.masterMap_ = new Map();
 
-    dataModels.eventMixin.extend(model);
+    dataModels.eventMixin.extend(instance);
 
     // Make sure new elements have masters.
     model.dataModel.addInitializer(function(item) {
