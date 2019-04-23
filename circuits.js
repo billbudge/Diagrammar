@@ -56,10 +56,6 @@ function isCircuit(item) {
   return item.type == 'circuit';
 }
 
-function getMaster(item) {
-  return item[_master];
-}
-
 //------------------------------------------------------------------------------
 
 let _master = Symbol('master'),
@@ -70,6 +66,123 @@ let _master = Symbol('master'),
     _p1 = Symbol('p1'),
     _p2 = Symbol('p2'),
     _bezier = Symbol('bezier');
+
+//------------------------------------------------------------------------------
+
+function getMaster(item) {
+  return item[_master];
+}
+
+let masteringModel = (function() {
+  let proto = {
+    getMaster: function(item) {
+      return item[_master];
+    },
+
+    onMasterInserted: function (master) {
+      // console.log(master);
+      this.onEvent('masterInserted', function (handler) {
+        handler(master);
+      });
+    },
+
+    // Type description: [inputs,outputs] with optional names, e.g.
+    // [v(a)v(b),v(sum)] for a binop.
+    decodeType: function(s) {
+      let masterMap = this.masterMap_;
+      let j = 0, level = 0;
+      // close over j to avoid extra return values.
+      function decodeName() {
+        let name;
+        if (s[j] == '(') {
+          let i = j + 1;
+          j = s.indexOf(')', i);
+          if (j > i)
+            name = s.substring(i, j);
+          j++;
+        }
+        return name;
+      }
+      function decode() {
+        let i = j;
+        // value types
+        if (s[j] == 'v') {
+          j++;
+          return { type: 'v', name: decodeName() };
+        }
+        // wildcard types
+        if (s[j] == '*') {
+          j++;
+          return { type: '*', name: decodeName() };
+        }
+        // fn types.
+        if (s[j] == '[') {
+          level++;
+          let inputs = [], outputs = [];
+          j++;
+          while (s[j] != ',') {
+            inputs.push(decode());
+          }
+          j++;
+          while (s[j] != ']') {
+            outputs.push(decode());
+          }
+          j++;
+          level--;
+          let name, type;
+          if (level == 0) {
+            name = decodeName();
+            type = s.substring(i, j);  // type includes name
+          } else {
+            type = s.substring(i, j);
+            name = decodeName();
+          }
+          let master = masterMap.get(type);
+          if (!master) {
+            master = {
+              type: type,
+              name: name,
+              inputs: inputs,
+              outputs: outputs,
+            };
+            masterMap.set(type, master);
+          }
+          return master;
+        }
+      }
+      return decode();
+    },
+
+    initialize: function(item) {
+      if (item.type == 'element' && item.master) {
+        item[_master] = this.decodeType(item.master);
+      }
+    },
+  }
+
+  function extend(model) {
+    dataModels.dataModel.extend(model);
+
+    let instance = Object.create(proto);
+    instance.model = model;
+    instance.masterMap_ = new Map();
+
+    dataModels.eventMixin.extend(model);
+
+    // Make sure new elements have masters.
+    model.dataModel.addInitializer(function(item) {
+      instance.initialize(item);
+    });
+    model.masteringContext = instance;
+    return instance;
+  }
+
+  return {
+    extend: extend,
+  }
+})();
+
+//------------------------------------------------------------------------------
 
 let editingModel = (function() {
   let proto = {
@@ -2087,6 +2200,7 @@ Editor.prototype.onKeyDown = function(e) {
 
 return {
   editingModel: editingModel,
+  masteringModel: masteringModel,
   viewModel: viewModel,
 
   normalMode: normalMode,

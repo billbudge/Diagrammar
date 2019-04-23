@@ -12,6 +12,26 @@ function newCircuit() {
   };
 }
 
+function stringifyMaster(master) {
+  let type = '[';
+  function stringifyName(item) {
+    if (item.name)
+      type += '(' + item.name + ')';
+  }
+  function stringifyPin(pin) {
+    type += pin.type;
+    stringifyName(pin);
+  }
+  if (master.inputs)
+    master.inputs.forEach(input => stringifyPin(input));
+  type += ',';
+  if (master.outputs)
+    master.outputs.forEach(output => stringifyPin(output));
+  type += ']';
+  stringifyName(master);
+  return type;
+}
+
 function newElement(x, y, inputs, outputs) {
   return {
     type: "element",
@@ -23,9 +43,52 @@ function newElement(x, y, inputs, outputs) {
   };
 }
 
+function newTypedElement(master) {
+  return {
+    type: 'element',
+    x: 0,
+    y: 0,
+    master: master,
+  };
+}
+
 function initialize(item) {
   item.initalized = true;
 }
+
+test("circuit.masteringModel", function() {
+  let circuit = newCircuit();
+  let test = circuits.masteringModel.extend(circuit);
+  ok(test);
+  ok(test.model);
+  ok(test.model.dataModel);
+});
+
+test("circuit.masteringModel", function() {
+  let circuit = newCircuit();
+  let test = circuits.masteringModel.extend(circuit);
+  let types = [
+    '[vv,v](+)',
+    '[v(a)v(b),v(c)]',
+    '[[v,vv(q)](a)v(b),v(c)](foo)',
+  ];
+  types.forEach(
+    type => deepEqual(stringifyMaster(test.decodeType(type)), type));
+});
+
+test("circuit.editingAndMastering", function() {
+  let circuit = newCircuit();
+  let editingModel = circuits.editingModel.extend(circuit);
+  let test = circuits.masteringModel.extend(circuit);
+  circuit.dataModel.initialize();
+  // Add an item.
+  let item1 = newTypedElement('[vv,v]');
+  editingModel.newItem(item1);
+  editingModel.addItem(item1, circuit.root);
+  // Check master
+  ok(test.getMaster(item1));
+  console.log(test.getMaster(item1));
+});
 
 test("circuit.editingModel", function() {
   let circuit = newCircuit();
@@ -62,17 +125,17 @@ test("circuit.editingModel.addDeleteItem", function() {
   deepEqual(circuit.root.items, []);
 });
 
-test("circuit.editingModel.connectInput", function() {
-  let circuit = newCircuit();
-  let test = circuits.editingModel.extend(circuit);
-  circuit.dataModel.initialize();
-  // Add an item.
-  let item1 = newElement();
-  test.newItem(item1);
-  test.addItem(item1, circuit.root);
-  // Connect input 0.
-  test.connectInput(item1, 0);
-  deepEqual(circuit.root.items.length, 3);
-});
+// test("circuit.editingModel.connectInput", function() {
+//   let circuit = newCircuit();
+//   let test = circuits.editingModel.extend(circuit);
+//   circuit.dataModel.initialize();
+//   // Add an item.
+//   let item1 = newElement();
+//   test.newItem(item1);
+//   test.addItem(item1, circuit.root);
+//   // Connect input 0.
+//   test.connectInput(item1, 0);
+//   deepEqual(circuit.root.items.length, 3);
+// });
 
 
