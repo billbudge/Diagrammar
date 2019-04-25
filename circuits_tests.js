@@ -56,7 +56,7 @@ function initialize(item) {
   item.initalized = true;
 }
 
-test("circuit.masteringModel", function() {
+test("circuits.masteringModel", function() {
   let circuit = newCircuit();
   let test = circuits.masteringModel.extend(circuit);
   ok(test);
@@ -64,19 +64,20 @@ test("circuit.masteringModel", function() {
   ok(test.model.dataModel);
 });
 
-test("circuit.masteringModel", function() {
+test("circuits.masteringModel", function() {
   let circuit = newCircuit();
   let test = circuits.masteringModel.extend(circuit);
   let types = [
     '[vv,v](+)',
     '[v(a)v(b),v(c)]',
+    '[,[,v][v,v]](@)',
     '[[v,vv(q)](a)v(b),v(c)](foo)',
   ];
   types.forEach(
     type => deepEqual(stringifyMaster(test.decodeType(type)), type));
 });
 
-test("circuit.editingAndMastering", function() {
+test("circuits.editingAndMastering", function() {
   let circuit = newCircuit();
   let editingModel = circuits.editingModel.extend(circuit);
   let test = circuits.masteringModel.extend(circuit);
@@ -99,7 +100,7 @@ test("circuit.editingAndMastering", function() {
   deepEqual(masters, [test.getMaster(item1)]);
 });
 
-test("circuit.editingModel", function() {
+test("circuits.editingModel", function() {
   let circuit = newCircuit();
   let test = circuits.editingModel.extend(circuit);
   ok(test);
@@ -108,7 +109,7 @@ test("circuit.editingModel", function() {
   ok(test.model.selectionModel);
 });
 
-test("circuit.editingModel.newItem", function() {
+test("circuits.editingModel.newItem", function() {
   let circuit = newCircuit();
   let test = circuits.editingModel.extend(circuit),
       dataModel = test.model.dataModel;
@@ -119,7 +120,7 @@ test("circuit.editingModel.newItem", function() {
   ok(item1.initalized);
 });
 
-test("circuit.editingModel.addDeleteItem", function() {
+test("circuits.editingModel.addDeleteItem", function() {
   let circuit = newCircuit();
   let test = circuits.editingModel.extend(circuit);
   circuit.dataModel.initialize();
@@ -134,7 +135,7 @@ test("circuit.editingModel.addDeleteItem", function() {
   deepEqual(circuit.root.items, []);
 });
 
-// test("circuit.editingModel.connectInput", function() {
+// test("circuits.editingModel.connectInput", function() {
 //   let circuit = newCircuit();
 //   let test = circuits.editingModel.extend(circuit);
 //   circuit.dataModel.initialize();

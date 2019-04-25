@@ -16,8 +16,8 @@ function isWire(item) {
   return item.type == 'wire';
 }
 
-function isUnmastered(item) {
-  return item.type == 'element' && item.master == '$';
+function isMastered(item) {
+  return item.type == 'element' && item.master != '$';
 }
 
 function isLiteral(item) {
@@ -49,7 +49,7 @@ function isGroup(item) {
 }
 
 function needsLayout(item) {
-  return isWire(item) || isUnmastered(item);
+  return isWire(item) || !isMastered(item);
 }
 
 function isCircuit(item) {
@@ -79,7 +79,12 @@ let masteringModel = (function() {
       return item[_master];
     },
 
-    onMasterInserted: function (type, master) {
+    insertMaster: function(type, master) {
+      this.masterMap_.set(type, master);
+      this.onMasterInserted(type, master);
+    },
+
+    onMasterInserted: function(type, master) {
       // console.log(master);
       this.onEvent('masterInserted', function (handler) {
         handler(type, master);
@@ -87,10 +92,10 @@ let masteringModel = (function() {
     },
 
     // Type description: [inputs,outputs] with optional names, e.g.
-    // [v(a)v(b),v(sum)] for a binop.
+    // [v(a)v(b),v(sum)](+) for a binop.
     decodeType: function(s) {
       let self = this;
-      let j = 0, level = 0;
+      let j = 0;
       // close over j to avoid extra return values.
       function decodeName() {
         let name;
@@ -103,7 +108,15 @@ let masteringModel = (function() {
         }
         return name;
       }
-      function decode() {
+      function addMaster(type, master) {
+        let existing = self.masterMap_.get(type);
+        if (existing)
+          return existing;
+        self.masterMap_.set(type, master);
+        self.onMasterInserted(type, master);
+        return master;
+      }
+      function decodePin() {
         let i = j;
         // value types
         if (s[j] == 'v') {
@@ -115,48 +128,59 @@ let masteringModel = (function() {
           j++;
           return { type: '*', name: decodeName() };
         }
-        // fn types.
+        // function types
+        let f = decodeFunction(),
+            type = s.substring(i, j),
+            name = decodeName(),
+            master = addMaster(type, f);
+        return {
+          type: type,
+          name: name,
+          [_master]: master,
+        };
+      }
+      function decodeFunction() {
+        let i = j;
         if (s[j] == '[') {
-          level++;
-          let inputs = [], outputs = [];
           j++;
+          let inputs = [], outputs = [];
           while (s[j] != ',') {
-            inputs.push(decode());
+            inputs.push(decodePin());
           }
           j++;
           while (s[j] != ']') {
-            outputs.push(decode());
+            outputs.push(decodePin());
           }
           j++;
-          level--;
-          let name, type;
-          if (level == 0) {
-            name = decodeName();
-            type = s.substring(i, j);  // type includes name
-          } else {
-            type = s.substring(i, j);
-            name = decodeName();
-          }
-          let master = self.masterMap_.get(type);
-          if (!master) {
-            master = {
-              type: type,
-              name: name,
-              inputs: inputs,
-              outputs: outputs,
-            };
-            self.masterMap_.set(type, master);
-            self.onMasterInserted(type, master);
-          }
-          return master;
+          let type = s.substring(i, j);
+          return {
+            type: type,
+            inputs: inputs,
+            outputs: outputs,
+          };
         }
       }
-      return decode();
+      let f = decodeFunction(),
+          name = decodeName(),
+          type = s;
+      let master = {
+        type: type,
+        name: name,
+        inputs: f.inputs,
+        outputs: f.outputs,
+      };
+      master = addMaster(type, master);
+      return master;
     },
 
     initialize: function(item) {
-      if (item.type == 'element' && item.master) {
-        item[_master] = this.decodeType(item.master);
+      if (item.type == 'element') {
+        if (item.master != '$') {
+          item[_master] = this.masterMap_.get(item.master) ||
+                          this.decodeType(item.master);
+        } else {
+          item[_master] = item;
+        }
       }
     },
   }
@@ -1461,14 +1485,10 @@ function Editor(model, textInputController) {
 
   this.hitTolerance = 4;
 
-  let masterMap = new Map();
-  this.masterMap = masterMap;
-
-  this.primitives = [
+  let junctions = [
     { type: 'element',
       elementType: 'junction',
       junctionType: 'input',
-      x: 8, y: 8,
       master: '$',
       inputs: [],
       outputs: [
@@ -1478,7 +1498,6 @@ function Editor(model, textInputController) {
     { type: 'element',
       elementType: 'junction',
       junctionType: 'output',
-      x: 38, y: 8,
       master: '$',
       inputs: [
         { type: '*' },
@@ -1488,7 +1507,6 @@ function Editor(model, textInputController) {
     { type: 'element',
       elementType: 'junction',
       junctionType: 'apply',
-      x: 72, y: 8,
       master: '$',
       inputs: [
         { type: '*', name: 'λ' },
@@ -1497,7 +1515,6 @@ function Editor(model, textInputController) {
     },
     { type: 'element',
       elementType: 'literal',
-      x: 56, y: 40,
       master: '$',
       inputs: [],
       outputs: [
@@ -1505,174 +1522,61 @@ function Editor(model, textInputController) {
       ],
     },
   ];
+  this.junctions = junctions;
 
   let unaryOps = ['!', '~', '-' ];
   let binaryOps = ['+', '-', '*', '/', '%', '==', '!=', '<', '<=', '>', '>=',
                    '|', '&', '||', '&&'];
-  let ternaryOps = ['?'];
 
-  this.masters = [];
+  let primitives = [];
   unaryOps.forEach(function(op) {
-    let master = {
+    primitives.push({
       name: op,
       type: 'element',
-      inputs: [
-        { type: 'v' },
-      ],
-      outputs: [
-        { type: 'v' },
-      ]
-    };
-    self.masters.push(master);
-    masterMap.set(op, master);
+      master: '[v,v](' + op + ')',
+    });
   });
   binaryOps.forEach(function(op) {
-    let master = {
+    primitives.push({
       name: op,
       type: 'element',
-      inputs: [
-        { type: 'v' },
-        { type: 'v' },
-      ],
-      outputs: [
-        { type: 'v' },
-      ]
-    };
-    self.masters.push(master);
-    masterMap.set(op, master);
+      master: '[vv,v](' + op + ')',
+    });
   });
-  // Just one ternary op for now.
-  let cond = {
+  // Just one ternary op for now, the conditional operator.
+  primitives.push({
       name: '?',
       type: 'element',
-      inputs: [
-        { type: 'v' },
-        { type: 'v' },
-        { type: 'v' },
-      ],
-      outputs: [
-        { type: 'v' },
-      ]
-  };
-  self.masters.push(cond);
-  masterMap.set('?', cond);
-
-  // Local storage.
-  let local = {
-      name: '@',
-      type: 'element',
-      inputs: [],
-      outputs: [
-        { type: '[,v]' },
-        { type: '[v,v]' },
-      ]
-  };
-  self.masters.push(local);
-  masterMap.set('@', local);
-  // Array storage.
-  let array = {
-      name: '[ ]',
-      type: 'element',
-      inputs: [
-        { name: 'n', type: 'v' },
-      ],
-      outputs: [
-        { name: 'n', type: 'v' },
-        { type: '[v,v]' },
-        { type: '[vv,v]' },
-      ]
-  };
-  self.masters.push(array);
-  masterMap.set('[ ]', array);
-
-  // Decodes and atomizes pin types into master map.
-  function decodePinType(s) {
-    let j = 0;
-    // close over s, j to avoid extra return values.
-    function decode() {
-      let i = j;
-      // value types
-      if (s[j] == 'v') {
-        j++;
-        return { type: 'v' };
-      }
-      if (s[j] == '*') {
-        j++;
-        return { type: '*' };
-      }
-      if (s[j] == '[') {
-        let inputs = [], outputs = [];
-        j++;
-        while (s[j] != ',') {
-          inputs.push(decode());
-        }
-        j++;
-        while (s[j] != ']') {
-          outputs.push(decode());
-        }
-        j++;
-        let type = s.substring(i, j);
-        let master = masterMap.get(type);
-        if (!master) {
-          master = {
-            type: type,
-            inputs: inputs,
-            outputs: outputs,
-          };
-          console.log(type, master);
-          masterMap.set(type, master);
-        }
-        let result = { type: type };
-        result[_master] = master;
-        return result;
-      }
-    }
-    return decode();
-  }
-  this.decodePinType = decodePinType;  // TODO clean these up
-
-  function initializePins(master) {
-    let inputs = master.inputs, outputs = master.outputs;
-    for (let i = 0; i < inputs.length; i++)
-      Object.assign(inputs[i], decodePinType(inputs[i].type));
-    for (let i = 0; i < outputs.length; i++)
-      Object.assign(outputs[i], decodePinType(outputs[i].type));
-  }
-
-  // Initialize the built in masters.
-  this.masters.forEach(function(master) {
-    initializePins(master);
+      master: '[vvv,v](?)',
   });
 
-  // Initialize items.
-  function initialize(item) {
-    if (item.type == 'element') {
-      // Only initialize once.
-      // if (!getMaster(item)) {
-        if (isUnmastered(item)) {
-          initializePins(item);
-          item[_master] = item;
-        } else {
-          item[_master] = masterMap.get(item.master);
-        }
-      // }
-    }
-  }
+  // Local storage.
+  primitives.push({
+      name: '@',
+      type: 'element',
+      master: '[,[,v][v,v]](@)',
+  });
+  primitives.push({
+      name: '[ ]',
+      type: 'element',
+      master: '[v(n),v(n)[v,v][vv,v]]',
+  });
+  this.primitives = primitives;
 
   editingModel.extend(model);
 
-  model.dataModel.addInitializer(initialize);
-  model.dataModel.initialize();
-  viewModel.extend(model);
-
-  // Track changes fields that require re-initialization.
-  model.observableModel.addHandler('changed', function (change) {
-    if (change.attr == 'master') {
-      let item = change.item;
-      item[_master] = undefined;
-      initialize(item);
-    }
+  let masters = masteringModel.extend(model);
+  masters.addHandler('masterInserted', function(type, master) {
+    let ctx = self.ctx,
+        renderer = self.renderer,
+        model = self.model;
+    renderer.beginDraw(model, ctx);
+    renderer.layoutMaster(master);
+    // console.log(master);
+    renderer.endDraw();
   });
+
+  viewModel.extend(model);
 }
 
 Editor.prototype.initialize = function(canvasController) {
@@ -1681,37 +1585,33 @@ Editor.prototype.initialize = function(canvasController) {
   this.ctx = canvasController.ctx;
   this.renderer = new Renderer(canvasController.theme);
 
-  let model = this.model, diagram = this.diagram;
-  if (diagram.items.length != 0) return;
+  let model = this.model,
+      renderer = this.renderer;
+  model.dataModel.initialize();
 
-    let renderer = this.renderer, ctx = this.ctx;
-  renderer.beginDraw(model, ctx);
-
-  // Create an instance of every primitive.
+  // Create an instance of every junction and literal.
   let x, y;
   x = 16, y = 16,
-  this.primitives.forEach(function(primitives) {
-    let item = Object.assign(primitives);
+  renderer.beginDraw(model, ctx);
+  this.junctions.forEach(function(junction) {
+    let item = Object.assign(junction);
     item.x = x;
     item.y = y;
     item.state = 'palette';
     model.editingModel.newItem(item);
     model.editingModel.addItem(item);
-    renderer.layoutMaster(item);
+    renderer.layout(item);
     x += 40;
   });
-  // Create an instance of every master.
+  renderer.endDraw();
+
+  // Create an instance of every primitive.
   x = 16, y = 56;
-  this.masters.forEach(function(master) {
-    renderer.layoutMaster(master);
-    let item = {
-      type: 'element',
-      master: master.name,
-      [_master]: master,
-      state: 'palette',
-      x: x,
-      y: y,
-    };
+  this.primitives.forEach(function(primitive) {
+    let item = Object.assign(primitive);
+    item.x = x;
+    item.y = y;
+    item.state = 'palette';
     model.editingModel.newItem(item);
     model.editingModel.addItem(item);
     x += 48;
@@ -1719,7 +1619,6 @@ Editor.prototype.initialize = function(canvasController) {
       x = 16, y += 56;
     }
   });
-  renderer.endDraw();
 }
 
 Editor.prototype.addTemporaryItem = function(item) {
