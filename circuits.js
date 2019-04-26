@@ -507,17 +507,18 @@ let editingModel = (function() {
     getClosedType: function(element, inputWires) {
       // Create a function type whose inputs are the disconnected inputs,
       // and whose outputs are all the outputs, connected or not.
+      let master = getMaster(element);
       let fnType = '[';
-      getMaster(element).inputs.forEach(function(input, i) {
+      master.inputs.forEach(function(input, i) {
         if (!inputWires[i])
           fnType += input.type;
       });
       fnType += ',';
-      getMaster(element).outputs.forEach(function(output, i) {
+      master.outputs.forEach(function(output, i) {
         fnType += output.type;
       });
       fnType += ']';
-      console.log('closedType', fnType);
+      // console.log('closedType', fnType);
       return fnType;
     },
 
@@ -525,45 +526,53 @@ let editingModel = (function() {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           observableModel = model.observableModel,
-          inputs = [], outputs = [];
+          master = getMaster(element);
+
       let newElement = {
         type: 'element',
-        master: '$',
         // We shouldn't name the closure based on the closed function.
         element: element,
         x: element.x,
         y: element.y,
-        inputs: inputs,
-        outputs: outputs,
       };
-
       let id = dataModel.assignId(newElement);
 
+      let type = '[',
+          pinIndex = 0;
       // Add only connected input pins to inputs.
-      getMaster(element).inputs.forEach(function(pin, i) {
+      master.inputs.forEach(function(pin, i) {
         let incomingWire = incomingWires[i];
         if (incomingWire) {
-          inputs.push({ type: pin.type, name: pin.name });
+          type += pin.type;
+          if (pin.name)
+            type += '(' + pin.name + ')';
           // remap wire to new element and pin.
           observableModel.changeValue(incomingWire, 'dstId', id);
-          observableModel.changeValue(incomingWire, 'dstPin', inputs.length - 1);
+          observableModel.changeValue(incomingWire, 'dstPin', pinIndex);
+          pinIndex++;
         }
       });
       // Add only connected output pins to outputs.
-      getMaster(element).outputs.forEach(function(pin, i) {
+      type += ',';
+      pinIndex = 0;
+      master.outputs.forEach(function(pin, i) {
         let outgoingWires = outgoingWireArrays[i];
         if (outgoingWires.length > 0) {
-          outputs.push({ type: pin.type, name: pin.name });
+          type += pin.type;
+          if (pin.name)
+            type += '(' + pin.name + ')';
           outgoingWires.forEach(function(outgoingWire, j) {
             // remap wire to new element and pin.
             observableModel.changeValue(outgoingWire, 'srcId', id);
-            observableModel.changeValue(outgoingWire, 'srcPin', outputs.length - 1);
+            observableModel.changeValue(outgoingWire, 'srcPin', pinIndex);
           });
+          pinIndex++;
         }
       });
+      type += self.getClosedType(element, incomingWires);
+      type += ']';
 
-      outputs.push({ type: self.getClosedType(element, incomingWires) });
-
+      newElement.master = type;
       dataModel.initialize(newElement);
       return newElement;
     },
@@ -580,7 +589,7 @@ let editingModel = (function() {
         fnType += output.type;
       });
       fnType += ']';
-      console.log('openedType', fnType);
+      // console.log('openedType', fnType);
       return fnType;
     },
 
@@ -588,43 +597,51 @@ let editingModel = (function() {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           observableModel = model.observableModel,
-          inputs = [], outputs = [];
+          master = getMaster(element);
+
       let newElement = {
         type: 'element',
-        master: '$',
         // We shouldn't name the abstraction based on the concrete function.
         element: element,
         x: element.x,
         y: element.y,
-        inputs: inputs,
-        outputs: outputs,
       };
-
       let id = dataModel.assignId(newElement);
 
       // Add all input pins to inputs.
-      getMaster(element).inputs.forEach(function(pin, i) {
+      let type = '[',
+          pinIndex = 0;
+      master.inputs.forEach(function(pin, i) {
         let incomingWire = incomingWires[i];
-        inputs.push({ type: pin.type, name: pin.name });
+        type += pin.type;
+        if (pin.name)
+          type += '(' + pin.name + ')';
         // remap wire to new element and pin.
         if (incomingWire) {
           observableModel.changeValue(incomingWire, 'dstId', id);
-          observableModel.changeValue(incomingWire, 'dstPin', inputs.length - 1);
+          observableModel.changeValue(incomingWire, 'dstPin', pinIndex);
+          pinIndex++;
         }
       });
+      type += self.getOpenedType(element);
       // Add all output pins to outputs.
-      getMaster(element).outputs.forEach(function(pin, i) {
+      type += ',';
+      pinIndex = 0;
+      master.outputs.forEach(function(pin, i) {
         let outgoingWires = outgoingWireArrays[i];
-        outputs.push({ type: pin.type, name: pin.name });
+        type += pin.type;
+        if (pin.name)
+          type += '(' + pin.name + ')';
         outgoingWires.forEach(function(outgoingWire, j) {
           // remap wires to new element and pin.
           observableModel.changeValue(outgoingWire, 'srcId', id);
-          observableModel.changeValue(outgoingWire, 'srcPin', outputs.length - 1);
+          observableModel.changeValue(outgoingWire, 'srcPin', pinIndex);
         });
+        pinIndex++;
       });
+      type += ']';
 
-      inputs.push({ type: self.getOpenedType(element) });
-
+      newElement.master = type;
       dataModel.initialize(newElement);
       return newElement;
     },
