@@ -505,7 +505,7 @@ let editingModel = (function() {
     },
 
     getPinType: function(pin) {
-      let type += pin.type;
+      let type = pin.type;
       if (pin.name)
         type += '(' + pin.name + ')';
       return type;
