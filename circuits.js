@@ -79,12 +79,7 @@ let masteringModel = (function() {
       return item[_master];
     },
 
-    insertMaster: function(type, master) {
-      this.masterMap_.set(type, master);
-      this.onMasterInserted(type, master);
-    },
-
-    onMasterInserted: function(type, master) {
+    onMasterInserted_: function(type, master) {
       // console.log(master);
       this.onEvent('masterInserted', function (handler) {
         handler(type, master);
@@ -113,7 +108,7 @@ let masteringModel = (function() {
         if (existing)
           return existing;
         self.masterMap_.set(type, master);
-        self.onMasterInserted(type, master);
+        self.onMasterInserted_(type, master);
         return master;
       }
       function decodePin() {
@@ -173,20 +168,56 @@ let masteringModel = (function() {
       return master;
     },
 
+    relabel: function (item, newText) {
+      let master = getMaster(item),
+          label = newText ? '(' + newText + ')' : '',
+          newMaster;
+      if (isJunction(item)) {
+        if (isInputJunction(item) || isLiteral(item)) {
+          newMaster = '[,' + master.outputs[0].type + label + ']';
+        } else if (isOutputJunction(item)) {
+          newMaster = '[' + master.inputs[0].type + label + ',]';
+        }
+      } else {
+        let type = master.type;
+        if (master.name)
+          type = type.substring(0, type.lastIndexOf('('));
+        newMaster = type + label;
+      }
+      return newMaster;
+    },
+
+    retype: function (item, newType) {
+      let master = getMaster(item),
+          newMaster;
+      if (isJunction(item)) {
+        if (isInputJunction(item)) {
+          let label = master.outputs[0].name;
+          label = label ? '(' + label + ')' : '';
+          newMaster = '[,' + newType + label + ']';
+        } else if (isOutputJunction(item)) {
+          let label = master.inputs[0].name;
+          label = label ? '(' + label + ')' : '';
+          newMaster = '[' + newType + label + ',]';
+        } else if (isApplyJunction(item)) {
+          // let label = master.inputs[0].name;
+          // newMaster = '[,' + master.outputs[0].type + label + ']';
+        }
+      }
+      return newMaster;
+    },
+
     initialize: function(item) {
       if (item.type == 'element') {
-        if (item.master != '$') {
-          item[_master] = this.masterMap_.get(item.master) ||
-                          this.decodeType(item.master);
-        } else {
-          item[_master] = item;
-        }
+        item[_master] = this.masterMap_.get(item.master) ||
+                        this.decodeType(item.master);
       }
     },
   }
 
   function extend(model) {
     dataModels.dataModel.extend(model);
+    dataModels.observableModel.extend(model);
 
     let instance = Object.create(proto);
     instance.model = model;
@@ -198,7 +229,13 @@ let masteringModel = (function() {
     model.dataModel.addInitializer(function(item) {
       instance.initialize(item);
     });
-    model.masteringContext = instance;
+    // Make sure elements are remastered if their master type changes.
+    model.observableModel.addHandler('changed', function (change) {
+      if (isElement(change.item) && change.attr == 'master')
+      instance.initialize(change.item);
+    });
+
+    model.masteringModel = instance;
     return instance;
   }
 
@@ -431,11 +468,7 @@ let editingModel = (function() {
         // Let user name pin.
         x: pinPoint.x - 32,
         y: pinPoint.y,
-        master: '$',
-        inputs: [],
-        outputs: [
-          { type: dstPin.type },
-        ],
+        master: '[,' + dstPin.type + ']',
       };
       this.newItem(junction);
       this.addItem(junction);
@@ -462,11 +495,7 @@ let editingModel = (function() {
         // Let user name pin.
         x: pinPoint.x + 32,
         y: pinPoint.y,
-        master: '$',
-        inputs: [
-          { type: srcPin.type },
-        ],
-        outputs: [],
+        master: '[' + srcPin.type + ',]',
       };
       this.newItem(junction);
       this.addItem(junction);
@@ -583,12 +612,13 @@ let editingModel = (function() {
     getOpenedType: function(element) {
       // Create a function type whose inputs are all inputs, and whose outputs
       // are all outputs.
-      let fnType = '[';
-      getMaster(element).inputs.forEach(function(input) {
+      let master = getMaster(element),
+          fnType = '[';
+      master.inputs.forEach(function(input) {
         fnType += input.type;
       });
       fnType += ',';
-      getMaster(element).outputs.forEach(function(output) {
+      master.outputs.forEach(function(output) {
         fnType += output.type;
       });
       fnType += ']';
@@ -847,18 +877,19 @@ let editingModel = (function() {
       // If srcPin is a function, add those inputs and output pins.
       let master = getMaster(srcPin);
       if (master) {
-        master.inputs.forEach(function(input) {
-          // Note we're inserting before the original input 0.
-          observableModel.insertElement(
-            dstItem, 'inputs', dstItem.inputs.length - 1, { type: input.type });
+        let newMaster = '[';
+        master.inputs.forEach(function(pin) {
+          newMaster += pin.type;
         });
-        master.outputs.forEach(function(output) {
-          observableModel.insertElement(
-            dstItem, 'outputs', dstItem.outputs.length, { type: output.type });
+        newMaster += srcPin.type;
+        newMaster += ','
+        master.outputs.forEach(function(pin) {
+          newMaster += pin.type;
         });
-        observableModel.changeValue(wire, 'dstPin', dstItem.inputs.length - 1);
+        newMaster += ']';
+        observableModel.changeValue(wire, 'dstPin', master.inputs.length);
+        observableModel.changeValue(dstItem, 'master', newMaster);
       }
-      observableModel.changeValue(dstPin, 'type', srcPin.type);
     },
 
     resetApply: function(element, graphInfo) {
@@ -872,14 +903,12 @@ let editingModel = (function() {
         if (wire) {
           self.deleteItem(wire);
         }
-        observableModel.removeElement(element, 'inputs', 0);
       }
       for (let i = 0; i < outputWires.length; i++) {
         let wires = outputWires[i];
         for (let j = 0; j < wires.length; j++) {
           self.deleteItem(wires[j]);
         }
-        observableModel.removeElement(element, 'outputs', 0);
       }
       let wire = inputWires[inputWires.length - 1],
           dstPin = getMaster(element).inputs[0];
@@ -887,7 +916,6 @@ let editingModel = (function() {
       if (wire) {
         observableModel.changeValue(wire, 'dstPin', 0);
       }
-      observableModel.changeValue(dstPin, 'type', '*');
     },
 
     findSrcType: function(wire, graphInfo) {
@@ -899,7 +927,8 @@ let editingModel = (function() {
             srcPin = getMaster(src).outputs[wire.srcPin],
             dst = this.getWireDst(wire),
             dstPin = getMaster(dst).inputs[wire.dstPin];
-        if (srcPin.type != '*') return srcPin.type;
+        if (srcPin.type != '*')
+          return srcPin.type;
         if (src.passThroughs) {
           src.passThroughs.forEach(function(passThrough) {
             if (passThrough[1] == wire.srcPin) {
@@ -921,7 +950,8 @@ let editingModel = (function() {
             srcPin = getMaster(src).outputs[wire.srcPin],
             dst = this.getWireDst(wire),
             dstPin = getMaster(dst).inputs[wire.dstPin];
-        if (dstPin.type != '*') return dstPin.type;
+        if (dstPin.type != '*')
+          return dstPin.type;
         if (dst.passThroughs) {
           dst.passThroughs.forEach(function(passThrough) {
             if (passThrough[0] == wire.dstPin) {
@@ -982,7 +1012,8 @@ let editingModel = (function() {
     onTransactionEnding_: function (transaction) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
-          observableModel = model.observableModel;
+          observableModel = model.observableModel,
+          masteringModel = model.masteringModel;
       // Collect info for entire graph.
       let graphInfo = this.collectGraphInfo(this.diagram.items),
           elementSet = graphInfo.elementSet,
@@ -1002,8 +1033,8 @@ let editingModel = (function() {
                 dstType = self.findDstType(wires[0], graphInfo);
               }
               if (type != dstType) {
-                observableModel.changeValue(outputPin, 'type', dstType);
-                dataModel.initialize(element);
+                observableModel.changeValue(element, 'master',
+                  masteringModel.retype(element, dstType));
               }
               break;
             }
@@ -1017,8 +1048,8 @@ let editingModel = (function() {
                 srcType = self.findSrcType(wire, graphInfo);
               }
               if (type != srcType) {
-                observableModel.changeValue(inputPin, 'type', srcType);
-                dataModel.initialize(element);
+                observableModel.changeValue(element, 'master',
+                  masteringModel.retype(element, srcType));
               }
               break;
             }
@@ -1039,7 +1070,6 @@ let editingModel = (function() {
                 if (srcType != '*') {
                   self.setApply(wire);
                 }
-                dataModel.initialize(element);
               }
               break;
             }
@@ -1505,37 +1535,21 @@ function Editor(model, textInputController) {
     { type: 'element',
       elementType: 'junction',
       junctionType: 'input',
-      master: '$',
-      inputs: [],
-      outputs: [
-        { type: '*' },
-      ],
+      master: '[,*]',
     },
     { type: 'element',
       elementType: 'junction',
       junctionType: 'output',
-      master: '$',
-      inputs: [
-        { type: '*' },
-      ],
-      outputs: [],
+      master: '[*,]',
     },
     { type: 'element',
       elementType: 'junction',
       junctionType: 'apply',
-      master: '$',
-      inputs: [
-        { type: '*', name: 'λ' },
-      ],
-      outputs: [],
+      master: '[*,](λ)',
     },
     { type: 'element',
       elementType: 'literal',
-      master: '$',
-      inputs: [],
-      outputs: [
-        { type: 'v', name: '0' },
-      ],
+      master: '[,v](0)',
     },
   ];
   this.junctions = junctions;
@@ -1608,7 +1622,6 @@ Editor.prototype.initialize = function(canvasController) {
   // Create an instance of every junction and literal.
   let x, y;
   x = 16, y = 16,
-  renderer.beginDraw(model, ctx);
   this.junctions.forEach(function(junction) {
     let item = Object.assign(junction);
     item.x = x;
@@ -1616,10 +1629,8 @@ Editor.prototype.initialize = function(canvasController) {
     item.state = 'palette';
     model.editingModel.newItem(item);
     model.editingModel.addItem(item);
-    renderer.layout(item);
     x += 40;
   });
-  renderer.endDraw();
 
   // Create an instance of every primitive.
   x = 16, y = 56;
@@ -1756,18 +1767,16 @@ function isContainerTarget(hitInfo, model) {
 
 Editor.prototype.setEditableText = function() {
   let self = this,
+      model = this.model,
       textInputController = this.textInputController,
-      selectionModel = this.model.selectionModel,
-      item = selectionModel.lastSelected();
+      item = model.selectionModel.lastSelected();
   if (item && isElement(item)) {
-    if (isJunction(item) || isLiteral(item)) {
-      item = item.inputs[0] || item.outputs[0];
-    }
     textInputController.start(item.name, function(newText) {
-      if (item.name != newText) {
-        self.model.transactionModel.beginTransaction('rename');
-        self.model.observableModel.changeValue(item, 'name', newText);
-        self.model.transactionModel.endTransaction();
+      let newMaster = model.masteringModel.relabel(item, newText);
+      if (newMaster != item.master) {
+        model.transactionModel.beginTransaction('rename');
+        model.observableModel.changeValue(item, 'master', newMaster);
+        model.transactionModel.endTransaction();
         self.draw();
       }
     });

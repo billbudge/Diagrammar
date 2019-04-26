@@ -52,6 +52,20 @@ function newTypedElement(master) {
   };
 }
 
+function newInputJunction(type) {
+  let element = newTypedElement(type);
+  element.elementType = 'junction';
+  element.junctionType = 'input';
+  return element;
+}
+
+function newOutputJunction(type) {
+  let element = newTypedElement(type);
+  element.elementType = 'junction';
+  element.junctionType = 'output';
+  return element;
+}
+
 function initialize(item) {
   item.initalized = true;
 }
@@ -75,6 +89,68 @@ test("circuits.masteringModel", function() {
   ];
   types.forEach(
     type => deepEqual(stringifyMaster(test.decodeType(type)), type));
+});
+
+test("circuits.masteringModel.relabel", function() {
+  let circuit = newCircuit();
+  let test = circuits.masteringModel.extend(circuit);
+  let input = newInputJunction('[,*]');
+  test.initialize(input);
+  deepEqual(test.relabel(input, 'f'), '[,*(f)]');
+  deepEqual(test.relabel(input, ''), '[,*]');
+  input.master = '[,*(f)]';
+  test.initialize(input);
+  deepEqual(test.relabel(input, 'bar'), '[,*(bar)]');
+  deepEqual(test.relabel(input, ''), '[,*]');
+
+  let output = newOutputJunction('[*,]');
+  test.initialize(output);
+  deepEqual(test.relabel(output, 'f'), '[*(f),]');
+  deepEqual(test.relabel(output, ''), '[*,]');
+  output.master = '[*(f),]';
+  test.initialize(output);
+  deepEqual(test.relabel(output, 'bar'), '[*(bar),]');
+  deepEqual(test.relabel(output, ''), '[*,]');
+
+  let element = newTypedElement('[vv,vv]');
+  test.initialize(element);
+  deepEqual(test.relabel(element, 'f'), '[vv,vv](f)');
+  deepEqual(test.relabel(element, ''), '[vv,vv]');
+  element.master = '[vv,vv](f)';
+  test.initialize(element);
+  deepEqual(test.relabel(element, 'bar'), '[vv,vv](bar)');
+  deepEqual(test.relabel(element, ''), '[vv,vv]');
+});
+
+test("circuits.masteringModel.retype", function() {
+  let circuit = newCircuit();
+  let test = circuits.masteringModel.extend(circuit);
+  let input = newInputJunction('[,*(f)]');
+  test.initialize(input);
+  deepEqual(test.retype(input, '[v,v]'), '[,[v,v](f)]');
+  deepEqual(test.retype(input, '*'), '[,*(f)]');
+  input.master = '[,[v,v](f)]';
+  test.initialize(input);
+  deepEqual(test.retype(input, '*'), '[,*(f)]');
+  deepEqual(test.retype(input, 'v'), '[,v(f)]');
+
+  let output = newOutputJunction('[*(f),]');
+  test.initialize(output);
+  deepEqual(test.retype(output, '[v,v]'), '[[v,v](f),]');
+  deepEqual(test.retype(output, '*'), '[*(f),]');
+  output.master = '[[v,v](f),]';
+  test.initialize(output);
+  deepEqual(test.retype(output, '*'), '[*(f),]');
+  deepEqual(test.retype(output, 'v'), '[v(f),]');
+
+  // let element = newTypedElement('[vv,vv]');
+  // test.initialize(element);
+  // deepEqual(test.relabel(element, 'f'), '[vv,vv](f)');
+  // deepEqual(test.relabel(element, ''), '[vv,vv]');
+  // element.master = '[vv,vv](f)';
+  // test.initialize(element);
+  // deepEqual(test.relabel(element, 'bar'), '[vv,vv](bar)');
+  // deepEqual(test.relabel(element, ''), '[vv,vv]');
 });
 
 test("circuits.editingAndMastering", function() {
