@@ -504,6 +504,13 @@ let editingModel = (function() {
       });
     },
 
+    getPinType: function(pin) {
+      let type += pin.type;
+      if (pin.name)
+        type += '(' + pin.name + ')';
+      return type;
+    },
+
     getClosedType: function(element, inputWires) {
       // Create a function type whose inputs are the disconnected inputs,
       // and whose outputs are all the outputs, connected or not.
@@ -543,9 +550,7 @@ let editingModel = (function() {
       master.inputs.forEach(function(pin, i) {
         let incomingWire = incomingWires[i];
         if (incomingWire) {
-          type += pin.type;
-          if (pin.name)
-            type += '(' + pin.name + ')';
+          type += self.getPinType(pin);
           // remap wire to new element and pin.
           observableModel.changeValue(incomingWire, 'dstId', id);
           observableModel.changeValue(incomingWire, 'dstPin', pinIndex);
@@ -558,9 +563,7 @@ let editingModel = (function() {
       master.outputs.forEach(function(pin, i) {
         let outgoingWires = outgoingWireArrays[i];
         if (outgoingWires.length > 0) {
-          type += pin.type;
-          if (pin.name)
-            type += '(' + pin.name + ')';
+          type += self.getPinType(pin);
           outgoingWires.forEach(function(outgoingWire, j) {
             // remap wire to new element and pin.
             observableModel.changeValue(outgoingWire, 'srcId', id);
@@ -613,9 +616,7 @@ let editingModel = (function() {
           pinIndex = 0;
       master.inputs.forEach(function(pin, i) {
         let incomingWire = incomingWires[i];
-        type += pin.type;
-        if (pin.name)
-          type += '(' + pin.name + ')';
+        type += self.getPinType(pin);
         // remap wire to new element and pin.
         if (incomingWire) {
           observableModel.changeValue(incomingWire, 'dstId', id);
@@ -629,9 +630,7 @@ let editingModel = (function() {
       pinIndex = 0;
       master.outputs.forEach(function(pin, i) {
         let outgoingWires = outgoingWireArrays[i];
-        type += pin.type;
-        if (pin.name)
-          type += '(' + pin.name + ')';
+        type += self.getPinType(pin);
         outgoingWires.forEach(function(outgoingWire, j) {
           // remap wires to new element and pin.
           observableModel.changeValue(outgoingWire, 'srcId', id);
