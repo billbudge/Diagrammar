@@ -62,10 +62,35 @@ function newOutputJunction(type) {
   return element;
 }
 
+function newLiteral(value) {
+  let element = newTypedElement('[,v(' + value + ')]');
+  element.elementType = 'literal';
+  return element;
+}
+
 function newTestMasteringModel() {
   let circuit = newCircuit();
   let test = circuits.masteringModel.extend(circuit);
   return test;
+}
+
+function addElement(test, element) {
+  test.newItem(element);
+  test.addItem(element);
+  return element;
+}
+
+function addWire(test, src, srcPin, dst, dstPin) {
+  let dataModel = test.model.dataModel;
+  let wire = {
+    type: 'wire',
+    srcId: dataModel.getId(src),
+    srcPin: srcPin,
+    dstId: dataModel.getId(dst),
+    dstPin: dstPin,
+  }
+  test.addItem(wire);
+  return wire;
 }
 
 function newTestEditingModel(elements, wires) {
@@ -75,6 +100,7 @@ function newTestEditingModel(elements, wires) {
   let test = circuits.editingModel.extend(circuit),
       dataModel = test.model.dataModel;
   circuit.dataModel.initialize();
+
   if (elements) {
     elements.forEach(function(element) {
       test.newItem(element);
@@ -121,34 +147,53 @@ test("circuits.masteringModel.unlabeled", function() {
   deepEqual(test.unlabeled('[v,vv]'), '[v,vv]');
 });
 
-test("circuits.masteringModel.relabel", function() {
+test("circuits.masteringModel.getLabel", function() {
+  let test = newTestMasteringModel();
+  let input = newInputJunction('[,*(foo)](bar)');
+  test.initialize(input);
+  deepEqual(test.getLabel(input), 'foo');
+
+  let output = newOutputJunction('[*(foo),](bar)');
+  test.initialize(output);
+  deepEqual(test.getLabel(output), 'foo');
+
+  let literal = newLiteral(0);
+  test.initialize(literal);
+  deepEqual(test.getLabel(literal), '0');
+});
+
+test("circuits.masteringModel.setLabel", function() {
   let test = newTestMasteringModel();
   let input = newInputJunction('[,*]');
   test.initialize(input);
-  deepEqual(test.relabel(input, 'f'), '[,*(f)]');
-  deepEqual(test.relabel(input, ''), '[,*]');
+  deepEqual(test.setLabel(input, 'f'), '[,*(f)]');
+  deepEqual(test.setLabel(input, ''), '[,*]');
   input.master = '[,*(f)]';
   test.initialize(input);
-  deepEqual(test.relabel(input, 'bar'), '[,*(bar)]');
-  deepEqual(test.relabel(input, ''), '[,*]');
+  deepEqual(test.setLabel(input, 'bar'), '[,*(bar)]');
+  deepEqual(test.setLabel(input, ''), '[,*]');
+
+  let literal = newLiteral(0);
+  test.initialize(literal);
+  deepEqual(test.setLabel(literal, '1'), '[,v(1)]');
 
   let output = newOutputJunction('[*,]');
   test.initialize(output);
-  deepEqual(test.relabel(output, 'f'), '[*(f),]');
-  deepEqual(test.relabel(output, ''), '[*,]');
+  deepEqual(test.setLabel(output, 'f'), '[*(f),]');
+  deepEqual(test.setLabel(output, ''), '[*,]');
   output.master = '[*(f),]';
   test.initialize(output);
-  deepEqual(test.relabel(output, 'bar'), '[*(bar),]');
-  deepEqual(test.relabel(output, ''), '[*,]');
+  deepEqual(test.setLabel(output, 'bar'), '[*(bar),]');
+  deepEqual(test.setLabel(output, ''), '[*,]');
 
   let element = newTypedElement('[vv,vv]');
   test.initialize(element);
-  deepEqual(test.relabel(element, 'f'), '[vv,vv](f)');
-  deepEqual(test.relabel(element, ''), '[vv,vv]');
+  deepEqual(test.setLabel(element, 'f'), '[vv,vv](f)');
+  deepEqual(test.setLabel(element, ''), '[vv,vv]');
   element.master = '[vv,vv](f)';
   test.initialize(element);
-  deepEqual(test.relabel(element, 'bar'), '[vv,vv](bar)');
-  deepEqual(test.relabel(element, ''), '[vv,vv]');
+  deepEqual(test.setLabel(element, 'bar'), '[vv,vv](bar)');
+  deepEqual(test.setLabel(element, ''), '[vv,vv]');
 });
 
 test("circuits.masteringModel.retype", function() {
@@ -262,44 +307,34 @@ test("circuits.editingModel.connectOutput", function() {
 });
 
 test("circuits.editingModel.completeGroup", function() {
-  let elements = [
-        newTypedElement('[vv,v]'),
-        newTypedElement('[vv,v]'),
-      ],
-      wires = [
-        { type: 'wire', srcId: 0, srcPin: 0, dstId: 1, dstPin: 1 },
-      ],
-      test = newTestEditingModel(elements, wires),
+  let test = newTestEditingModel(),
       circuit = test.model,
-      dataModel = circuit.dataModel,
-      items = circuit.root.items;
+      items = circuit.root.items,
+      elem1 = addElement(test, newTypedElement('[vv,v]')),
+      elem2 = addElement(test, newTypedElement('[vv,v]')),
+      wire = addWire(test, elem1, 0, elem2, 1);
   // Complete the two element group.
-  test.completeGroup(elements);
+  test.completeGroup([elem1, elem2]);
   deepEqual(items.length, 11);
-  deepEqual(items[0], elements[0]);
-  deepEqual(items[1], elements[1]);
-  deepEqual(items[2], wires[0]);
+  deepEqual(items[0], elem1);
+  deepEqual(items[1], elem2);
+  deepEqual(items[2], wire);
 });
 
 test("circuits.editingModel.collectGraphInfo", function() {
-  let elements = [
-        newTypedElement('[vv,v]'),
-        newTypedElement('[vv,v]'),
-      ],
-      wires = [
-        { type: 'wire', srcId: 0, srcPin: 0, dstId: 1, dstPin: 1 },
-      ],
-      test = newTestEditingModel(elements, wires),
+  let test = newTestEditingModel(),
       circuit = test.model,
-      dataModel = circuit.dataModel,
-      items = circuit.root.items;
+      items = circuit.root.items,
+      elem1 = addElement(test, newTypedElement('[vv,v]')),
+      elem2 = addElement(test, newTypedElement('[vv,v]')),
+      wire = addWire(test, elem1, 0, elem2, 1);
   // Complete the two element group, then collect graph info.
-  test.completeGroup(elements);
-  let graphInfo = test.collectGraphInfo(elements);
-  ok(graphInfo.elementSet.has(elements[0]));
-  ok(graphInfo.elementSet.has(elements[1]));
+  test.completeGroup([elem1, elem2]);
+  let graphInfo = test.collectGraphInfo([elem1, elem2]);
+  ok(graphInfo.elementSet.has(elem1));
+  ok(graphInfo.elementSet.has(elem2));
   deepEqual(graphInfo.elementSet.size, 2);
-  ok(graphInfo.interiorWires.includes(wires[0]));
+  ok(graphInfo.interiorWires.includes(wire));
   deepEqual(graphInfo.wires.length, 5);
   deepEqual(graphInfo.interiorWires.length, 1);
   deepEqual(graphInfo.incomingWires.length, 3);
@@ -309,86 +344,90 @@ test("circuits.editingModel.collectGraphInfo", function() {
 });
 
 test("circuits.editingModel.closeFunction", function() {
-  let elements = [
-        newTypedElement('[vv,v]'),
-        newTypedElement('[vv,v]'),
-      ],
-      wires = [
-        { type: 'wire', srcId: 0, srcPin: 0, dstId: 1, dstPin: 1 },
-      ],
-      test = newTestEditingModel(elements, wires),
+  let test = newTestEditingModel(),
       circuit = test.model,
-      dataModel = circuit.dataModel,
-      items = circuit.root.items;
-  // Close element #1.
-  test.closeOrOpenFunctions([elements[1]], true);
+      items = circuit.root.items,
+      elem1 = addElement(test, newTypedElement('[vv,v]')),
+      elem2 = addElement(test, newTypedElement('[vv,v]')),
+      wire = addWire(test, elem1, 0, elem2, 1);
+  // Close element #2.
+  test.closeOrOpenFunctions([elem2], true);
   deepEqual(items.length, 3);
-  deepEqual(items[0], elements[0]);
-  let wire = wires[0];
-  deepEqual(wire.srcId, dataModel.getId(elements[0]));
+  deepEqual(items[0], elem1);
+  deepEqual(test.getWireSrc(wire), elem1);
   deepEqual(wire.srcPin, 0);
-  deepEqual(wire.dstId, dataModel.getId(items[2]));
+  deepEqual(test.getWireDst(wire), items[2]);
   deepEqual(wire.dstPin, 0);
   let closedElement = items[2];
   deepEqual(closedElement.master, '[v,[v,v]]');
 });
 
 test("circuits.editingModel.openFunction", function() {
-  let elements = [
-        newTypedElement('[vv,v]'),
-        newTypedElement('[vv,v]'),
-      ],
-      wires = [
-        { type: 'wire', srcId: 0, srcPin: 0, dstId: 1, dstPin: 1 },
-      ],
-      test = newTestEditingModel(elements, wires),
+  let test = newTestEditingModel(),
       circuit = test.model,
-      dataModel = circuit.dataModel,
-      items = circuit.root.items;
+      items = circuit.root.items,
+      elem1 = addElement(test, newTypedElement('[vv,v]')),
+      elem2 = addElement(test, newTypedElement('[vv,v]')),
+      wire = addWire(test, elem1, 0, elem2, 1);
   // Open element #1.
-  test.closeOrOpenFunctions([elements[1]], false);
+  test.closeOrOpenFunctions([elem2], false);
   deepEqual(items.length, 3);
-  deepEqual(items[0], elements[0]);
-  let wire = wires[0];
-  deepEqual(wire.srcId, dataModel.getId(elements[0]));
+  deepEqual(items[0], elem1);
+  deepEqual(test.getWireSrc(wire), elem1);
   deepEqual(wire.srcPin, 0);
-  deepEqual(wire.dstId, dataModel.getId(items[2]));
+  deepEqual(test.getWireDst(wire), items[2]);
   deepEqual(wire.dstPin, 0);
   let closedElement = items[2];
   deepEqual(closedElement.master, '[vv[vv,v],v]');
 });
 
 test("circuits.editingModel.makeGroup", function() {
-  let elements = [
-        newTypedElement('[vv,v]'),
-        newTypedElement('[vv,v]'),
-      ],
-      wires = [
-        { type: 'wire', srcId: 0, srcPin: 0, dstId: 1, dstPin: 1 },
-      ],
-      test = newTestEditingModel(elements, wires),
+  let test = newTestEditingModel(),
       circuit = test.model,
-      dataModel = circuit.dataModel,
-      items = circuit.root.items;
+      items = circuit.root.items,
+      elem1 = addElement(test, newTypedElement('[vv,v]')),
+      elem2 = addElement(test, newTypedElement('[vv,v]')),
+      wire = addWire(test, elem1, 0, elem2, 1);
   // Complete the two element group, then collect graph info.
-  test.completeGroup(elements);
+  test.completeGroup([elem1, elem2]);
   let groupElement = test.makeGroup(items, false);
   deepEqual(groupElement.master, '[vvv,v]');
 });
 
 test("circuits.editingModel.junctionConsistency", function() {
-  let elements = [
-        newInputJunction('[,*]'),
-        newTypedElement('[v[v,v],v]'),
-      ],
-      wires = [
-        { type: 'wire', srcId: 0, srcPin: 0, dstId: 1, dstPin: 1 },
-      ],
-      test = newTestEditingModel(elements, wires),
+  let test = newTestEditingModel(),
       circuit = test.model,
-      dataModel = circuit.dataModel,
-      items = circuit.root.items;
+      items = circuit.root.items,
+      elem1 = addElement(test, newInputJunction('[,*]')),
+      elem2 = addElement(test, newTypedElement('[v[v,v],v]')),
+      wire = addWire(test, elem1, 0, elem2, 1);
+
   // Complete the two element group, then collect graph info.
   test.makeConsistent();
-  deepEqual(elements[0].master, '[,[v,v]]');
+  deepEqual(elem1.master, '[,[v,v]]');
+});
+
+test("circuits.editingModel.passThroughConsistency", function() {
+  let test = newTestEditingModel(),
+      circuit = test.model,
+      selectionModel = circuit.selectionModel,
+      items = circuit.root.items,
+      elem1 = addElement(test, newInputJunction('[,*]')),
+      elem2 = addElement(test, newOutputJunction('[*,]')),
+      wire = addWire(test, elem1, 0, elem2, 0);
+
+  // Group the junctions into [*,*].
+  selectionModel.add(elem1);
+  selectionModel.add(elem2);
+  test.makeGroup(items, false);
+  let group = items[0];
+  deepEqual(group.master, '[*,*]');
+  deepEqual(items.length, 1);
+
+  let output = addElement(test, newOutputJunction('[*,]')),
+      elem3 = addElement(test, newTypedElement('[v,[v,v]]')),
+      wire1 = addWire(test, group, 0, output, 0),
+      wire2 = addWire(test, elem3, 0, group, 0);
+  test.makeConsistent();
+  deepEqual(output.master, '[[v,v],]');
 });

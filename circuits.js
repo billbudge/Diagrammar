@@ -163,7 +163,17 @@ let masteringModel = (function() {
       return type;
     },
 
-    relabel: function (item, newText) {
+    getLabel: function (item) {
+      let master = getMaster(item);
+      if (isInput(item) || isLiteral(item)) {
+        return master.outputs[0].name;
+      } else if (isOutput(item)) {
+        return master.inputs[0].name;
+      }
+      return master.name;
+    },
+
+    setLabel: function (item, newText) {
       let master = getMaster(item),
           label = newText ? '(' + newText + ')' : '',
           newMaster;
@@ -1734,10 +1744,13 @@ Editor.prototype.setEditableText = function() {
   let self = this,
       model = this.model,
       textInputController = this.textInputController,
-      item = model.selectionModel.lastSelected();
+      item = model.selectionModel.lastSelected(),
+      masteringModel = model.masteringModel;
   if (item && isElement(item)) {
-    textInputController.start(item.name, function(newText) {
-      let newMaster = model.masteringModel.relabel(item, newText);
+    let master = getMaster(item),
+        oldText = masteringModel.getLabel(item);
+    textInputController.start(oldText, function(newText) {
+      let newMaster = masteringModel.setLabel(item, newText);
       if (newMaster != item.master) {
         model.transactionModel.beginTransaction('rename');
         model.observableModel.changeValue(item, 'master', newMaster);
