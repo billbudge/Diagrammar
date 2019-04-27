@@ -375,3 +375,20 @@ test("circuits.editingModel.makeGroup", function() {
   let groupElement = test.makeGroup(items, false);
   deepEqual(groupElement.master, '[vvv,v]');
 });
+
+test("circuits.editingModel.junctionConsistency", function() {
+  let elements = [
+        newInputJunction('[,*]'),
+        newTypedElement('[v[v,v],v]'),
+      ],
+      wires = [
+        { type: 'wire', srcId: 0, srcPin: 0, dstId: 1, dstPin: 1 },
+      ],
+      test = newTestEditingModel(elements, wires),
+      circuit = test.model,
+      dataModel = circuit.dataModel,
+      items = circuit.root.items;
+  // Complete the two element group, then collect graph info.
+  test.makeConsistent();
+  deepEqual(elements[0].master, '[,[v,v]]');
+});

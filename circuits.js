@@ -987,7 +987,7 @@ let editingModel = (function() {
       model.transactionModel.endTransaction();
     },
 
-    onTransactionEnding_: function (transaction) {
+    makeConsistent: function () {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           observableModel = model.observableModel,
@@ -999,7 +999,7 @@ let editingModel = (function() {
       // Make sure junctions are consistent.
       elementSet.forEach(function(element) {
         if (isJunction(element)) {
-          switch (element.junctionType) {
+          switch (element.elementType) {
             case 'input': {
               // Input junction pin 0 type should match all of its destinations.
               // Just trace the first one.
@@ -1087,7 +1087,8 @@ let editingModel = (function() {
     instance.getWireDst = model.referencingModel.getReferenceFn('dstId');
 
     model.transactionModel.addHandler('transactionEnding', function (transaction) {
-      instance.onTransactionEnding_(transaction);
+      // ignore transaction argument.
+      instance.makeConsistent();
     });
 
     model.editingModel = instance;
@@ -1512,11 +1513,11 @@ function Editor(model, textInputController) {
     },
     { type: 'element',
       elementType: 'apply',
-      master: '[*,](λ)',
+      master: '[*(λ),]',
     },
     { type: 'element',
       elementType: 'literal',
-      master: '[,v](0)',
+      master: '[,v(0)]',
     },
   ];
   this.junctions = junctions;
