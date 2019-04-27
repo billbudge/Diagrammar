@@ -285,5 +285,29 @@ test("circuits.editingModel.closeFunction", function() {
   let closedElement = items[2];
   deepEqual(closedElement.master, '[v,[v,v]]');
 });
+test("circuits.editingModel.openFunction", function() {
+  let elements = [
+        newTypedElement('[vv,v]'),
+        newTypedElement('[vv,v]'),
+      ],
+      wires = [
+        { type: 'wire', srcId: 0, srcPin: 0, dstId: 1, dstPin: 1 },
+      ],
+      test = newTestEditingModel(elements, wires),
+      circuit = test.model,
+      dataModel = circuit.dataModel,
+      items = circuit.root.items;
+  // Open element #1.
+  test.closeOrOpenFunctions([elements[1]], false);
+  deepEqual(items.length, 3);
+  deepEqual(items[0], elements[0]);
+  let wire = wires[0];
+  deepEqual(wire.srcId, dataModel.getId(elements[0]));
+  deepEqual(wire.srcPin, 0);
+  deepEqual(wire.dstId, dataModel.getId(items[2]));
+  deepEqual(wire.dstPin, 0);
+  let closedElement = items[2];
+  deepEqual(closedElement.master, '[vv[vv,v],v]');
+});
 
 
