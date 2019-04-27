@@ -839,8 +839,7 @@ let editingModel = (function() {
         groupElement.groupItems = groupItems;
         groupItems.forEach(item => self.deleteItem(item));
       } else {
-        // Add an output pin for the group fn itself.
-        master += master + '(γ)' + ']';
+        groupElement.self = true;
       }
 
       master += ']';
@@ -1743,6 +1742,7 @@ function isContainerTarget(hitInfo, model) {
 Editor.prototype.setEditableText = function() {
   let self = this,
       model = this.model,
+      canvasController = this.canvasController,
       textInputController = this.textInputController,
       item = model.selectionModel.lastSelected(),
       masteringModel = model.masteringModel;
@@ -1755,7 +1755,7 @@ Editor.prototype.setEditableText = function() {
         model.transactionModel.beginTransaction('rename');
         model.observableModel.changeValue(item, 'master', newMaster);
         model.transactionModel.endTransaction();
-        self.draw();
+        canvasController.draw();
       }
     });
   } else {

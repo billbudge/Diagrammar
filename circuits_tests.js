@@ -117,7 +117,7 @@ function newTestEditingModel(elements, wires) {
   return test;
 }
 
-function initialize(item) {
+function doInitialize(item) {
   item.initalized = true;
 }
 
@@ -251,7 +251,7 @@ test("circuits.editingModel", function() {
 
 test("circuits.editingModel.newItem", function() {
   let test = newTestEditingModel();
-  test.model.dataModel.addInitializer(initialize);
+  test.model.dataModel.addInitializer(doInitialize);
   let item1 = newElement();
   test.newItem(item1);
   ok(item1.id);
