@@ -62,6 +62,35 @@ function newOutputJunction(type) {
   return element;
 }
 
+function newTestMasteringModel() {
+  let circuit = newCircuit();
+  let test = circuits.masteringModel.extend(circuit);
+  return test;
+}
+
+function newTestEditingModel(elements, wires) {
+  let circuit = newCircuit();
+  circuits.masteringModel.extend(circuit);
+  circuits.viewModel.extend(circuit);
+  let test = circuits.editingModel.extend(circuit),
+      dataModel = test.model.dataModel;
+  circuit.dataModel.initialize();
+  if (elements) {
+    elements.forEach(function(element) {
+      test.newItem(element);
+      test.addItem(element);
+    });
+  }
+  if (wires) {
+    wires.forEach(function(wire) {
+      wire.srcId = dataModel.getId(elements[wire.srcId]);
+      wire.dstId = dataModel.getId(elements[wire.dstId]);
+      test.addItem(wire);
+    });
+  }
+  return test;
+}
+
 function initialize(item) {
   item.initalized = true;
 }
@@ -75,8 +104,7 @@ test("circuits.masteringModel", function() {
 });
 
 test("circuits.masteringModel", function() {
-  let circuit = newCircuit();
-  let test = circuits.masteringModel.extend(circuit);
+  let test = newTestMasteringModel();
   let types = [
     '[vv,v](+)',
     '[v(a)v(b),v(c)]',
@@ -88,15 +116,13 @@ test("circuits.masteringModel", function() {
 });
 
 test("circuits.masteringModel.unlabeled", function() {
-  let circuit = newCircuit();
-  let test = circuits.masteringModel.extend(circuit);
+  let test = newTestMasteringModel();
   deepEqual(test.unlabeled('[v,vv](foo)'), '[v,vv]');
   deepEqual(test.unlabeled('[v,vv]'), '[v,vv]');
 });
 
 test("circuits.masteringModel.relabel", function() {
-  let circuit = newCircuit();
-  let test = circuits.masteringModel.extend(circuit);
+  let test = newTestMasteringModel();
   let input = newInputJunction('[,*]');
   test.initialize(input);
   deepEqual(test.relabel(input, 'f'), '[,*(f)]');
@@ -126,8 +152,7 @@ test("circuits.masteringModel.relabel", function() {
 });
 
 test("circuits.masteringModel.retype", function() {
-  let circuit = newCircuit();
-  let test = circuits.masteringModel.extend(circuit);
+  let test = newTestMasteringModel();
   let input = newInputJunction('[,*(f)]');
   test.initialize(input);
   deepEqual(test.retype(input, '[v,v]'), '[,[v,v](f)]');
@@ -150,31 +175,29 @@ test("circuits.masteringModel.retype", function() {
 });
 
 test("circuits.editingAndMastering", function() {
-  let circuit = newCircuit();
-  let editingModel = circuits.editingModel.extend(circuit);
-  let test = circuits.masteringModel.extend(circuit);
-  circuit.dataModel.initialize();
+  let test = newTestEditingModel(),
+      circuit = test.model,
+      masteringModel = test.model.masteringModel;
   let types = [], masters = [];
   function onMasterInserted(type, master) {
     types.push(type);
     masters.push(master);
   }
-  test.addHandler('masterInserted', onMasterInserted);
+  masteringModel.addHandler('masterInserted', onMasterInserted);
 
   // Add an item.
   let item1 = newTypedElement('[vv,v]');
-  editingModel.newItem(item1);
-  editingModel.addItem(item1, circuit.root);
+  test.newItem(item1);
+  test.addItem(item1, circuit.root);
   // Check master
   let type = item1.master;
-  deepEqual(stringifyMaster(test.getMaster(item1)), type);
+  deepEqual(stringifyMaster(masteringModel.getMaster(item1)), type);
   deepEqual(types, [type]);
-  deepEqual(masters, [test.getMaster(item1)]);
+  deepEqual(masters, [masteringModel.getMaster(item1)]);
 });
 
 test("circuits.editingModel", function() {
-  let circuit = newCircuit();
-  let test = circuits.editingModel.extend(circuit);
+  let test = newTestEditingModel();
   ok(test);
   ok(test.model);
   ok(test.model.dataModel);
@@ -182,10 +205,8 @@ test("circuits.editingModel", function() {
 });
 
 test("circuits.editingModel.newItem", function() {
-  let circuit = newCircuit();
-  let test = circuits.editingModel.extend(circuit),
-      dataModel = test.model.dataModel;
-  dataModel.addInitializer(initialize);
+  let test = newTestEditingModel();
+  test.model.dataModel.addInitializer(initialize);
   let item1 = newElement();
   test.newItem(item1);
   ok(item1.id);
@@ -193,9 +214,8 @@ test("circuits.editingModel.newItem", function() {
 });
 
 test("circuits.editingModel.addDeleteItem", function() {
-  let circuit = newCircuit();
-  let test = circuits.editingModel.extend(circuit);
-  circuit.dataModel.initialize();
+  let test = newTestEditingModel(),
+      circuit = test.model;
   // Add an item.
   let item1 = newElement();
   test.newItem(item1);
@@ -208,16 +228,12 @@ test("circuits.editingModel.addDeleteItem", function() {
 });
 
 test("circuits.editingModel.connectInput", function() {
-  let circuit = newCircuit();
-  circuits.masteringModel.extend(circuit);
-  circuits.viewModel.extend(circuit);
-  let test = circuits.editingModel.extend(circuit);
-  circuit.dataModel.initialize();
+  let test = newTestEditingModel(),
+      circuit = test.model;
   // Add an item.
   let item1 = newElement();
   test.newItem(item1);
   test.addItem(item1, circuit.root);
-  console.log(item1);
   // Connect input 0.
   test.connectInput(item1, 0);
   deepEqual(circuit.root.items.length, 3);
@@ -229,16 +245,12 @@ test("circuits.editingModel.connectInput", function() {
 });
 
 test("circuits.editingModel.connectOutput", function() {
-  let circuit = newCircuit();
-  circuits.masteringModel.extend(circuit);
-  circuits.viewModel.extend(circuit);
-  let test = circuits.editingModel.extend(circuit);
-  circuit.dataModel.initialize();
+  let test = newTestEditingModel(),
+      circuit = test.model;
   // Add an item.
   let item1 = newElement();
   test.newItem(item1);
   test.addItem(item1, circuit.root);
-  console.log(item1);
   // Connect output 0.
   test.connectOutput(item1, 0);
   deepEqual(circuit.root.items.length, 3);
@@ -247,6 +259,31 @@ test("circuits.editingModel.connectOutput", function() {
   deepEqual(junction.elementType, 'output');
   deepEqual(test.getWireSrc(wire), item1);
   deepEqual(test.getWireDst(wire), junction);
+});
+
+test("circuits.editingModel.closeFunction", function() {
+  let elements = [
+        newTypedElement('[vv,v]'),
+        newTypedElement('[vv,v]'),
+      ],
+      wires = [
+        { type: 'wire', srcId: 0, srcPin: 0, dstId: 1, dstPin: 1 },
+      ],
+      test = newTestEditingModel(elements, wires),
+      circuit = test.model,
+      dataModel = circuit.dataModel,
+      items = circuit.root.items;
+  // Close element #1.
+  test.closeOrOpenFunctions([elements[1]], true);
+  deepEqual(items.length, 3);
+  deepEqual(items[0], elements[0]);
+  let wire = wires[0];
+  deepEqual(wire.srcId, dataModel.getId(elements[0]));
+  deepEqual(wire.srcPin, 0);
+  deepEqual(wire.dstId, dataModel.getId(items[2]));
+  deepEqual(wire.dstPin, 0);
+  let closedElement = items[2];
+  deepEqual(closedElement.master, '[v,[v,v]]');
 });
 
 
