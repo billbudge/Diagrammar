@@ -16,10 +16,6 @@ function isWire(item) {
   return item.type == 'wire';
 }
 
-function isMastered(item) {
-  return item.type == 'element' && item.master != '$';
-}
-
 function isLiteral(item) {
   return item.elementType == 'literal';
 }
@@ -46,10 +42,6 @@ function isApplyJunction(item) {
 
 function isGroup(item) {
   return isElement(item) && item.groupItems;
-}
-
-function needsLayout(item) {
-  return isWire(item) || !isMastered(item);
 }
 
 function isCircuit(item) {
@@ -721,15 +713,11 @@ let editingModel = (function() {
           inputs = [], outputs = [];
       let groupElement = {
         type: 'element',
-        master: '$',
         x: extents.x + extents.width / 2,
         y: extents.y + extents.height / 2,
-        inputs: inputs,
-        outputs: outputs,
       };
 
-      this.newItem(groupElement);
-      let groupId = dataModel.getId(groupElement);
+      let groupId = dataModel.assignId(groupElement);
 
       // Sort wire arrays so we encounter pins in increasing y-order.
       function compareIncomingWires(wire1, wire2) {
@@ -745,9 +733,12 @@ let editingModel = (function() {
       graphInfo.inputWires.sort(compareIncomingWires);
       graphInfo.outputWires.sort(compareOutgoingWires);
 
+      let master = '[';
+      let pinIndex = 0;
+
       // Use srcMap to ensure that an internal or external source is only
       // represented once in inputs and outputs.
-      function addUniqueSource(wire, srcMap, inputsOrOutputs) {
+      function addUniqueSource(wire, srcMap) {
         let src = self.getWireSrc(wire),
             srcPins = getMaster(src).outputs,
             srcIndices = srcMap.get(src);
@@ -757,12 +748,9 @@ let editingModel = (function() {
         }
         let index = wire.srcPin;
         if (srcIndices[index] === undefined) {
-          srcIndices[index] = inputsOrOutputs.length;
+          srcIndices[index] = pinIndex++;
           let srcPin = srcPins[index];
-          inputsOrOutputs.push({
-            type: srcPin.type,
-            name: srcPin.name,
-          });
+          master += self.getPinType(srcPin);
         }
         return srcIndices[index];
       }
@@ -770,14 +758,14 @@ let editingModel = (function() {
       let incomingSrcMap = new Map(), outgoingSrcMap = new Map();
       // Add input pins for inputWires.
       graphInfo.inputWires.forEach(function(wire) {
-        let index = addUniqueSource(wire, incomingSrcMap, inputs);
+        let index = addUniqueSource(wire, incomingSrcMap);
         if (!elementOnly) {
           let src = self.getWireSrc(wire);
           if (graphInfo.elementSet.has(src)) {
             observableModel.changeValue(src, 'pinIndex', index);
           } else {
             // If this is the first instance of the source...
-            if (index == inputs.length - 1) {
+            if (index == pinIndex - 1) {
               // Add an input junction to represent the source.
               let element = self.getWireDst(wire),
                   pin = wire.dstPin,
@@ -791,20 +779,22 @@ let editingModel = (function() {
           }
         }
       });
+      master += ',';
+      pinIndex = 0;
       // Add output pins for outputWires.
       graphInfo.outputWires.forEach(function(wire) {
-        let index = addUniqueSource(wire, outgoingSrcMap, outputs);
+        let index = addUniqueSource(wire, outgoingSrcMap);
         if (!elementOnly) {
           let dst = self.getWireDst(wire);
           if (graphInfo.elementSet.has(dst)) {
             observableModel.changeValue(dst, 'pinIndex', index);
-            if (isOutputJunction(dst)) {
-              // name output pin after this destination.
-              outputs[index].name = getMaster(dst).inputs[0].name;
-            }
+            // if (isOutputJunction(dst)) {
+            //   // name output pin after this destination.
+            //   outputs[index].name = getMaster(dst).inputs[0].name;
+            // }
           } else {
             // If this is the first instance of the source...
-            if (index == outputs.length - 1) {
+            if (index == pinIndex - 1) {
               // Add an input junction to represent the source.
               let element = self.getWireSrc(wire),
                   pin = wire.srcPin,
@@ -818,6 +808,7 @@ let editingModel = (function() {
           }
         }
       });
+
       // Compute wildcard pass throughs.
       let passThroughs = new Set();
       graphInfo.interiorWires.forEach(function(wire) {
@@ -852,15 +843,16 @@ let editingModel = (function() {
         groupElement.groupItems = groupItems;
         groupItems.forEach(item => self.deleteItem(item));
       } else {
-        let groupType = this.getOpenedType(groupElement);
-        outputs.push({
-          type: groupType,
-          name: 'γ',
-        });
+        // Add an output pin for the group fn itself.
+        master += master + '(γ)' + ']';
       }
 
-      this.addItem(groupElement);
+      master += ']';
+      groupElement.master = master;
+      console.log(master);
       dataModel.initialize(groupElement);
+
+      this.addItem(groupElement);
 
       selectionModel.set(groupElement);
 
@@ -1454,16 +1446,8 @@ Renderer.prototype.hitTestWire = function(wire, p, tol, mode) {
 }
 
 Renderer.prototype.layout = function(item) {
-  switch (item.type) {
-    case 'wire':
-      this.layoutWire(item);
-      break;
-    case 'element':
-      if (item.master == '$') {
-        this.layoutMaster(item);
-      }
-      break;
-  }
+  if (item.type == 'wire')
+    this.layoutWire(item);
 }
 
 Renderer.prototype.draw = function(item, mode) {
@@ -1669,15 +1653,13 @@ Editor.prototype.draw = function() {
 
   diagram.items.forEach(function(item) {
     if (isElement(item)) {
-      if (needsLayout(item))
-        renderer.layout(item);
+      renderer.layout(item);
       renderer.draw(item, normalMode);
     }
   });
   diagram.items.forEach(function(item) {
     if (isWire(item)) {
-      if (needsLayout(item))
-        renderer.layout(item);
+      renderer.layout(item);
       renderer.draw(item, normalMode);
     }
   });
@@ -1693,8 +1675,7 @@ Editor.prototype.draw = function() {
   if (temporary) {
     renderer.beginDraw(model, ctx);
     canvasController.applyTransform();
-    if (needsLayout(temporary))
-      renderer.layout(temporary);
+    renderer.layout(temporary);
     renderer.draw(temporary, normalMode);
     renderer.endDraw();
   }
@@ -1895,9 +1876,7 @@ Editor.prototype.onBeginDrag = function(p0) {
         let renderer = this.renderer;
         renderer.beginDraw(model, this.ctx);
         copies.forEach(function(copy) {
-          if (needsLayout(copy)) {
-            renderer.layout(copy);
-          }
+          renderer.layout(copy);
         });
         renderer.endDraw();
       }
