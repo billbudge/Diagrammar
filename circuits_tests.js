@@ -273,12 +273,39 @@ test("circuits.editingModel.completeGroup", function() {
       circuit = test.model,
       dataModel = circuit.dataModel,
       items = circuit.root.items;
-  // Close element #1.
+  // Complete the two element group.
   test.completeGroup(elements);
   deepEqual(items.length, 11);
   deepEqual(items[0], elements[0]);
   deepEqual(items[1], elements[1]);
   deepEqual(items[2], wires[0]);
+});
+
+test("circuits.editingModel.collectGraphInfo", function() {
+  let elements = [
+        newTypedElement('[vv,v]'),
+        newTypedElement('[vv,v]'),
+      ],
+      wires = [
+        { type: 'wire', srcId: 0, srcPin: 0, dstId: 1, dstPin: 1 },
+      ],
+      test = newTestEditingModel(elements, wires),
+      circuit = test.model,
+      dataModel = circuit.dataModel,
+      items = circuit.root.items;
+  // Complete the two element group, then collect graph info.
+  test.completeGroup(elements);
+  let graphInfo = test.collectGraphInfo(elements);
+  ok(graphInfo.elementSet.has(elements[0]));
+  ok(graphInfo.elementSet.has(elements[1]));
+  deepEqual(graphInfo.elementSet.size, 2);
+  ok(graphInfo.interiorWires.includes(wires[0]));
+  deepEqual(graphInfo.wires.length, 5);
+  deepEqual(graphInfo.interiorWires.length, 1);
+  deepEqual(graphInfo.incomingWires.length, 3);
+  deepEqual(graphInfo.inputWires.length, 3);
+  deepEqual(graphInfo.outgoingWires.length, 1);
+  deepEqual(graphInfo.outputWires.length, 1);
 });
 
 test("circuits.editingModel.closeFunction", function() {
@@ -331,4 +358,20 @@ test("circuits.editingModel.openFunction", function() {
   deepEqual(closedElement.master, '[vv[vv,v],v]');
 });
 
-
+test("circuits.editingModel.makeGroup", function() {
+  let elements = [
+        newTypedElement('[vv,v]'),
+        newTypedElement('[vv,v]'),
+      ],
+      wires = [
+        { type: 'wire', srcId: 0, srcPin: 0, dstId: 1, dstPin: 1 },
+      ],
+      test = newTestEditingModel(elements, wires),
+      circuit = test.model,
+      dataModel = circuit.dataModel,
+      items = circuit.root.items;
+  // Complete the two element group, then collect graph info.
+  test.completeGroup(elements);
+  let groupElement = test.makeGroup(items, false);
+  deepEqual(groupElement.master, '[vvv,v]');
+});
