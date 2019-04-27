@@ -141,10 +141,10 @@ test("circuits.masteringModel", function() {
     type => deepEqual(stringifyMaster(test.decodeType(type)), type));
 });
 
-test("circuits.masteringModel.unlabeled", function() {
+test("circuits.masteringModel.getUnlabeledType", function() {
   let test = newTestMasteringModel();
-  deepEqual(test.unlabeled('[v,vv](foo)'), '[v,vv]');
-  deepEqual(test.unlabeled('[v,vv]'), '[v,vv]');
+  deepEqual(test.getUnlabeledType('[v,vv](foo)'), '[v,vv]');
+  deepEqual(test.getUnlabeledType('[v,vv]'), '[v,vv]');
 });
 
 test("circuits.masteringModel.getLabel", function() {
@@ -196,25 +196,25 @@ test("circuits.masteringModel.setLabel", function() {
   deepEqual(test.setLabel(element, ''), '[vv,vv]');
 });
 
-test("circuits.masteringModel.retype", function() {
+test("circuits.masteringModel.changeType", function() {
   let test = newTestMasteringModel();
   let input = newInputJunction('[,*(f)]');
   test.initialize(input);
-  deepEqual(test.retype(input, '[v,v]'), '[,[v,v](f)]');
-  deepEqual(test.retype(input, '*'), '[,*(f)]');
+  deepEqual(test.changeType(input, '[v,v]'), '[,[v,v](f)]');
+  deepEqual(test.changeType(input, '*'), '[,*(f)]');
   input.master = '[,[v,v](f)]';
   test.initialize(input);
-  deepEqual(test.retype(input, '*'), '[,*(f)]');
-  deepEqual(test.retype(input, 'v'), '[,v(f)]');
+  deepEqual(test.changeType(input, '*'), '[,*(f)]');
+  deepEqual(test.changeType(input, 'v'), '[,v(f)]');
 
   let output = newOutputJunction('[*(f),]');
   test.initialize(output);
-  deepEqual(test.retype(output, '[v,v]'), '[[v,v](f),]');
-  deepEqual(test.retype(output, '*'), '[*(f),]');
+  deepEqual(test.changeType(output, '[v,v]'), '[[v,v](f),]');
+  deepEqual(test.changeType(output, '*'), '[*(f),]');
   output.master = '[[v,v](f),]';
   test.initialize(output);
-  deepEqual(test.retype(output, '*'), '[*(f),]');
-  deepEqual(test.retype(output, 'v'), '[v(f),]');
+  deepEqual(test.changeType(output, '*'), '[*(f),]');
+  deepEqual(test.changeType(output, 'v'), '[v(f),]');
 
   // TODO 'apply' junctions.
 });

@@ -157,7 +157,7 @@ let masteringModel = (function() {
       return master;
     },
 
-    unlabeled: function(type) {
+    getUnlabeledType: function(type) {
       if (type[type.length - 1] == ')')
         type = type.substring(0, type.lastIndexOf('('));
       return type;
@@ -184,12 +184,12 @@ let masteringModel = (function() {
           newMaster = '[' + master.inputs[0].type + label + ',]';
         }
       } else {
-        newMaster = this.unlabeled(master.type) + label;
+        newMaster = this.getUnlabeledType(master.type) + label;
       }
       return newMaster;
     },
 
-    retype: function (item, newType) {
+    changeType: function (item, newType) {
       let master = getMaster(item),
           newMaster;
       if (isJunction(item)) {
@@ -610,7 +610,7 @@ let editingModel = (function() {
     },
 
     getOpenedType: function(element) {
-      return this.model.masteringModel.unlabeled(element.master);
+      return this.model.masteringModel.getUnlabeledType(element.master);
     },
 
     openFunction: function(element, incomingWires, outgoingWireArrays) {
@@ -1021,7 +1021,7 @@ let editingModel = (function() {
               }
               if (type != dstType) {
                 observableModel.changeValue(element, 'master',
-                  masteringModel.retype(element, dstType));
+                  masteringModel.changeType(element, dstType));
               }
               break;
             }
@@ -1036,7 +1036,7 @@ let editingModel = (function() {
               }
               if (type != srcType) {
                 observableModel.changeValue(element, 'master',
-                  masteringModel.retype(element, srcType));
+                  masteringModel.changeType(element, srcType));
               }
               break;
             }
