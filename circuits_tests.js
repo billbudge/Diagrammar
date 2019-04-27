@@ -93,27 +93,13 @@ function addWire(test, src, srcPin, dst, dstPin) {
   return wire;
 }
 
-function newTestEditingModel(elements, wires) {
+function newTestEditingModel() {
   let circuit = newCircuit();
   circuits.masteringModel.extend(circuit);
   circuits.viewModel.extend(circuit);
   let test = circuits.editingModel.extend(circuit),
       dataModel = test.model.dataModel;
   circuit.dataModel.initialize();
-
-  if (elements) {
-    elements.forEach(function(element) {
-      test.newItem(element);
-      test.addItem(element);
-    });
-  }
-  if (wires) {
-    wires.forEach(function(wire) {
-      wire.srcId = dataModel.getId(elements[wire.srcId]);
-      wire.dstId = dataModel.getId(elements[wire.dstId]);
-      test.addItem(wire);
-    });
-  }
   return test;
 }
 
@@ -394,6 +380,20 @@ test("circuits.editingModel.makeGroup", function() {
   deepEqual(groupElement.master, '[vvv,v]');
 });
 
+test("circuits.editingModel.wireConsistency", function() {
+  let test = newTestEditingModel(),
+      circuit = test.model,
+      items = circuit.root.items,
+      elem1 = addElement(test, newInputJunction('[,v]')),
+      elem2 = addElement(test, newTypedElement('[vv,v]')),
+      wire = addWire(test, elem1, 0, elem2, 1);
+
+  // Complete the two element group, then collect graph info.
+  test.deleteItem(elem1);
+  test.makeConsistent();
+  ok(!items.includes(wire));
+});
+
 test("circuits.editingModel.junctionConsistency", function() {
   let test = newTestEditingModel(),
       circuit = test.model,
@@ -405,6 +405,9 @@ test("circuits.editingModel.junctionConsistency", function() {
   // Complete the two element group, then collect graph info.
   test.makeConsistent();
   deepEqual(elem1.master, '[,[v,v]]');
+  test.deleteItem(wire);
+  test.makeConsistent();
+  deepEqual(elem1.master, '[,*]');
 });
 
 test("circuits.editingModel.passThroughConsistency", function() {
@@ -430,4 +433,7 @@ test("circuits.editingModel.passThroughConsistency", function() {
       wire2 = addWire(test, elem3, 0, group, 0);
   test.makeConsistent();
   deepEqual(output.master, '[[v,v],]');
+  test.deleteItem(wire2);
+  test.makeConsistent();
+  deepEqual(output.master, '[*,]');
 });

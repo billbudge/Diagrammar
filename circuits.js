@@ -921,7 +921,8 @@ let editingModel = (function() {
             if (passThrough[1] == wire.srcPin) {
               srcPin = getMaster(src).inputs[passThrough[0]];
               let incomingWire = graphInfo.inputMap.get(src)[passThrough[0]];
-              activeWires.push(incomingWire);
+              if (incomingWire)
+                activeWires.push(incomingWire);
             }
           });
         }
@@ -1179,7 +1180,8 @@ let viewModel = (function() {
 let normalMode = 1,
     paletteMode = 2,
     highlightMode = 3,
-    hotTrackMode = 4;
+    hotTrackMode = 4,
+    selfMode;
 
 function Renderer(theme) {
   this.theme = theme || diagrams.theme.create();
@@ -1328,12 +1330,13 @@ Renderer.prototype.drawMaster = function(master, x, y, mode) {
   switch (mode) {
     case normalMode:
     case paletteMode:
+    case selfMode:
       let textSize = theme.fontSize, name = master.name,
           inputs = master.inputs, outputs = master.outputs;
       ctx.fillStyle = theme.bgColor;
-      ctx.fillStyle = mode == normalMode ? theme.bgColor : theme.altBgColor;
+      ctx.fillStyle = mode == paletteMode ? theme.altBgColor : theme.bgColor;
       ctx.fillRect(x, y, width, height);
-      ctx.strokeStyle = theme.strokeColor;
+      ctx.strokeStyle = (mode == selfMode) ? theme.dimColor : theme.strokeColor;
       ctx.lineWidth = 0.5;
       ctx.strokeRect(x, y, width, height);
       ctx.fillStyle = theme.textColor;
@@ -1453,6 +1456,8 @@ Renderer.prototype.draw = function(item, mode) {
       rect = this.getItemRect(item);
       if (item.state == 'palette' && mode == normalMode)
         mode = paletteMode;
+      else if (item.self)
+        mode = selfMode;
       this.drawMaster(getMaster(item), rect.x, rect.y, mode);
       break;
     case 'wire':
