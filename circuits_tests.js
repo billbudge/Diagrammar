@@ -261,6 +261,26 @@ test("circuits.editingModel.connectOutput", function() {
   deepEqual(test.getWireDst(wire), junction);
 });
 
+test("circuits.editingModel.completeGroup", function() {
+  let elements = [
+        newTypedElement('[vv,v]'),
+        newTypedElement('[vv,v]'),
+      ],
+      wires = [
+        { type: 'wire', srcId: 0, srcPin: 0, dstId: 1, dstPin: 1 },
+      ],
+      test = newTestEditingModel(elements, wires),
+      circuit = test.model,
+      dataModel = circuit.dataModel,
+      items = circuit.root.items;
+  // Close element #1.
+  test.completeGroup(elements);
+  deepEqual(items.length, 11);
+  deepEqual(items[0], elements[0]);
+  deepEqual(items[1], elements[1]);
+  deepEqual(items[2], wires[0]);
+});
+
 test("circuits.editingModel.closeFunction", function() {
   let elements = [
         newTypedElement('[vv,v]'),
@@ -285,6 +305,7 @@ test("circuits.editingModel.closeFunction", function() {
   let closedElement = items[2];
   deepEqual(closedElement.master, '[v,[v,v]]');
 });
+
 test("circuits.editingModel.openFunction", function() {
   let elements = [
         newTypedElement('[vv,v]'),
