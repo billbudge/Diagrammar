@@ -52,15 +52,13 @@ function newTypedElement(master) {
 
 function newInputJunction(type) {
   let element = newTypedElement(type);
-  element.elementType = 'junction';
-  element.junctionType = 'input';
+  element.elementType = 'input';
   return element;
 }
 
 function newOutputJunction(type) {
   let element = newTypedElement(type);
-  element.elementType = 'junction';
-  element.junctionType = 'output';
+  element.elementType = 'output';
   return element;
 }
 
@@ -87,6 +85,13 @@ test("circuits.masteringModel", function() {
   ];
   types.forEach(
     type => deepEqual(stringifyMaster(test.decodeType(type)), type));
+});
+
+test("circuits.masteringModel.unlabeled", function() {
+  let circuit = newCircuit();
+  let test = circuits.masteringModel.extend(circuit);
+  deepEqual(test.unlabeled('[v,vv](foo)'), '[v,vv]');
+  deepEqual(test.unlabeled('[v,vv]'), '[v,vv]');
 });
 
 test("circuits.masteringModel.relabel", function() {
@@ -218,7 +223,7 @@ test("circuits.editingModel.connectInput", function() {
   deepEqual(circuit.root.items.length, 3);
   let junction = circuit.root.items[1],
       wire = circuit.root.items[2];
-  deepEqual(junction.junctionType, 'input');
+  deepEqual(junction.elementType, 'input');
   deepEqual(test.getWireSrc(wire), junction);
   deepEqual(test.getWireDst(wire), item1);
 });
@@ -239,7 +244,7 @@ test("circuits.editingModel.connectOutput", function() {
   deepEqual(circuit.root.items.length, 3);
   let junction = circuit.root.items[1],
       wire = circuit.root.items[2];
-  deepEqual(junction.junctionType, 'output');
+  deepEqual(junction.elementType, 'output');
   deepEqual(test.getWireSrc(wire), item1);
   deepEqual(test.getWireDst(wire), junction);
 });

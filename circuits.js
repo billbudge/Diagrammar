@@ -157,6 +157,12 @@ let masteringModel = (function() {
       return master;
     },
 
+    unlabeled: function(type) {
+      if (type[type.length - 1] == ')')
+        type = type.substring(0, type.lastIndexOf('('));
+      return type;
+    },
+
     relabel: function (item, newText) {
       let master = getMaster(item),
           label = newText ? '(' + newText + ')' : '',
@@ -168,10 +174,7 @@ let masteringModel = (function() {
           newMaster = '[' + master.inputs[0].type + label + ',]';
         }
       } else {
-        let type = master.type;
-        if (master.name)
-          type = type.substring(0, type.lastIndexOf('('));
-        newMaster = type + label;
+        newMaster = this.unlabeled(master.type) + label;
       }
       return newMaster;
     },
@@ -597,20 +600,7 @@ let editingModel = (function() {
     },
 
     getOpenedType: function(element) {
-      // Create a function type whose inputs are all inputs, and whose outputs
-      // are all outputs.
-      let master = getMaster(element),
-          fnType = '[';
-      master.inputs.forEach(function(input) {
-        fnType += input.type;
-      });
-      fnType += ',';
-      master.outputs.forEach(function(output) {
-        fnType += output.type;
-      });
-      fnType += ']';
-      // console.log('openedType', fnType);
-      return fnType;
+      return this.model.masteringModel.unlabeled(element.master);
     },
 
     openFunction: function(element, incomingWires, outgoingWireArrays) {
