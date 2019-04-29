@@ -205,6 +205,18 @@ test("circuits.masteringModel.changeType", function() {
   // TODO 'apply' junctions.
 });
 
+test("circuits.masteringModel.splitType", function() {
+  let test = newTestMasteringModel();
+  let pairs = [
+    { type: '[vv,v](+)', split: 3 },
+    { type: '[v(a)v(b),v(c)]', split: 9 },
+    { type: '[,[,v][v,v]](@)', split: 1 },
+    { type: '[[v,vv(q)](a)v(b),v(c)](foo)', split: 17 },
+  ];
+  pairs.forEach(
+    pair => deepEqual(test.splitType(pair.type), pair.split));
+});
+
 test("circuits.editingAndMastering", function() {
   let test = newTestEditingModel(),
       circuit = test.model,

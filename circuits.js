@@ -163,6 +163,20 @@ let masteringModel = (function() {
       return type;
     },
 
+    splitType: function(s) {
+      let self = this;
+      let j = 0, level = 0;
+      while (true) {
+        if (s[j] == '[')
+          level++;
+        else if (s[j] == ']')
+          level--;
+        else if (s[j] == ',')
+          if (level == 1) return j;
+        j++;
+      }
+    },
+
     getLabel: function (item) {
       let master = getMaster(item);
       if (isInput(item) || isLiteral(item)) {
@@ -265,11 +279,15 @@ let editingModel = (function() {
       let inputMap = new Map(), outputMap = new Map();
       items.forEach(function(item) {
         if (isElement(item)) {
+          let master = getMaster(item);
           elementSet.add(item);
           // inputMap takes element to array of incoming wires.
-          inputMap.set(item, new Array(getMaster(item).inputs.length).fill(null));
+          inputMap.set(item, new Array(master.inputs.length).fill(null));
           // outputMap takes element to array of array of outgoing wires.
-          outputMap.set(item, new Array(getMaster(item).outputs.length).fill([]));
+          let arrays = new Array(master.outputs.length);
+          for (let i = 0; i < arrays.length; i++)
+            arrays[i] = new Array();
+          outputMap.set(item, arrays);
         }
       });
       // Separate wires into incoming, outgoing, and interior. Populate
@@ -692,6 +710,7 @@ let editingModel = (function() {
     makeGroup: function(elements, elementOnly) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
+          masteringModel = model.masteringModel,
           selectionModel = model.selectionModel,
           observableModel = model.observableModel,
           viewModel = model.viewModel;
@@ -834,15 +853,16 @@ let editingModel = (function() {
       if (passThroughs.size) {
         groupElement.passThroughs = Array.from(passThroughs);
       }
+      master += ']';
 
       if (!elementOnly) {
         groupElement.groupItems = groupItems;
         groupItems.forEach(item => self.deleteItem(item));
       } else {
-        groupElement.self = true;
+        let j = masteringModel.splitType(master);
+        master = master.substring(0, j) + master + master.substring(j, master.length);
       }
 
-      master += ']';
       groupElement.master = master;
       // console.log(master);
       dataModel.initialize(groupElement);
@@ -868,7 +888,7 @@ let editingModel = (function() {
         master.inputs.forEach(function(pin) {
           newMaster += pin.type;
         });
-        newMaster += srcPin.type;
+        newMaster += '*';
         newMaster += ','
         master.outputs.forEach(function(pin) {
           newMaster += pin.type;
@@ -1180,8 +1200,7 @@ let viewModel = (function() {
 let normalMode = 1,
     paletteMode = 2,
     highlightMode = 3,
-    hotTrackMode = 4,
-    selfMode;
+    hotTrackMode = 4;
 
 function Renderer(theme) {
   this.theme = theme || diagrams.theme.create();
@@ -1330,13 +1349,12 @@ Renderer.prototype.drawMaster = function(master, x, y, mode) {
   switch (mode) {
     case normalMode:
     case paletteMode:
-    case selfMode:
       let textSize = theme.fontSize, name = master.name,
           inputs = master.inputs, outputs = master.outputs;
       ctx.fillStyle = theme.bgColor;
       ctx.fillStyle = mode == paletteMode ? theme.altBgColor : theme.bgColor;
       ctx.fillRect(x, y, width, height);
-      ctx.strokeStyle = (mode == selfMode) ? theme.dimColor : theme.strokeColor;
+      ctx.strokeStyle = theme.strokeColor;
       ctx.lineWidth = 0.5;
       ctx.strokeRect(x, y, width, height);
       ctx.fillStyle = theme.textColor;
@@ -1456,8 +1474,6 @@ Renderer.prototype.draw = function(item, mode) {
       rect = this.getItemRect(item);
       if (item.state == 'palette' && mode == normalMode)
         mode = paletteMode;
-      else if (item.self)
-        mode = selfMode;
       this.drawMaster(getMaster(item), rect.x, rect.y, mode);
       break;
     case 'wire':
