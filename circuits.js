@@ -709,7 +709,7 @@ let editingModel = (function() {
       });
     },
 
-    makeGroup: function(elements, elementOnly) {
+    makeGroup: function(elements) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           masteringModel = model.masteringModel,
@@ -775,24 +775,22 @@ let editingModel = (function() {
       // Add input pins for inputWires.
       graphInfo.inputWires.forEach(function(wire) {
         let index = addUniqueSource(wire, incomingSrcMap);
-        if (!elementOnly) {
-          let src = self.getWireSrc(wire);
-          if (graphInfo.elementSet.has(src)) {
-            observableModel.changeValue(src, 'pinIndex', index);
-          } else {
-            // If this is the first instance of the source...
-            if (index == pinIndex - 1) {
-              // Add an input junction to represent the source.
-              let element = self.getWireDst(wire),
-                  pin = wire.dstPin,
-                  connection = self.connectInput(element, pin);
-              connection.junction.pinIndex = index;
-              groupItems.push(connection.junction, connection.wire);
-              graphInfo.interiorWires.push(connection.wire);
-            }
-            observableModel.changeValue(wire, 'dstId', groupId);
-            observableModel.changeValue(wire, 'dstPin', index);
+        let src = self.getWireSrc(wire);
+        if (graphInfo.elementSet.has(src)) {
+          observableModel.changeValue(src, 'pinIndex', index);
+        } else {
+          // If this is the first instance of the source...
+          if (index == pinIndex - 1) {
+            // Add an input junction to represent the source.
+            let element = self.getWireDst(wire),
+                pin = wire.dstPin,
+                connection = self.connectInput(element, pin);
+            connection.junction.pinIndex = index;
+            groupItems.push(connection.junction, connection.wire);
+            graphInfo.interiorWires.push(connection.wire);
           }
+          observableModel.changeValue(wire, 'dstId', groupId);
+          observableModel.changeValue(wire, 'dstPin', index);
         }
       });
       master += ',';
@@ -800,29 +798,27 @@ let editingModel = (function() {
       // Add output pins for outputWires.
       graphInfo.outputWires.forEach(function(wire) {
         let index = addUniqueSource(wire, outgoingSrcMap);
-        if (!elementOnly) {
-          let dst = self.getWireDst(wire);
-          if (graphInfo.elementSet.has(dst)) {
-            observableModel.changeValue(dst, 'pinIndex', index);
-            if (index == pinIndex - 1 && isOutput(dst)) {
-              let name = getMaster(dst).inputs[0].name;
-              if (name)
-                master += '(' + name + ')';
-            }
-          } else {
-            // If this is the first instance of the source...
-            if (index == pinIndex - 1) {
-              // Add an input junction to represent the source.
-              let element = self.getWireSrc(wire),
-                  pin = wire.srcPin,
-                  connection = self.connectOutput(element, pin);
-              connection.junction.pinIndex = index;
-              groupItems.push(connection.junction, connection.wire);
-              graphInfo.interiorWires.push(connection.wire);
-            }
-            observableModel.changeValue(wire, 'srcId', groupId);
-            observableModel.changeValue(wire, 'srcPin', index);
+        let dst = self.getWireDst(wire);
+        if (graphInfo.elementSet.has(dst)) {
+          observableModel.changeValue(dst, 'pinIndex', index);
+          if (index == pinIndex - 1 && isOutput(dst)) {
+            let name = getMaster(dst).inputs[0].name;
+            if (name)
+              master += '(' + name + ')';
           }
+        } else {
+          // If this is the first instance of the source...
+          if (index == pinIndex - 1) {
+            // Add an input junction to represent the source.
+            let element = self.getWireSrc(wire),
+                pin = wire.srcPin,
+                connection = self.connectOutput(element, pin);
+            connection.junction.pinIndex = index;
+            groupItems.push(connection.junction, connection.wire);
+            graphInfo.interiorWires.push(connection.wire);
+          }
+          observableModel.changeValue(wire, 'srcId', groupId);
+          observableModel.changeValue(wire, 'srcPin', index);
         }
       });
 
@@ -857,13 +853,77 @@ let editingModel = (function() {
       }
       master += ']';
 
-      if (!elementOnly) {
-        groupElement.groupItems = groupItems;
-        groupItems.forEach(item => self.deleteItem(item));
-      } else {
-        let j = masteringModel.splitType(master);
-        master = master.substring(0, j) + master + master.substring(j, master.length);
-      }
+      groupElement.groupItems = groupItems;
+      groupItems.forEach(item => self.deleteItem(item));
+
+      groupElement.master = master;
+      // console.log(master);
+      dataModel.initialize(groupElement);
+
+      this.addItem(groupElement);
+
+      selectionModel.set(groupElement);
+
+      return groupElement;
+    },
+
+    makeProtoGroup: function(elements) {
+      let self = this, model = this.model,
+          dataModel = model.dataModel,
+          masteringModel = model.masteringModel,
+          selectionModel = model.selectionModel,
+          viewModel = model.viewModel;
+
+      let graphInfo = this.collectGraphInfo(elements);
+      // Adjust selection to contain just the elements.
+      graphInfo.wires.forEach(wire => selectionModel.remove(wire));
+      let groupItems = selectionModel.contents();
+
+      // Create the new group element.
+      let extents = viewModel.getItemRects(graphInfo.elementSet),
+          inputs = [], outputs = [];
+      let groupElement = {
+        type: 'element',
+        x: extents.x + extents.width / 2,
+        y: extents.y + extents.height / 2,
+      };
+
+      let groupId = dataModel.assignId(groupElement);
+
+      // // Sort wire arrays so we encounter pins in increasing y-order.
+      // function comparePins(wire1, wire2) {
+      //   let src1 = self.getWireSrc(wire1), src2 = self.getWireSrc(wire2);
+      //   return viewModel.pinToPoint(src1, wire1.srcPin, false).y -
+      //          viewModel.pinToPoint(src2, wire2.srcPin, false).y;
+      // }
+      // function compareOutgoingWires(wire1, wire2) {
+      //   let dst1 = self.getWireDst(wire1), dst2 = self.getWireDst(wire2);
+      //   return viewModel.pinToPoint(dst1, wire1.dstPin, true).y -
+      //          viewModel.pinToPoint(dst2, wire2.dstPin, true).y;
+      // }
+      // graphInfo.inputWires.sort(compareIncomingWires);
+      // graphInfo.outputWires.sort(compareOutgoingWires);
+
+      let master = '[';
+      selectionModel.contents().forEach(function(element) {
+        if (isInput(element))
+          master += getMaster(element).outputs[0].type;
+      });
+      master += ',';
+      selectionModel.contents().forEach(function(element) {
+        if (isOutput(element))
+          master += getMaster(element).inputs[0].type;
+      });
+      master += '](@)';
+      console.log(master);
+
+      // if (!elementOnly) {
+      //   groupElement.groupItems = groupItems;
+      //   groupItems.forEach(item => self.deleteItem(item));
+      // } else {
+      //   let j = masteringModel.splitType(master);
+      //   master = master.substring(0, j) + master + master.substring(j, master.length);
+      // }
 
       groupElement.master = master;
       // console.log(master);
@@ -1004,7 +1064,10 @@ let editingModel = (function() {
       this.reduceSelection();
       model.transactionModel.beginTransaction(
         'group' + (elementOnly ? '(elementOnly)' : ''));
-      this.makeGroup(model.selectionModel.contents(), elementOnly);
+      if (!elementOnly)
+        this.makeGroup(model.selectionModel.contents());
+      else
+        this.makeProtoGroup(model.selectionModel.contents());
       model.transactionModel.endTransaction();
     },
 
