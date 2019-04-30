@@ -337,7 +337,7 @@ let editingModel = (function() {
       }
     },
 
-    closeSelection: function() {
+    closeSelection: function(upstream) {
       let self = this, model = this.model,
           selectionModel = model.selectionModel,
           graphInfo = this.collectGraphInfo(this.diagram.items),
@@ -346,12 +346,14 @@ let editingModel = (function() {
         let item = toVisit.pop();
         if (!isElement(item)) continue;
         selectionModel.add(item);
-        graphInfo.inputMap.get(item).forEach(function(wire) {
-          if (!wire) return;
-          let src = self.getWireSrc(wire);
-          if (!selectionModel.contains(src))
-            toVisit.push(src);
-        });
+        if (upstream) {
+          graphInfo.inputMap.get(item).forEach(function(wire) {
+            if (!wire) return;
+            let src = self.getWireSrc(wire);
+            if (!selectionModel.contains(src))
+              toVisit.push(src);
+          });
+        }
         graphInfo.outputMap.get(item).forEach(function(wires) {
           wires.forEach(function(wire) {
             let dst = self.getWireDst(wire);
@@ -1802,6 +1804,9 @@ Editor.prototype.onClick = function(p) {
       if (!shiftKeyDown)
         selectionModel.clear();
       selectionModel.add(item);
+    } else {
+      if (shiftKeyDown)
+        selectionModel.remove(item);
     }
   } else {
     if (!shiftKeyDown) {
@@ -2085,7 +2090,7 @@ Editor.prototype.onKeyDown = function(e) {
         }
         return false;
       case 69:  // 'e'
-        editingModel.closeSelection();
+        editingModel.closeSelection(!shiftKey);
         return true;
       case 72:  // 'h'
         editingModel.doToggleMaster();
