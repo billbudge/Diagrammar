@@ -880,8 +880,7 @@ let editingModel = (function() {
       let groupItems = selectionModel.contents();
 
       // Create the new group element.
-      let extents = viewModel.getItemRects(graphInfo.elementSet),
-          inputs = [], outputs = [];
+      let extents = viewModel.getItemRects(graphInfo.elementSet);
       let groupElement = {
         type: 'element',
         x: extents.x + extents.width / 2,
@@ -890,32 +889,31 @@ let editingModel = (function() {
 
       let groupId = dataModel.assignId(groupElement);
 
-      // // Sort wire arrays so we encounter pins in increasing y-order.
-      // function comparePins(wire1, wire2) {
-      //   let src1 = self.getWireSrc(wire1), src2 = self.getWireSrc(wire2);
-      //   return viewModel.pinToPoint(src1, wire1.srcPin, false).y -
-      //          viewModel.pinToPoint(src2, wire2.srcPin, false).y;
-      // }
-      // function compareOutgoingWires(wire1, wire2) {
-      //   let dst1 = self.getWireDst(wire1), dst2 = self.getWireDst(wire2);
-      //   return viewModel.pinToPoint(dst1, wire1.dstPin, true).y -
-      //          viewModel.pinToPoint(dst2, wire2.dstPin, true).y;
-      // }
-      // graphInfo.inputWires.sort(compareIncomingWires);
-      // graphInfo.outputWires.sort(compareOutgoingWires);
-
-      let master = '[';
+      let inputs = [], outputs = [];
       selectionModel.contents().forEach(function(element) {
         if (isInput(element))
-          master += getMaster(element).outputs[0].type;
+          inputs.push(element);
+        else if (isOutput(element))
+          outputs.push(element);
+      });
+
+      // Sort pins so we encounter them in increasing y-order.
+      function compareElements(elem1, elem2) {
+        let src1 = self.getWireSrc(wire1), src2 = self.getWireSrc(wire2);
+        return elem1.y - elem2.y;
+      }
+      inputs.sort(compareElements);
+      outputs.sort(compareElements);
+
+      let master = '[';
+      inputs.forEach(function(element) {
+        master += getMaster(element).outputs[0].type;
       });
       master += ',';
-      selectionModel.contents().forEach(function(element) {
-        if (isOutput(element))
-          master += getMaster(element).inputs[0].type;
+      outputs.forEach(function(element) {
+        master += getMaster(element).inputs[0].type;
       });
       master += '](@)';
-      console.log(master);
 
       // if (!elementOnly) {
       //   groupElement.groupItems = groupItems;
