@@ -355,3 +355,38 @@ test("hierarchicalModel", function() {
   deepEqual(contents[0], root);
 });
 
+// Selection model unit tests.
+
+test("selectionModel extend", function() {
+  var model = { root: {} };
+  var test = dataModels.selectionModel.extend(model);
+  deepEqual(test, model.selectionModel);
+  ok(test.isEmpty());
+  ok(!test.lastSelected());
+});
+
+test("selectionModel add", function() {
+  var model = { root: {} };
+  var test = dataModels.selectionModel.extend(model);
+  test.add('a');
+  ok(!test.isEmpty());
+  ok(test.contains('a'));
+  deepEqual(test.contents(), ['a']);
+  deepEqual(test.lastSelected(), 'a');
+  test.add(['b', 'a', 'c']);
+  deepEqual(test.contents(), ['c', 'a', 'b']);  // last to first selected
+  deepEqual(test.lastSelected(), 'c');
+});
+
+test("selectionModel remove", function() {
+  var model = { root: {} };
+  var test = dataModels.selectionModel.extend(model);
+  test.add(['b', 'a', 'c']);
+  test.remove('c');
+  deepEqual(test.contents(), ['a', 'b']);  // last to first selected
+  deepEqual(test.lastSelected(), 'a');
+  test.remove('d');  // not selected
+  deepEqual(test.contents(), ['a', 'b']);  // last to first selected
+  deepEqual(test.lastSelected(), 'a');
+});
+

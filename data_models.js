@@ -709,7 +709,7 @@ let referenceValidator = (function () {
 let selectionModel = (function () {
   let proto = {
     isEmpty: function () {
-      return this.selection.length > 0;
+      return this.selection.length == 0;
     },
 
     contains: function (item) {
@@ -721,6 +721,7 @@ let selectionModel = (function () {
     },
 
     add: function (item) {
+      // TODO any iterable
       if (item.forEach) {
         let selection = this.selection;
         item.forEach(function (element) { selection.add(element); });
