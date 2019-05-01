@@ -3,7 +3,7 @@
 
 function newCircuit() {
   return {
-    root: {  // TODO why is root needed?
+    root: {  // dataModels default is model.root for data.
       type: 'circuit',
       x: 0,
       y: 0,
@@ -406,13 +406,34 @@ test("circuits.editingModel.makeGroup", function() {
   let test = newTestEditingModel(),
       circuit = test.model,
       items = circuit.root.items,
-      elem1 = addElement(test, newTypedElement('[vv,v]')),
-      elem2 = addElement(test, newTypedElement('[vv,v]')),
-      wire = addWire(test, elem1, 0, elem2, 1);
-  // Complete the two element group, then collect graph info.
-  test.completeGroup([elem1, elem2]);
-  let groupElement = test.makeGroup(items, false);
-  deepEqual(groupElement.master, '[vvv,v]');
+      elem = addElement(test, newTypedElement('[vv,v]')),
+      input1 = addElement(test, newInputJunction('[*,v]')),
+      input2 = addElement(test, newInputJunction('[*,v(f)]')),
+      output = addElement(test, newOutputJunction('[v,*]')),
+      wire1 = addWire(test, input1, 0, elem, 0),
+      wire2 = addWire(test, input2, 0, elem, 1),
+      wire3 = addWire(test, elem, 0, output, 0);
+  let groupElement = test.makeGroup([elem, output]);
+  deepEqual(groupElement.master, '[vv(f),v]');
+  ok(!items.includes(elem) && !items.includes(output) &&
+     !items.includes(wire3));
+  ok(items.length === 4);
+});
+
+test("circuits.editingModel.makeProtoGroup", function() {
+  let test = newTestEditingModel(),
+      circuit = test.model,
+      items = circuit.root.items,
+      elem = addElement(test, newTypedElement('[vv,v]')),
+      input1 = addElement(test, newInputJunction('[*,v]')),
+      input2 = addElement(test, newInputJunction('[*,v(f)]')),
+      output = addElement(test, newOutputJunction('[v,*]')),
+      wire1 = addWire(test, input1, 0, elem, 0),
+      wire2 = addWire(test, input2, 0, elem, 1),
+      wire3 = addWire(test, elem, 0, output, 0);
+  let groupElement = test.makeProtoGroup([input2, elem, output]);
+  deepEqual(groupElement.master, '[v(f),v](@)');
+  ok(items.length === 7);
 });
 
 test("circuits.editingModel.wireConsistency", function() {
@@ -457,7 +478,7 @@ test("circuits.editingModel.passThroughConsistency", function() {
   // Group the junctions into [*,*].
   selectionModel.add(elem1);
   selectionModel.add(elem2);
-  test.makeGroup(items, false);
+  test.doGroup(false);
   let group = items[0];
   deepEqual(group.master, '[*,*]');
   deepEqual(items.length, 1);

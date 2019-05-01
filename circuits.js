@@ -714,20 +714,14 @@ let editingModel = (function() {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           masteringModel = model.masteringModel,
-          selectionModel = model.selectionModel,
           observableModel = model.observableModel,
           viewModel = model.viewModel;
 
-      let graphInfo = this.collectGraphInfo(elements);
-      // Adjust selection to contain just the interior elements and wires.
-      graphInfo.incomingWires.forEach(wire => selectionModel.remove(wire));
-      graphInfo.outgoingWires.forEach(wire => selectionModel.remove(wire));
-      graphInfo.interiorWires.forEach(wire => selectionModel.add(wire));
-      let groupItems = selectionModel.contents();
-
-      // Create the new group element.
-      let extents = viewModel.getItemRects(graphInfo.elementSet),
+      let graphInfo = this.collectGraphInfo(elements),
+          groupItems = elements.concat(graphInfo.interiorWires),
+          extents = viewModel.getItemRects(graphInfo.elementSet),
           inputs = [], outputs = [];
+      // Create the new group element.
       let groupElement = {
         type: 'element',
         x: extents.x + extents.width / 2,
@@ -859,13 +853,6 @@ let editingModel = (function() {
       groupItems.forEach(item => self.deleteItem(item));
 
       groupElement.master = master;
-      // console.log(master);
-      dataModel.initialize(groupElement);
-
-      this.addItem(groupElement);
-
-      selectionModel.set(groupElement);
-
       return groupElement;
     },
 
@@ -873,26 +860,21 @@ let editingModel = (function() {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           masteringModel = model.masteringModel,
-          selectionModel = model.selectionModel,
           viewModel = model.viewModel;
 
-      let graphInfo = this.collectGraphInfo(elements);
-      // Adjust selection to contain just the elements.
-      graphInfo.wires.forEach(wire => selectionModel.remove(wire));
-      let groupItems = selectionModel.contents();
-
+      let graphInfo = this.collectGraphInfo(elements),
+          extents = viewModel.getItemRects(graphInfo.elementSet),
+          inputs = [], outputs = [];
       // Create the new group element.
-      let extents = viewModel.getItemRects(graphInfo.elementSet);
       let groupElement = {
         type: 'element',
         x: extents.x + extents.width / 2,
         y: extents.y + extents.height / 2,
       };
 
-      let groupId = dataModel.assignId(groupElement);
+      dataModel.assignId(groupElement);
 
-      let inputs = [], outputs = [];
-      selectionModel.contents().forEach(function(element) {
+      elements.forEach(function(element) {
         if (isInput(element))
           inputs.push(element);
         else if (isOutput(element))
@@ -916,22 +898,7 @@ let editingModel = (function() {
       });
       master += '](@)';
 
-      // if (!elementOnly) {
-      //   groupElement.groupItems = groupItems;
-      //   groupItems.forEach(item => self.deleteItem(item));
-      // } else {
-      //   let j = masteringModel.splitType(master);
-      //   master = master.substring(0, j) + master + master.substring(j, master.length);
-      // }
-
       groupElement.master = master;
-      // console.log(master);
-      dataModel.initialize(groupElement);
-
-      this.addItem(groupElement);
-
-      selectionModel.set(groupElement);
-
       return groupElement;
     },
 
@@ -1058,15 +1025,18 @@ let editingModel = (function() {
       model.transactionModel.endTransaction();
     },
 
-    doGroup: function(elementOnly) {
+    doGroup: function(protoGroup) {
       let model = this.model;
       this.reduceSelection();
+      let elements = model.selectionModel.contents().filter(isElement);
       model.transactionModel.beginTransaction(
-        'group' + (elementOnly ? '(elementOnly)' : ''));
-      if (!elementOnly)
-        this.makeGroup(model.selectionModel.contents());
-      else
-        this.makeProtoGroup(model.selectionModel.contents());
+        'group' + (protoGroup ? '(proto)' : ''));
+      let groupElement = protoGroup ?
+        this.makeProtoGroup(elements) : this.makeGroup(elements);
+      // console.log(groupElement.master);
+      model.dataModel.initialize(groupElement);
+      this.addItem(groupElement);
+      model.selectionModel.set(groupElement);
       model.transactionModel.endTransaction();
     },
 
@@ -1085,7 +1055,7 @@ let editingModel = (function() {
       let selectionModel = this.model.selectionModel,
           selection = selectionModel.contents(),
           newSelection = this.getConnectedElements(selection, upstream);
-      selectionModel.set(Array.from(newSelection));  // TODO any iterable
+      selectionModel.set(newSelection);
     },
 
     makeConsistent: function () {
