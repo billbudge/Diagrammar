@@ -802,9 +802,10 @@ let editingModel = (function() {
         if (graphInfo.elementSet.has(dst)) {
           observableModel.changeValue(dst, 'pinIndex', index);
           if (index == pinIndex - 1 && isOutput(dst)) {
+            // Let output override source name.
             let name = getMaster(dst).inputs[0].name;
             if (name)
-              master += '(' + name + ')';
+              master =  masteringModel.getUnlabeledType(master) + '(' + name + ')';
           }
         } else {
           // If this is the first instance of the source...
@@ -899,7 +900,6 @@ let editingModel = (function() {
 
       // Sort pins so we encounter them in increasing y-order.
       function compareElements(elem1, elem2) {
-        let src1 = self.getWireSrc(wire1), src2 = self.getWireSrc(wire2);
         return elem1.y - elem2.y;
       }
       inputs.sort(compareElements);
@@ -907,11 +907,11 @@ let editingModel = (function() {
 
       let master = '[';
       inputs.forEach(function(element) {
-        master += getMaster(element).outputs[0].type;
+        master += self.getPinType(getMaster(element).outputs[0]);
       });
       master += ',';
       outputs.forEach(function(element) {
-        master += getMaster(element).inputs[0].type;
+        master += self.getPinType(getMaster(element).inputs[0]);
       });
       master += '](@)';
 
@@ -1622,35 +1622,31 @@ function Editor(model, textInputController) {
   let primitives = [];
   unaryOps.forEach(function(op) {
     primitives.push({
-      name: op,
       type: 'element',
       master: '[v,v](' + op + ')',
     });
   });
   binaryOps.forEach(function(op) {
     primitives.push({
-      name: op,
       type: 'element',
       master: '[vv,v](' + op + ')',
     });
   });
   // Just one ternary op for now, the conditional operator.
   primitives.push({
-      name: '?',
       type: 'element',
       master: '[vvv,v](?)',
   });
 
-  // Local storage.
+  // Objects.
   primitives.push({
-      name: '@',
       type: 'element',
-      master: '[,[,v][v,v]](@)',
+      master: '[,[v,v][vv,v]](let)',
   });
+  // Arrays.
   primitives.push({
-      name: '[ ]',
       type: 'element',
-      master: '[v(n),v(n)[v,v][vv,v]]',
+      master: '[v(n),v(n)[v,v][vv,v]](array)',
   });
   this.primitives = primitives;
 
@@ -1861,18 +1857,10 @@ Editor.prototype.onClick = function(p) {
       // No wire dragging in this mode.
       mouseHitInfo.input = mouseHitInfo.output = undefined;
     }
-    if (!selectionModel.contains(item)) {
-      if (!shiftKeyDown)
-        selectionModel.clear();
-      selectionModel.add(item);
-    } else {
-      if (shiftKeyDown)
-        selectionModel.remove(item);
-    }
+    selectionModel.select(item, shiftKeyDown);
   } else {
-    if (!shiftKeyDown) {
+    if (!shiftKeyDown)
       selectionModel.clear();
-    }
   }
   this.setEditableText();
   return mouseHitInfo != null;

@@ -749,12 +749,26 @@ let selectionModel = (function () {
 
     set: function (item) {
       this.selection.clear();
+      // TODO any iterable
       if (Array.isArray(item)) {
         item.forEach(function (element) {
           this.selection.add(element);
         }, this);
       } else {
         this.selection.add(item);
+      }
+    },
+
+    select: function(item, extend) {
+      if (!this.contains(item)) {
+        if (!extend)
+          this.clear();
+        this.add(item);
+      } else {
+        if (extend)
+          this.remove(item);
+        else
+          this.add(item);  // make this last selected.
       }
     },
 
