@@ -707,6 +707,8 @@ let referenceValidator = (function () {
 //------------------------------------------------------------------------------
 
 let selectionModel = (function () {
+  function iterable(item) { return typeof item[Symbol.iterator] == 'function'; }
+
   let proto = {
     isEmpty: function () {
       return this.selection.length == 0;
@@ -721,28 +723,27 @@ let selectionModel = (function () {
     },
 
     add: function (item) {
-      // TODO any iterable
-      if (item.forEach) {
-        let selection = this.selection;
-        item.forEach(function (element) { selection.add(element); });
+      if (iterable(item)) {
+        for (let subItem of item)
+          this.selection.add(subItem);
       } else {
         this.selection.add(item);
       }
     },
 
     remove: function (item) {
-      if (item.forEach) {
-        let selection = this.selection;
-        item.forEach(function (element) { selection.remove(element); });
+      if (iterable(item)) {
+        for (let subItem of item)
+          this.selection.remove(subItem);
       } else {
         this.selection.remove(item);
       }
     },
 
     toggle: function (item) {
-      if (item.forEach) {
-        let selection = this.selection;
-        item.forEach(function (element) { selection.toggle(element); });
+      if (iterable(item)) {
+        for (let subItem of item)
+          this.selection.toggle(subItem);
       } else {
         this.selection.toggle(item);
       }
@@ -750,18 +751,15 @@ let selectionModel = (function () {
 
     set: function (item) {
       this.selection.clear();
-      // TODO any iterable
-      if (Array.isArray(item)) {
-        item.forEach(function (element) {
-          this.selection.add(element);
-        }, this);
+      if (iterable(item)) {
+        for (let subItem of item)
+          this.selection.add(subItem);
       } else {
         this.selection.add(item);
       }
     },
 
     select: function(item, extend) {
-      // TODO item iterable
       if (!this.contains(item)) {
         if (!extend)
           this.clear();

@@ -341,6 +341,29 @@ test("circuits.editingModel.collectGraphInfo", function() {
   deepEqual(graphInfo.outputWires.length, 1);
 });
 
+test("circuits.editingModel.getConnectedElements", function() {
+  let test = newTestEditingModel(),
+      circuit = test.model,
+      items = circuit.root.items,
+      elem1 = addElement(test, newTypedElement('[vv,v]')),
+      elem2 = addElement(test, newTypedElement('[vv,v]')),
+      elem3 = addElement(test, newTypedElement('[vv,v]')),
+      wire1 = addWire(test, elem1, 0, elem2, 1),
+      wire2 = addWire(test, elem2, 0, elem3, 1),
+      selectionModel = circuit.selectionModel;
+  // Get upstream and downstream connected elements from elem2.
+  let all = Array.from(test.getConnectedElements([elem2], true));
+  deepEqual(all.length, 3);
+  ok(all.includes(elem1));
+  ok(all.includes(elem2));
+  ok(all.includes(elem3));
+  // Get only downstream connected elements from elem2.
+  let downstream = Array.from(test.getConnectedElements([elem2], false));
+  deepEqual(downstream.length, 2);
+  ok(downstream.includes(elem2));
+  ok(downstream.includes(elem3));
+});
+
 test("circuits.editingModel.closeFunction", function() {
   let test = newTestEditingModel(),
       circuit = test.model,

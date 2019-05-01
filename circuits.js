@@ -337,31 +337,32 @@ let editingModel = (function() {
       }
     },
 
-    closeSelection: function(upstream) {
+    getConnectedElements: function(items, upstream) {
       let self = this, model = this.model,
           selectionModel = model.selectionModel,
           graphInfo = this.collectGraphInfo(this.diagram.items),
-          toVisit = Array.from(selectionModel.contents());
-      while (toVisit.length > 0) {
-        let item = toVisit.pop();
+          result = new Set();
+      while (items.length > 0) {
+        let item = items.pop();
         if (!isElement(item)) continue;
-        selectionModel.add(item);
+        result.add(item);
         if (upstream) {
           graphInfo.inputMap.get(item).forEach(function(wire) {
             if (!wire) return;
             let src = self.getWireSrc(wire);
-            if (!selectionModel.contains(src))
-              toVisit.push(src);
+            if (!result.has(src))
+              items.push(src);
           });
         }
         graphInfo.outputMap.get(item).forEach(function(wires) {
           wires.forEach(function(wire) {
             let dst = self.getWireDst(wire);
-            if (!selectionModel.contains(dst))
-              toVisit.push(dst);
+            if (!result.has(dst))
+              items.push(dst);
           });
         });
       }
+      return result;
     },
 
     selectInteriorWires: function() {
@@ -1078,6 +1079,13 @@ let editingModel = (function() {
           (element.state == 'palette') ? 'normal' : 'palette');
       })
       model.transactionModel.endTransaction();
+    },
+
+    doSelectConnectedElements: function(upstream) {
+      let selectionModel = this.model.selectionModel,
+          selection = selectionModel.contents(),
+          newSelection = this.getConnectedElements(selection, upstream);
+      selectionModel.set(Array.from(newSelection));  // TODO any iterable
     },
 
     makeConsistent: function () {
@@ -2139,7 +2147,7 @@ Editor.prototype.onKeyDown = function(e) {
         }
         return false;
       case 69:  // 'e'
-        editingModel.closeSelection(!shiftKey);
+        editingModel.doSelectConnectedElements(!shiftKey);
         return true;
       case 72:  // 'h'
         editingModel.doToggleMaster();
