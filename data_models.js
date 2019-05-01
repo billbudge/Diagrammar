@@ -761,6 +761,7 @@ let selectionModel = (function () {
     },
 
     select: function(item, extend) {
+      // TODO item iterable
       if (!this.contains(item)) {
         if (!extend)
           this.clear();

@@ -374,7 +374,7 @@ test("selectionModel add", function() {
   deepEqual(test.contents(), ['a']);
   deepEqual(test.lastSelected(), 'a');
   test.add(['b', 'a', 'c']);
-  deepEqual(test.contents(), ['c', 'a', 'b']);  // last to first selected
+  deepEqual(test.contents(), ['c', 'a', 'b']);
   deepEqual(test.lastSelected(), 'c');
 });
 
@@ -383,10 +383,47 @@ test("selectionModel remove", function() {
   var test = dataModels.selectionModel.extend(model);
   test.add(['b', 'a', 'c']);
   test.remove('c');
-  deepEqual(test.contents(), ['a', 'b']);  // last to first selected
+  deepEqual(test.contents(), ['a', 'b']);
   deepEqual(test.lastSelected(), 'a');
   test.remove('d');  // not selected
-  deepEqual(test.contents(), ['a', 'b']);  // last to first selected
+  deepEqual(test.contents(), ['a', 'b']);
   deepEqual(test.lastSelected(), 'a');
+});
+
+test("selectionModel toggle", function() {
+  var model = { root: {} };
+  var test = dataModels.selectionModel.extend(model);
+  test.add(['a', 'b', 'c']);
+  test.toggle('c');
+  deepEqual(test.contents(), ['b', 'a']);
+  deepEqual(test.lastSelected(), 'b');
+  test.toggle('c');
+  deepEqual(test.contents(), ['c', 'b', 'a']);
+  deepEqual(test.lastSelected(), 'c');
+});
+
+test("selectionModel set", function() {
+  var model = { root: {} };
+  var test = dataModels.selectionModel.extend(model);
+  test.set('a');
+  deepEqual(test.contents(), ['a']);
+  deepEqual(test.lastSelected(), 'a');
+  test.set(['a', 'b', 'c']);
+  deepEqual(test.contents(), ['c', 'b', 'a']);
+  deepEqual(test.lastSelected(), 'c');
+});
+
+test("selectionModel select", function() {
+  var model = { root: {} };
+  var test = dataModels.selectionModel.extend(model);
+  test.set(['a', 'b', 'c']);
+  test.select('d', true);
+  deepEqual(test.contents(), ['d', 'c', 'b', 'a']);
+  test.select('d', true);
+  deepEqual(test.contents(), ['c', 'b', 'a']);
+  test.select('a', false);
+  deepEqual(test.contents(), ['a', 'c', 'b']);
+  test.select('a', true);
+  deepEqual(test.contents(), ['c', 'b']);
 });
 
