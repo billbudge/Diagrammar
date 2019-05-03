@@ -127,82 +127,11 @@ test("circuits.masteringModel", function() {
     type => deepEqual(stringifyMaster(test.decodeType(type)), type));
 });
 
-test("circuits.masteringModel.getUnlabeledType", function() {
+test("circuits.masteringModel.getUnlabeled", function() {
   let test = newTestMasteringModel();
-  deepEqual(test.getUnlabeledType('[v,vv](foo)'), '[v,vv]');
-  deepEqual(test.getUnlabeledType('[v,vv]'), '[v,vv]');
-});
-
-test("circuits.masteringModel.getLabel", function() {
-  let test = newTestMasteringModel();
-  let input = newInputJunction('[,*(foo)](bar)');
-  test.initialize(input);
-  deepEqual(test.getLabel(input), 'foo');
-
-  let output = newOutputJunction('[*(foo),](bar)');
-  test.initialize(output);
-  deepEqual(test.getLabel(output), 'foo');
-
-  let literal = newLiteral(0);
-  test.initialize(literal);
-  deepEqual(test.getLabel(literal), '0');
-});
-
-test("circuits.masteringModel.setLabel", function() {
-  let test = newTestMasteringModel();
-  let input = newInputJunction('[,*]');
-  test.initialize(input);
-  deepEqual(test.setLabel(input, 'f'), '[,*(f)]');
-  deepEqual(test.setLabel(input, ''), '[,*]');
-  input.master = '[,*(f)]';
-  test.initialize(input);
-  deepEqual(test.setLabel(input, 'bar'), '[,*(bar)]');
-  deepEqual(test.setLabel(input, ''), '[,*]');
-
-  let literal = newLiteral(0);
-  test.initialize(literal);
-  deepEqual(test.setLabel(literal, '1'), '[,v(1)]');
-
-  let output = newOutputJunction('[*,]');
-  test.initialize(output);
-  deepEqual(test.setLabel(output, 'f'), '[*(f),]');
-  deepEqual(test.setLabel(output, ''), '[*,]');
-  output.master = '[*(f),]';
-  test.initialize(output);
-  deepEqual(test.setLabel(output, 'bar'), '[*(bar),]');
-  deepEqual(test.setLabel(output, ''), '[*,]');
-
-  let element = newTypedElement('[vv,vv]');
-  test.initialize(element);
-  deepEqual(test.setLabel(element, 'f'), '[vv,vv](f)');
-  deepEqual(test.setLabel(element, ''), '[vv,vv]');
-  element.master = '[vv,vv](f)';
-  test.initialize(element);
-  deepEqual(test.setLabel(element, 'bar'), '[vv,vv](bar)');
-  deepEqual(test.setLabel(element, ''), '[vv,vv]');
-});
-
-test("circuits.masteringModel.changeType", function() {
-  let test = newTestMasteringModel();
-  let input = newInputJunction('[,*(f)]');
-  test.initialize(input);
-  deepEqual(test.changeType(input, '[v,v]'), '[,[v,v](f)]');
-  deepEqual(test.changeType(input, '*'), '[,*(f)]');
-  input.master = '[,[v,v](f)]';
-  test.initialize(input);
-  deepEqual(test.changeType(input, '*'), '[,*(f)]');
-  deepEqual(test.changeType(input, 'v'), '[,v(f)]');
-
-  let output = newOutputJunction('[*(f),]');
-  test.initialize(output);
-  deepEqual(test.changeType(output, '[v,v]'), '[[v,v](f),]');
-  deepEqual(test.changeType(output, '*'), '[*(f),]');
-  output.master = '[[v,v](f),]';
-  test.initialize(output);
-  deepEqual(test.changeType(output, '*'), '[*(f),]');
-  deepEqual(test.changeType(output, 'v'), '[v(f),]');
-
-  // TODO 'apply' junctions.
+  deepEqual(test.getUnlabeled('[v,vv](foo)'), '[v,vv]');
+  deepEqual(test.getUnlabeled('[v,vv]'), '[v,vv]');
+  deepEqual(test.getUnlabeled('[vvv(foo)'), '[vvv');
 });
 
 test("circuits.masteringModel.splitType", function() {
@@ -302,6 +231,71 @@ test("circuits.editingModel.connectOutput", function() {
   deepEqual(junction.elementType, 'output');
   deepEqual(test.getWireSrc(wire), item1);
   deepEqual(test.getWireDst(wire), junction);
+});
+
+test("circuits.editingModel.getLabel", function() {
+  let test = newTestEditingModel();
+  let input = addElement(test, newInputJunction('[,*(foo)](bar)'));
+  deepEqual(test.getLabel(input), 'foo');
+
+  let output = addElement(test, newOutputJunction('[*(foo),](bar)'));
+  deepEqual(test.getLabel(output), 'foo');
+
+  let literal = addElement(test, newLiteral(0));
+  deepEqual(test.getLabel(literal), '0');
+});
+
+test("circuits.editingModel.setLabel", function() {
+  let test = newTestEditingModel(),
+      dataModel = test.model.dataModel;
+  let input = addElement(test, newInputJunction('[,*]'));
+  deepEqual(test.setLabel(input, 'f'), '[,*(f)]');
+  deepEqual(test.setLabel(input, ''), '[,*]');
+  input.master = '[,*(f)]';
+  dataModel.initialize(input);
+  deepEqual(test.setLabel(input, 'bar'), '[,*(bar)]');
+  deepEqual(test.setLabel(input, ''), '[,*]');
+
+  let literal = addElement(test, newLiteral(0));
+  deepEqual(test.setLabel(literal, '1'), '[,v(1)]');
+
+  let output = addElement(test, newOutputJunction('[*,]'));
+  deepEqual(test.setLabel(output, 'f'), '[*(f),]');
+  deepEqual(test.setLabel(output, ''), '[*,]');
+  output.master = '[*(f),]';
+  dataModel.initialize(output);
+  deepEqual(test.setLabel(output, 'bar'), '[*(bar),]');
+  deepEqual(test.setLabel(output, ''), '[*,]');
+
+  let element = addElement(test, newTypedElement('[vv,vv]'));
+  deepEqual(test.setLabel(element, 'f'), '[vv,vv](f)');
+  deepEqual(test.setLabel(element, ''), '[vv,vv]');
+  element.master = '[vv,vv](f)';
+  dataModel.initialize(element);
+  deepEqual(test.setLabel(element, 'bar'), '[vv,vv](bar)');
+  deepEqual(test.setLabel(element, ''), '[vv,vv]');
+});
+
+test("circuits.editingModel.changeType", function() {
+  let test = newTestEditingModel(),
+      dataModel = test.model.dataModel;
+  let input = addElement(test, newInputJunction('[,*(f)]'));
+  deepEqual(test.changeType(input, '[v,v]'), '[,[v,v](f)]');
+  deepEqual(test.changeType(input, '*'), '[,*(f)]');
+  input.master = '[,[v,v](f)]';
+  dataModel.initialize(input);
+  deepEqual(test.changeType(input, '*'), '[,*(f)]');
+  deepEqual(test.changeType(input, 'v'), '[,v(f)]');
+
+  let output = addElement(test, newOutputJunction('[*(f),]'));
+  deepEqual(test.changeType(output, '[v,v]'), '[[v,v](f),]');
+  deepEqual(test.changeType(output, '*'), '[*(f),]');
+  output.master = '[[v,v](f),]';
+  dataModel.initialize(output);
+  deepEqual(test.changeType(output, '*'), '[*(f),]');
+  deepEqual(test.changeType(output, 'v'), '[v(f),]');
+
+  // TODO 'apply' junctions.
 });
 
 test("circuits.editingModel.completeGroup", function() {

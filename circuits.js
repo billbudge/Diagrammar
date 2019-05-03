@@ -25,6 +25,14 @@ function isJunction(item) {
          item.elementType == 'apply';
 }
 
+function isClosed(item) {
+  return item.elementType == 'closed';
+}
+
+function isOpened(item) {
+  return item.elementType == 'opened';
+}
+
 function isInput(item) {
   return item.elementType == 'input';
 }
@@ -43,6 +51,14 @@ function isGroup(item) {
 
 function isCircuit(item) {
   return item.type == 'circuit';
+}
+
+function isInputPinLabeled(item) {
+  return isOutput(item) || isOpened(item) || isApplication(item);
+}
+
+function isOutputPinLabeled(item) {
+  return isInput(item) || isLiteral(item) || isClosed(item);
 }
 
 function isFunctionType(type) {
@@ -162,7 +178,8 @@ let masteringModel = (function() {
       return master;
     },
 
-    getUnlabeledType: function(type) {
+    // Removes any trailing label. Type may be ill-formed, e.g. '[v(f)'
+    getUnlabeled: function(type) {
       if (type[type.length - 1] == ')')
         type = type.substring(0, type.lastIndexOf('('));
       return type;
@@ -180,52 +197,6 @@ let masteringModel = (function() {
           if (level == 1) return j;
         j++;
       }
-    },
-
-    getLabel: function (item) {
-      let master = getMaster(item);
-      if (isInput(item) || isLiteral(item)) {
-        return master.outputs[0].name;
-      } else if (isOutput(item)) {
-        return master.inputs[0].name;
-      }
-      return master.name;
-    },
-
-    setLabel: function (item, newText) {
-      let master = getMaster(item),
-          label = newText ? '(' + newText + ')' : '',
-          newMaster;
-      if (isJunction(item) || isLiteral(item)) {
-        if (isInput(item) || isLiteral(item)) {
-          newMaster = '[,' + master.outputs[0].type + label + ']';
-        } else if (isOutput(item)) {
-          newMaster = '[' + master.inputs[0].type + label + ',]';
-        }
-      } else {
-        newMaster = this.getUnlabeledType(master.type) + label;
-      }
-      return newMaster;
-    },
-
-    changeType: function (item, newType) {
-      let master = getMaster(item),
-          newMaster;
-      if (isJunction(item)) {
-        if (isInput(item)) {
-          let label = master.outputs[0].name;
-          label = label ? '(' + label + ')' : '';
-          newMaster = '[,' + newType + label + ']';
-        } else if (isOutput(item)) {
-          let label = master.inputs[0].name;
-          label = label ? '(' + label + ')' : '';
-          newMaster = '[' + newType + label + ',]';
-        } else if (isApplication(item)) {
-          // let label = master.inputs[0].name;
-          // newMaster = '[,' + master.outputs[0].type + label + ']';
-        }
-      }
-      return newMaster;
     },
 
     initialize: function(item) {
@@ -566,6 +537,55 @@ let editingModel = (function() {
       return type;
     },
 
+    getLabel: function (item) {
+      let master = getMaster(item);
+      if (isInput(item) || isLiteral(item)) {
+        return master.outputs[0].name;
+      } else if (isOutput(item)) {
+        return master.inputs[0].name;
+      }
+      return master.name;
+    },
+
+    setLabel: function (item, newText) {
+      let masteringModel = this.model.masteringModel,
+          label = newText ? '(' + newText + ')' : '',
+          master = item.master,
+          newMaster;
+      if (isInputPinLabeled(item)) {
+        let j = masteringModel.splitType(master),
+            prefix = master.substring(0, j),
+            suffix = master.substring(j);
+        newMaster = masteringModel.getUnlabeled(prefix) + label + suffix;
+      } else if (isOutputPinLabeled(item)) {
+        let prefix = master.substring(0, master.length - 1);
+        newMaster = masteringModel.getUnlabeled(prefix) + label + ']';
+      } else {
+        newMaster = masteringModel.getUnlabeled(master) + label;
+      }
+      return newMaster;
+    },
+
+    changeType: function (item, newType) {
+      let master = getMaster(item),
+          newMaster;
+      if (isJunction(item)) {
+        if (isInput(item)) {
+          let label = master.outputs[0].name;
+          label = label ? '(' + label + ')' : '';
+          newMaster = '[,' + newType + label + ']';
+        } else if (isOutput(item)) {
+          let label = master.inputs[0].name;
+          label = label ? '(' + label + ')' : '';
+          newMaster = '[' + newType + label + ',]';
+        } else if (isApplication(item)) {
+          // let label = master.inputs[0].name;
+          // newMaster = '[,' + master.outputs[0].type + label + ']';
+        }
+      }
+      return newMaster;
+    },
+
     getClosedType: function(element, inputWires) {
       // Create a function type whose inputs are the disconnected inputs,
       // and whose outputs are all the outputs, connected or not.
@@ -592,8 +612,8 @@ let editingModel = (function() {
 
       let newElement = {
         type: 'element',
-        // We shouldn't name the closure based on the closed function.
         element: element,
+        elementType: 'closed',
         x: element.x,
         y: element.y,
       };
@@ -636,7 +656,7 @@ let editingModel = (function() {
     },
 
     getOpenedType: function(element) {
-      return this.model.masteringModel.getUnlabeledType(element.master);
+      return this.model.masteringModel.getUnlabeled(element.master);
     },
 
     openFunction: function(element, incomingWires, outgoingWireArrays) {
@@ -647,8 +667,8 @@ let editingModel = (function() {
 
       let newElement = {
         type: 'element',
-        // We shouldn't name the abstraction based on the concrete function.
         element: element,
+        elementType: 'opened',
         x: element.x,
         y: element.y,
       };
@@ -805,7 +825,7 @@ let editingModel = (function() {
             // Let output override source name.
             let name = getMaster(dst).inputs[0].name;
             if (name)
-              master =  masteringModel.getUnlabeledType(master) + '(' + name + ')';
+              master =  masteringModel.getUnlabeled(master) + '(' + name + ')';
           }
         } else {
           // If this is the first instance of the source...
@@ -1088,7 +1108,7 @@ let editingModel = (function() {
               }
               if (type != dstType) {
                 observableModel.changeValue(element, 'master',
-                  masteringModel.changeType(element, dstType));
+                  self.changeType(element, dstType));
               }
               break;
             }
@@ -1103,7 +1123,7 @@ let editingModel = (function() {
               }
               if (type != srcType) {
                 observableModel.changeValue(element, 'master',
-                  masteringModel.changeType(element, srcType));
+                  self.changeType(element, srcType));
               }
               break;
             }
@@ -1813,12 +1833,12 @@ Editor.prototype.setEditableText = function() {
       canvasController = this.canvasController,
       textInputController = this.textInputController,
       item = model.selectionModel.lastSelected(),
-      masteringModel = model.masteringModel;
+      editingModel = model.editingModel;
   if (item && isElement(item)) {
     let master = getMaster(item),
-        oldText = masteringModel.getLabel(item);
+        oldText = editingModel.getLabel(item);
     textInputController.start(oldText, function(newText) {
-      let newMaster = masteringModel.setLabel(item, newText);
+      let newMaster = editingModel.setLabel(item, newText);
       if (newMaster != item.master) {
         model.transactionModel.beginTransaction('rename');
         model.observableModel.changeValue(item, 'master', newMaster);
