@@ -633,7 +633,7 @@ var theme = (function() {
       textColor: '#505050',
       highlightColor: '#40F040',
       hotTrackColor: 'blue',
-      dimColor: '#c0c0c0',
+      dimColor: '#e0e0e0',
       hoverColor: '#FCF0AD',
       hoverTextColor: '#404040',
 

@@ -45,6 +45,10 @@ function isCircuit(item) {
   return item.type == 'circuit';
 }
 
+function isFunctionType(type) {
+  return type[0] == '[';
+}
+
 //------------------------------------------------------------------------------
 
 let _master = Symbol('master'),
@@ -54,7 +58,8 @@ let _master = Symbol('master'),
     _height = Symbol('height'),
     _p1 = Symbol('p1'),
     _p2 = Symbol('p2'),
-    _bezier = Symbol('bezier');
+    _bezier = Symbol('bezier'),
+    _background = Symbol('background');
 
 //------------------------------------------------------------------------------
 
@@ -1468,14 +1473,19 @@ Renderer.prototype.hitTestElement = function(element, p, tol, mode) {
 
 Renderer.prototype.layoutWire = function(wire) {
   let referencingModel = this.model.referencingModel,
-      c1 = referencingModel.getReference(wire, 'srcId'),
-      c2 = referencingModel.getReference(wire, 'dstId'),
+      src = referencingModel.getReference(wire, 'srcId'),
+      dst = referencingModel.getReference(wire, 'dstId'),
       p1 = wire[_p1], p2 = wire[_p2];
-
-  if (c1)
-    p1 = this.pinToPoint(c1, wire.srcPin, false);
-  if (c2)
-    p2 = this.pinToPoint(c2, wire.dstPin, true);
+  let srcFunction, dstFunction;
+  if (src) {
+    p1 = this.pinToPoint(src, wire.srcPin, false);
+    srcFunction = isFunctionType(getMaster(src).outputs[wire.srcPin].type);
+  }
+  if (dst) {
+    p2 = this.pinToPoint(dst, wire.dstPin, true);
+    dstFunction = isFunctionType(getMaster(dst).inputs[wire.dstPin].type);
+  }
+  wire[_background] = srcFunction || dstFunction;
   wire[_bezier] = diagrams.getEdgeBezier(p1, p2);
 }
 
@@ -1484,7 +1494,7 @@ Renderer.prototype.drawWire = function(wire, mode) {
   diagrams.bezierEdgePath(wire[_bezier], ctx, 0);
   switch (mode) {
     case normalMode:
-      ctx.strokeStyle = theme.strokeColor;
+      ctx.strokeStyle = wire[_background] ? theme.dimColor : theme.strokeColor;
       ctx.lineWidth = 1;
       break;
     case highlightMode:
@@ -1619,12 +1629,12 @@ function Editor(model, textInputController) {
   // Objects.
   primitives.push({
       type: 'element',
-      master: '[,[v,v][vv,v]](let)',
+      master: '[v,v[v,v][vv,v]]({})',
   });
   // Arrays.
   primitives.push({
       type: 'element',
-      master: '[v(n),v(n)[v,v][vv,v]](array)',
+      master: '[v(n),v(n)[v,v][vv,v]]([])',
   });
   this.primitives = primitives;
 
@@ -2038,6 +2048,13 @@ Editor.prototype.onEndDrag = function(p) {
   }
 
   if (isWire(dragItem)) {
+    // if (newItem) {
+    //   if (newItem.srcId && !newItem.dstId) {
+    //     // Create an output junction.
+    //   } else if (newItem.dstId && !newItem.srcId) {
+    //     // Create an input junction.
+    //   }
+    // }
     // If dragItem is a disconnected wire, delete it.
     if (!dragItem.srcId || !dragItem.dstId) {
       editingModel.deleteItem(dragItem);
