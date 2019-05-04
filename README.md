@@ -80,9 +80,23 @@ Similarly, we can implement a Fibonacci function that returns the i'th number in
 
 ### Generic iteration
 
-```js
-for (let i = 0; i < n; i++) ...
-```
+Let's try a more typical iteration, equivalent to a 'for' loop in Javascript. Let's try to add the numbers in the range [i..n].
+
+<figure>
+  <img src="/resources/iteration.png"  alt="" title="Iteration to add numbers from i to n">
+</figure>
+
+It would be cumbersome to have to create this graph every time we wanted to iterate over this range. But we can abstract the binary operation at the heart of this to create a generic iteration that is more useful.
+
+<figure>
+  <img src="/resources/iteration2.png"  alt="" title="Iteration to apply binary op to range">
+</figure>
+
+Using this more generic function, we can create a familiar function easily now.
+
+<figure>
+  <img src="/resources/iteration3.png"  alt="" title="Iteration adapted to compute factorial">
+</figure>
 
 ## State
 
