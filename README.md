@@ -31,7 +31,7 @@ After grouping, the new expressions can be used just like built-in functions.
 
 ## Function Abstraction
 
-This representation lacks power. We have to rebuild these graphs every time we want to create a similar function, for example cascading the multiplication binary operator. To make the graph representation more powerful, any function can be abstracted. This adds an input value, of the same type as the function, to indicate that the function operation is imported.
+This representation lacks power. We have to rebuild these graphs every time we want to create a similar function, for example cascading the multiplication binary operator. To make the graph representation more powerful, any function can be abstracted. This adds an input value, of the same type as the function, to indicate that the function operation is imported. This allows us to create a function that takes another function as input.
 
 <figure>
   <img src="/resources/function_abstraction.png"  alt="" title="Function Abstraction">
@@ -39,25 +39,44 @@ This representation lacks power. We have to rebuild these graphs every time we w
 
 ## Function Creation
 
-This allows us to create a function that takes another function as input. Now we need a way to create functions that can be imported. The mechanism is function closure. Any function element can be closed, which creates a function output whose type is all disconnected inputs, and all outputs. This is exactly analogous to function closure in regular programming languages. In the diagram below, we can create an incrementing function by grouping as before, or by applying addition to a literal 1 value and closing to get a unary incrementing function.
+Now we need a way to create functions that can be imported. The mechanism is function closure. Any function element can be closed, which creates a function output whose type is all disconnected inputs, and all outputs. This is exactly analogous to function closure in regular programming languages. In the diagram below, we can create an incrementing function by grouping as before, or by applying addition to a literal 1 value and closing to get a unary incrementing function.
 
 <figure>
   <img src="/resources/function_creation.png"  alt="" title="Function Creation">
 </figure>
 
+Using closure, we can take our abstract 4-ary cascading function from before, and specialize it for addition. We combine it with an addition with no inputs which we close to get a binary output function. We connect it and add pins for the 4 inputs and 1 output.
+
+<figure>
+  <img src="/resources/function_creation3.png"  alt="" title="Function Creation (continued)">
+</figure>
+
 Function closing is a powerful graph simplification mechanism. Imagine we wanted to apply our quadratic polynomial evaluation function to one polynomial at 4 different x values. Using the grouped expression 4 times leads to a complex graph that is becoming unwieldy. Applying the function to the polynomial coefficients and closing gives a simple unary function that we can apply 4 times, which is easier to understand.
 
 <figure>
-  <img src="/resources/function_creation2.png"  alt="" title="Function Creation">
+  <img src="/resources/function_creation2.png"  alt="" title="Function Creation (continued)">
 </figure>
 
 ## Iteration
 
+Iteration can be challenging in a data flow system. Let's start with everyone's favorite toy example, the factorial function.
+
 ### Factorial
 
-TBD
+We can create most of this with simple operations, but we get stuck at the recursive part. We need to use the function that we're in the middle of creating. The solution is to provide a special proto-function operation. A part of the graph can be selected, and a proto-function element will be created that matches what would be created from the selection by the normal grouping operation. This proto-function element can then be used in the graph to represent recursion. This will also be our mechanism for iteration a little later on.
+
+<figure>
+  <img src="/resources/factorial.png"  alt="" title="Iteration with Factorials">
+</figure>
 
 ### Fibonacci
+
+Similarly, we can implement a Fibonacci function that returns the i'th number in the sequence with a slightly more complex recursion.
+
+<figure>
+  <img src="/resources/fibonacci.png"  alt="" title="Iteration with Fibonacci Numbers">
+</figure>
+
 
 ### Generic iteration
 
