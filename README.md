@@ -1,10 +1,12 @@
-﻿---
-title: 'Diagrammar: Drawing Programs'
+﻿# Diagrammar: Graphical Programming Environment
+
+---
 author: '[Bill Budge](https://twitter.com/billb)'
 avatars:
   - bill budge
 date: 2019-05-03 13:33:37
 ---
+
 tl;dr Diagrammar is an experimental graphical programming environment. It follows the Data Flow model, with the ability to pass values and functions along graph edges. Since functions can be created and instantiated, more complex programs can be built. This introduction shows how Quicksort and some other classic algorithms can be built, and hopefully demonstrates the advantages of this approach.
 
 ## Data Flow programming review
