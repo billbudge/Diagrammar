@@ -73,6 +73,10 @@ resizeCanvas();
 
 window.onresize = resizeCanvas;
 
+window.onbeforeunload = function() {
+  return "Are you sure you want to navigate away?";
+}
+
 function onMouseDown(e) {
   e.preventDefault();
   canvasController.onMouseDown(e);

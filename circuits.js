@@ -1732,6 +1732,11 @@ Editor.prototype.draw = function() {
   renderer.beginDraw(model, ctx);
   canvasController.applyTransform();
 
+  // Draw registration frame for generating screen shots.
+  ctx.strokeStyle = renderer.theme.dimColor;
+  ctx.lineWidth = 0.5;
+  ctx.strokeRect(300, 10, 700, 300);
+
   diagram.items.forEach(function(item) {
     if (isElement(item)) {
       renderer.layout(item);
