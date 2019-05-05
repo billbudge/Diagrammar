@@ -222,8 +222,8 @@ let simpleIteration = {
     {
       "type": "element",
       "elementType": "input",
-      "x": 204,
-      "y": 433,
+      "x": 187,
+      "y": 463,
       "master": "[,v]",
       "id": 30
     },
@@ -238,8 +238,8 @@ let simpleIteration = {
     {
       "type": "element",
       "elementType": "output",
-      "x": 364,
-      "y": 417,
+      "x": 347,
+      "y": 447,
       "master": "[v,]",
       "id": 32
     },
@@ -254,8 +254,8 @@ let simpleIteration = {
     {
       "type": "element",
       "elementType": "input",
-      "x": 206,
-      "y": 362,
+      "x": 189,
+      "y": 392,
       "master": "[,v]",
       "id": 34
     },
@@ -270,8 +270,8 @@ let simpleIteration = {
     {
       "type": "element",
       "elementType": "input",
-      "x": 200,
-      "y": 400,
+      "x": 183,
+      "y": 430,
       "master": "[,v]",
       "id": 36
     },
@@ -286,16 +286,16 @@ let simpleIteration = {
     {
       "type": "element",
       "master": "[vv,v](+)",
-      "x": 407.2357081505124,
-      "y": 101.67883110134784,
+      "x": 205,
+      "y": 538,
       "state": "normal",
       "id": 38
     },
     {
       "type": "element",
       "master": "[vv,v](+)",
-      "x": 457.2357081505124,
-      "y": 127.67883110134784,
+      "x": 255,
+      "y": 564,
       "state": "normal",
       "id": 39
     },
@@ -312,8 +312,8 @@ let simpleIteration = {
     {
       "type": "element",
       "master": "[vv,v](+)",
-      "x": 408.2357081505124,
-      "y": 162.67883110134784,
+      "x": 206,
+      "y": 599,
       "state": "normal",
       "id": 41
     },
@@ -328,8 +328,8 @@ let simpleIteration = {
     {
       "type": "element",
       "elementType": "input",
-      "x": 372.2357081505124,
-      "y": 167.67883110134784,
+      "x": 171,
+      "y": 604,
       "master": "[,v]",
       "id": 43
     },
@@ -344,8 +344,8 @@ let simpleIteration = {
     {
       "type": "element",
       "elementType": "input",
-      "x": 372.2357081505124,
-      "y": 198.67883110134784,
+      "x": 170,
+      "y": 635,
       "master": "[,v]",
       "id": 45
     },
@@ -360,8 +360,8 @@ let simpleIteration = {
     {
       "type": "element",
       "elementType": "input",
-      "x": 371.2357081505124,
-      "y": 107.67883110134784,
+      "x": 169,
+      "y": 544,
       "master": "[,v]",
       "id": 47
     },
@@ -376,8 +376,8 @@ let simpleIteration = {
     {
       "type": "element",
       "elementType": "input",
-      "x": 371.2357081505124,
-      "y": 136.67883110134784,
+      "x": 173,
+      "y": 573,
       "master": "[,v]",
       "id": 49
     },
@@ -392,8 +392,8 @@ let simpleIteration = {
     {
       "type": "element",
       "elementType": "output",
-      "x": 506.2357081505123,
-      "y": 138.67883110134784,
+      "x": 315,
+      "y": 588,
       "master": "[v,]",
       "id": 51
     },
@@ -416,8 +416,8 @@ let simpleIteration = {
         "id": 27
       },
       "elementType": "opened",
-      "x": 240,
-      "y": 356,
+      "x": 223,
+      "y": 386,
       "id": 111,
       "master": "[vv[vv,v],v]"
     },
@@ -432,16 +432,16 @@ let simpleIteration = {
         "id": 28
       },
       "elementType": "opened",
-      "x": 299,
-      "y": 393,
+      "x": 282,
+      "y": 423,
       "id": 112,
       "master": "[vv[vv,v],v]"
     },
     {
       "type": "element",
       "elementType": "output",
-      "x": 830.3129689447981,
-      "y": 152.08522846911094,
+      "x": 915,
+      "y": 449,
       "master": "[v,]",
       "state": "normal",
       "id": 323
@@ -449,8 +449,8 @@ let simpleIteration = {
     {
       "type": "element",
       "elementType": "input",
-      "x": 607.3129689447981,
-      "y": 181.08522846911094,
+      "x": 692,
+      "y": 478,
       "master": "[,v]",
       "state": "normal",
       "id": 325
@@ -458,8 +458,8 @@ let simpleIteration = {
     {
       "type": "element",
       "elementType": "input",
-      "x": 608.3129689447981,
-      "y": 145.08522846911094,
+      "x": 693,
+      "y": 442,
       "master": "[,v]",
       "state": "normal",
       "id": 326
@@ -467,8 +467,8 @@ let simpleIteration = {
     {
       "type": "element",
       "elementType": "input",
-      "x": 609.3129689447981,
-      "y": 111.08522846911094,
+      "x": 694,
+      "y": 408,
       "master": "[,v]",
       "state": "normal",
       "id": 328
@@ -476,8 +476,8 @@ let simpleIteration = {
     {
       "type": "element",
       "elementType": "input",
-      "x": 608.3129689447981,
-      "y": 75.08522846911094,
+      "x": 693,
+      "y": 372,
       "master": "[,v]",
       "state": "normal",
       "id": 329
@@ -563,8 +563,8 @@ let simpleIteration = {
         "id": 327
       },
       "elementType": "opened",
-      "x": 677.3129689447981,
-      "y": 76.08522846911094,
+      "x": 762,
+      "y": 373,
       "id": 338,
       "master": "[vv[vv,v],v]"
     },
@@ -579,8 +579,8 @@ let simpleIteration = {
         "id": 324
       },
       "elementType": "opened",
-      "x": 674.3129689447981,
-      "y": 146.08522846911094,
+      "x": 759,
+      "y": 443,
       "id": 339,
       "master": "[vv[vv,v],v]"
     },
@@ -595,16 +595,16 @@ let simpleIteration = {
         "id": 330
       },
       "elementType": "opened",
-      "x": 758.3129689447981,
-      "y": 152.08522846911094,
+      "x": 843,
+      "y": 449,
       "id": 340,
       "master": "[vv[vv,v],v]"
     },
     {
       "type": "element",
       "elementType": "input",
-      "x": 571.8048270607011,
-      "y": 216.50555414447481,
+      "x": 682,
+      "y": 512.4,
       "master": "[,[vv,v](op)]",
       "id": 341
     },
@@ -2891,8 +2891,8 @@ let simpleIteration = {
       "type": "element",
       "elementType": "input",
       "master": "[,v(i)]",
-      "x": -44,
-      "y": 677,
+      "x": -55.12989191176371,
+      "y": 793.3579608957119,
       "state": "normal",
       "id": 965
     },
@@ -2900,8 +2900,8 @@ let simpleIteration = {
       "type": "element",
       "elementType": "input",
       "master": "[,v(f0)]",
-      "x": -52,
-      "y": 780,
+      "x": -63.12989191176371,
+      "y": 896.3579608957119,
       "state": "normal",
       "id": 966
     },
@@ -2909,16 +2909,16 @@ let simpleIteration = {
       "type": "element",
       "elementType": "input",
       "master": "[,v(f1)]",
-      "x": -52,
-      "y": 814,
+      "x": -63.12989191176371,
+      "y": 930.3579608957119,
       "state": "normal",
       "id": 967
     },
     {
       "type": "element",
       "master": "[vv,v](<=)",
-      "x": 101,
-      "y": 663,
+      "x": 89.8701080882363,
+      "y": 779.3579608957119,
       "state": "normal",
       "id": 968
     },
@@ -2934,8 +2934,8 @@ let simpleIteration = {
       "type": "element",
       "elementType": "literal",
       "master": "[,v(0)]",
-      "x": 25,
-      "y": 702,
+      "x": 13.870108088236293,
+      "y": 818.3579608957119,
       "state": "normal",
       "id": 970
     },
@@ -2950,8 +2950,8 @@ let simpleIteration = {
     {
       "type": "element",
       "master": "[vvv,v](?)",
-      "x": 198,
-      "y": 675,
+      "x": 186.8701080882363,
+      "y": 791.3579608957119,
       "state": "normal",
       "id": 972
     },
@@ -2973,8 +2973,8 @@ let simpleIteration = {
     },
     {
       "type": "element",
-      "x": -17.0986328125,
-      "y": 739,
+      "x": -28.228524724263707,
+      "y": 855.3579608957119,
       "id": 982,
       "groupItems": [
         {
@@ -3050,8 +3050,8 @@ let simpleIteration = {
     {
       "type": "element",
       "elementType": "output",
-      "x": 265,
-      "y": 686,
+      "x": 253.8701080882363,
+      "y": 802.3579608957119,
       "master": "[v,]",
       "id": 987
     },
@@ -3066,8 +3066,8 @@ let simpleIteration = {
     {
       "type": "element",
       "master": "[vv,v](+)",
-      "x": 57,
-      "y": 826,
+      "x": 45.87010808823629,
+      "y": 942.3579608957119,
       "state": "normal",
       "id": 990
     },
@@ -3089,8 +3089,8 @@ let simpleIteration = {
     },
     {
       "type": "element",
-      "x": 116.5,
-      "y": 765.5,
+      "x": 105.3701080882363,
+      "y": 881.8579608957119,
       "id": 997,
       "master": "[v(i)v(f0)v(f1),v](@)"
     },
@@ -4704,542 +4704,317 @@ let simpleIteration = {
     },
     {
       "type": "element",
-      "x": 553.00341796875,
-      "y": 378.5,
-      "id": 1409,
-      "groupItems": [
-        {
-          "type": "element",
-          "elementType": "input",
-          "master": "[,v(node)]",
-          "x": 344,
-          "y": 66,
-          "state": "normal",
-          "id": 1364,
-          "pinIndex": 0
-        },
-        {
-          "type": "element",
-          "master": "[v,v[v,v][vv,v]]({})",
-          "x": 417,
-          "y": 120,
-          "state": "normal",
-          "id": 1370
-        },
-        {
-          "type": "element",
-          "elementType": "apply",
-          "master": "[v*,v]",
-          "x": 568,
-          "y": 181,
-          "state": "normal",
-          "id": 1374
-        },
-        {
-          "type": "element",
-          "x": 606,
-          "y": 154.5,
-          "master": "[v(node),v](@)",
-          "id": 1399,
-          "state": "normal"
-        },
-        {
-          "type": "element",
-          "x": 684.10205078125,
-          "y": 140,
-          "id": 1393,
-          "groupItems": [
-            {
-              "type": "element",
-              "master": "[vvv,v](?)",
-              "x": 772,
-              "y": 166,
-              "state": "normal",
-              "id": 1389
-            },
-            {
-              "type": "element",
-              "elementType": "input",
-              "x": 651,
-              "y": 205,
-              "master": "[,v]",
-              "id": 1385,
-              "pinIndex": 1
-            },
-            {
-              "type": "element",
-              "master": "[vv,v](<)",
-              "x": 728,
-              "y": 159,
-              "state": "normal",
-              "id": 1382
-            },
-            {
-              "type": "element",
-              "elementType": "input",
-              "x": 650,
-              "y": 179,
-              "master": "[,v]",
-              "id": 1383,
-              "pinIndex": 0
-            },
-            {
-              "type": "element",
-              "elementType": "output",
-              "x": 837,
-              "y": 176,
-              "master": "[v(max),]",
-              "id": 1387,
-              "pinIndex": 0
-            },
-            {
-              "type": "wire",
-              "srcId": 1383,
-              "srcPin": 0,
-              "dstId": 1382,
-              "dstPin": 0,
-              "id": 1384
-            },
-            {
-              "type": "wire",
-              "srcId": 1385,
-              "srcPin": 0,
-              "dstId": 1382,
-              "dstPin": 1,
-              "id": 1386
-            },
-            {
-              "type": "wire",
-              "srcId": 1389,
-              "srcPin": 0,
-              "dstId": 1387,
-              "dstPin": 0,
-              "id": 1388
-            },
-            {
-              "type": "wire",
-              "srcId": 1382,
-              "srcPin": 0,
-              "dstId": 1389,
-              "dstPin": 0,
-              "id": 1390
-            },
-            {
-              "type": "wire",
-              "dstId": 1389,
-              "dstPin": 1,
-              "srcId": 1383,
-              "srcPin": 0,
-              "id": 1391
-            },
-            {
-              "type": "wire",
-              "srcId": 1385,
-              "srcPin": 0,
-              "dstId": 1389,
-              "dstPin": 2,
-              "id": 1392
-            }
-          ],
-          "master": "[vv,v(max)]"
-        },
-        {
-          "type": "element",
-          "master": "[vvv,v](?)",
-          "x": 788,
-          "y": 44,
-          "state": "normal",
-          "id": 1367
-        },
-        {
-          "type": "element",
-          "elementType": "literal",
-          "master": "[,v(0)]",
-          "x": 725,
-          "y": 83,
-          "state": "normal",
-          "id": 1366
-        },
-        {
-          "type": "element",
-          "master": "[v,v](!)",
-          "x": 451,
-          "y": 41,
-          "state": "normal",
-          "id": 1363
-        },
-        {
-          "type": "element",
-          "x": 604,
-          "y": 108.5,
-          "id": 1396,
-          "master": "[v(node),v](@)"
-        },
-        {
-          "type": "element",
-          "elementType": "apply",
-          "master": "[v*,v]",
-          "x": 557,
-          "y": 111,
-          "state": "normal",
-          "id": 1372
-        },
-        {
-          "type": "element",
-          "elementType": "literal",
-          "master": "[,v('left')]",
-          "x": 472,
-          "y": 89,
-          "state": "normal",
-          "id": 1403
-        },
-        {
-          "type": "element",
-          "elementType": "literal",
-          "master": "[,v('right')]",
-          "x": 485,
-          "y": 156,
-          "state": "normal",
-          "id": 1406
-        },
-        {
-          "type": "element",
-          "elementType": "output",
-          "master": "[v(depth),]",
-          "x": 856,
-          "y": 56,
-          "state": "normal",
-          "id": 1380,
-          "pinIndex": 0
-        },
-        {
-          "type": "wire",
-          "srcId": 1364,
-          "srcPin": 0,
-          "dstId": 1363,
-          "dstPin": 0,
-          "id": 1365
-        },
-        {
-          "type": "wire",
-          "srcId": 1366,
-          "srcPin": 0,
-          "dstId": 1367,
-          "dstPin": 1,
-          "id": 1368
-        },
-        {
-          "type": "wire",
-          "srcId": 1363,
-          "srcPin": 0,
-          "dstId": 1367,
-          "dstPin": 0,
-          "id": 1369
-        },
-        {
-          "type": "wire",
-          "srcId": 1364,
-          "srcPin": 0,
-          "dstId": 1370,
-          "dstPin": 0,
-          "id": 1371
-        },
-        {
-          "type": "wire",
-          "srcId": 1370,
-          "srcPin": 1,
-          "dstId": 1372,
-          "dstPin": 1,
-          "id": 1373
-        },
-        {
-          "type": "wire",
-          "srcId": 1370,
-          "srcPin": 1,
-          "dstId": 1374,
-          "dstPin": 1,
-          "id": 1375
-        },
-        {
-          "type": "wire",
-          "srcId": 1367,
-          "srcPin": 0,
-          "dstId": 1380,
-          "dstPin": 0,
-          "id": 1381
-        },
-        {
-          "type": "wire",
-          "srcId": 1393,
-          "srcPin": 0,
-          "dstId": 1367,
-          "dstPin": 2,
-          "id": 1394
-        },
-        {
-          "type": "wire",
-          "srcId": 1372,
-          "srcPin": 0,
-          "dstId": 1396,
-          "dstPin": 0,
-          "id": 1397
-        },
-        {
-          "type": "wire",
-          "srcId": 1396,
-          "srcPin": 0,
-          "dstId": 1393,
-          "dstPin": 0,
-          "id": 1398
-        },
-        {
-          "type": "wire",
-          "srcId": 1374,
-          "srcPin": 0,
-          "dstId": 1399,
-          "dstPin": 0,
-          "id": 1400
-        },
-        {
-          "type": "wire",
-          "srcId": 1399,
-          "srcPin": 0,
-          "dstId": 1393,
-          "dstPin": 1,
-          "id": 1401
-        },
-        {
-          "type": "wire",
-          "srcId": 1403,
-          "srcPin": 0,
-          "dstId": 1372,
-          "dstPin": 0,
-          "id": 1404
-        },
-        {
-          "type": "wire",
-          "srcId": 1406,
-          "srcPin": 0,
-          "dstId": 1374,
-          "dstPin": 0,
-          "id": 1407
-        }
-      ],
-      "master": "[v(node),v(depth)]"
+      "master": "[v,v](!)",
+      "x": 1261.4584928475235,
+      "y": 466.97131771386694,
+      "state": "normal",
+      "id": 1363
     },
     {
       "type": "element",
-      "x": 908.5142628146091,
-      "y": 109.63031430377413,
-      "id": 1507,
+      "elementType": "input",
+      "master": "[,v(node)]",
+      "x": 1154.4584928475235,
+      "y": 491.97131771386694,
+      "state": "normal",
+      "id": 1364
+    },
+    {
+      "type": "wire",
+      "srcId": 1364,
+      "srcPin": 0,
+      "dstId": 1363,
+      "dstPin": 0,
+      "id": 1365
+    },
+    {
+      "type": "element",
+      "elementType": "literal",
+      "master": "[,v(0)]",
+      "x": 1535.4584928475235,
+      "y": 508.97131771386694,
+      "state": "normal",
+      "id": 1366
+    },
+    {
+      "type": "element",
+      "master": "[vvv,v](?)",
+      "x": 1598.4584928475235,
+      "y": 469.97131771386694,
+      "state": "normal",
+      "id": 1367
+    },
+    {
+      "type": "wire",
+      "srcId": 1366,
+      "srcPin": 0,
+      "dstId": 1367,
+      "dstPin": 1,
+      "id": 1368
+    },
+    {
+      "type": "wire",
+      "srcId": 1363,
+      "srcPin": 0,
+      "dstId": 1367,
+      "dstPin": 0,
+      "id": 1369
+    },
+    {
+      "type": "element",
+      "master": "[v,v[v,v][vv,v]]({})",
+      "x": 1227.4584928475235,
+      "y": 545.9713177138669,
+      "state": "normal",
+      "id": 1370
+    },
+    {
+      "type": "wire",
+      "srcId": 1364,
+      "srcPin": 0,
+      "dstId": 1370,
+      "dstPin": 0,
+      "id": 1371
+    },
+    {
+      "type": "element",
+      "elementType": "apply",
+      "master": "[v*,v]",
+      "x": 1367.4584928475235,
+      "y": 536.9713177138669,
+      "state": "normal",
+      "id": 1372
+    },
+    {
+      "type": "wire",
+      "srcId": 1370,
+      "srcPin": 1,
+      "dstId": 1372,
+      "dstPin": 1,
+      "id": 1373
+    },
+    {
+      "type": "element",
+      "elementType": "apply",
+      "master": "[v*,v]",
+      "x": 1378.4584928475235,
+      "y": 606.9713177138669,
+      "state": "normal",
+      "id": 1374
+    },
+    {
+      "type": "wire",
+      "srcId": 1370,
+      "srcPin": 1,
+      "dstId": 1374,
+      "dstPin": 1,
+      "id": 1375
+    },
+    {
+      "type": "element",
+      "elementType": "output",
+      "master": "[v,]",
+      "x": 1666.4584928475235,
+      "y": 481.97131771386694,
+      "state": "normal",
+      "id": 1380
+    },
+    {
+      "type": "wire",
+      "srcId": 1367,
+      "srcPin": 0,
+      "dstId": 1380,
+      "dstPin": 0,
+      "id": 1381
+    },
+    {
+      "type": "element",
+      "x": 1494.5605436287735,
+      "y": 565.9713177138669,
+      "id": 1393,
       "groupItems": [
         {
           "type": "element",
-          "element": {
-            "type": "element",
-            "master": "[vv,v](+)",
-            "x": 684,
-            "y": 128,
-            "state": "normal",
-            "id": 1485
-          },
-          "elementType": "opened",
-          "x": 806.8007851535311,
-          "y": 178.1258798198387,
-          "master": "[vv[vv,v],v]",
+          "master": "[vvv,v](?)",
+          "x": 772,
+          "y": 166,
           "state": "normal",
-          "id": 1486
+          "id": 1389
+        },
+        {
+          "type": "element",
+          "elementType": "input",
+          "x": 651,
+          "y": 205,
+          "master": "[,v]",
+          "id": 1385,
+          "pinIndex": 1
+        },
+        {
+          "type": "element",
+          "master": "[vv,v](<)",
+          "x": 728,
+          "y": 159,
+          "state": "normal",
+          "id": 1382
+        },
+        {
+          "type": "element",
+          "elementType": "input",
+          "x": 650,
+          "y": 179,
+          "master": "[,v]",
+          "id": 1383,
+          "pinIndex": 0
         },
         {
           "type": "element",
           "elementType": "output",
-          "x": 878.8007851535311,
-          "y": 178.1258798198387,
-          "master": "[v,]",
-          "pinIndex": 0,
-          "state": "normal",
-          "id": 1487
-        },
-        {
-          "type": "element",
-          "elementType": "input",
-          "x": 620.2926432694342,
-          "y": 242.54620549520257,
-          "master": "[,[vv,v](op)]",
-          "state": "normal",
-          "id": 1488,
-          "pinIndex": 4
-        },
-        {
-          "type": "element",
-          "element": {
-            "type": "element",
-            "master": "[vv,v](+)",
-            "x": 635,
-            "y": 163,
-            "state": "normal",
-            "id": 1489
-          },
-          "elementType": "opened",
-          "x": 722.8007851535311,
-          "y": 172.1258798198387,
-          "master": "[vv[vv,v],v]",
-          "state": "normal",
-          "id": 1490
-        },
-        {
-          "type": "element",
-          "elementType": "input",
-          "x": 655.8007851535311,
-          "y": 207.1258798198387,
-          "master": "[,v]",
-          "pinIndex": 3,
-          "state": "normal",
-          "id": 1491
-        },
-        {
-          "type": "element",
-          "elementType": "input",
-          "x": 656.8007851535311,
-          "y": 171.1258798198387,
-          "master": "[,v]",
-          "pinIndex": 2,
-          "state": "normal",
-          "id": 1492
-        },
-        {
-          "type": "element",
-          "elementType": "input",
-          "x": 657.8007851535311,
-          "y": 137.1258798198387,
-          "master": "[,v]",
-          "pinIndex": 1,
-          "state": "normal",
-          "id": 1493
-        },
-        {
-          "type": "element",
-          "elementType": "input",
-          "x": 656.8007851535311,
-          "y": 101.1258798198387,
-          "master": "[,v]",
-          "pinIndex": 0,
-          "state": "normal",
-          "id": 1494
-        },
-        {
-          "type": "element",
-          "element": {
-            "type": "element",
-            "master": "[vv,v](+)",
-            "x": 634,
-            "y": 102,
-            "state": "normal",
-            "id": 1495
-          },
-          "elementType": "opened",
-          "x": 725.8007851535311,
-          "y": 102.1258798198387,
-          "master": "[vv[vv,v],v]",
-          "state": "normal",
-          "id": 1496
+          "x": 837,
+          "y": 176,
+          "master": "[v(max),]",
+          "id": 1387,
+          "pinIndex": 0
         },
         {
           "type": "wire",
-          "srcId": 1488,
+          "srcId": 1383,
           "srcPin": 0,
-          "dstId": 1486,
-          "dstPin": 2,
-          "id": 1497
-        },
-        {
-          "type": "wire",
-          "srcId": 1488,
-          "srcPin": 0,
-          "dstId": 1496,
-          "dstPin": 2,
-          "id": 1498
-        },
-        {
-          "type": "wire",
-          "srcId": 1488,
-          "srcPin": 0,
-          "dstId": 1490,
-          "dstPin": 2,
-          "id": 1499
-        },
-        {
-          "type": "wire",
-          "srcId": 1496,
-          "srcPin": 0,
-          "dstId": 1486,
+          "dstId": 1382,
           "dstPin": 0,
-          "x": null,
-          "y": null,
-          "id": 1500
+          "id": 1384
         },
         {
           "type": "wire",
-          "srcId": 1490,
+          "srcId": 1385,
           "srcPin": 0,
-          "dstId": 1486,
+          "dstId": 1382,
           "dstPin": 1,
-          "x": null,
-          "y": null,
-          "id": 1501
+          "id": 1386
         },
         {
           "type": "wire",
-          "srcId": 1492,
+          "srcId": 1389,
           "srcPin": 0,
-          "dstId": 1490,
+          "dstId": 1387,
           "dstPin": 0,
-          "x": null,
-          "y": null,
-          "id": 1502
+          "id": 1388
         },
         {
           "type": "wire",
-          "srcId": 1491,
+          "srcId": 1382,
           "srcPin": 0,
-          "dstId": 1490,
+          "dstId": 1389,
+          "dstPin": 0,
+          "id": 1390
+        },
+        {
+          "type": "wire",
+          "dstId": 1389,
           "dstPin": 1,
-          "x": null,
-          "y": null,
-          "id": 1503
+          "srcId": 1383,
+          "srcPin": 0,
+          "id": 1391
         },
         {
           "type": "wire",
-          "srcId": 1494,
+          "srcId": 1385,
           "srcPin": 0,
-          "dstId": 1496,
-          "dstPin": 0,
-          "x": null,
-          "y": null,
-          "id": 1504
-        },
-        {
-          "type": "wire",
-          "srcId": 1493,
-          "srcPin": 0,
-          "dstId": 1496,
-          "dstPin": 1,
-          "x": null,
-          "y": null,
-          "id": 1505
-        },
-        {
-          "type": "wire",
-          "srcId": 1486,
-          "srcPin": 0,
-          "dstId": 1487,
-          "dstPin": 0,
-          "x": null,
-          "y": null,
-          "id": 1506
+          "dstId": 1389,
+          "dstPin": 2,
+          "id": 1392
         }
       ],
-      "master": "[vvvv[vv,v](op),v]"
+      "master": "[vv,v(max)]"
+    },
+    {
+      "type": "wire",
+      "srcId": 1393,
+      "srcPin": 0,
+      "dstId": 1367,
+      "dstPin": 2,
+      "id": 1394
+    },
+    {
+      "type": "element",
+      "x": 1414.4584928475235,
+      "y": 534.4713177138669,
+      "id": 1396,
+      "master": "[v(node),v](@)"
+    },
+    {
+      "type": "wire",
+      "srcId": 1372,
+      "srcPin": 0,
+      "dstId": 1396,
+      "dstPin": 0,
+      "id": 1397
+    },
+    {
+      "type": "wire",
+      "srcId": 1396,
+      "srcPin": 0,
+      "dstId": 1393,
+      "dstPin": 0,
+      "id": 1398
+    },
+    {
+      "type": "element",
+      "x": 1416.4584928475235,
+      "y": 580.4713177138669,
+      "master": "[v(node),v](@)",
+      "id": 1399,
+      "state": "normal"
+    },
+    {
+      "type": "wire",
+      "srcId": 1374,
+      "srcPin": 0,
+      "dstId": 1399,
+      "dstPin": 0,
+      "id": 1400
+    },
+    {
+      "type": "wire",
+      "srcId": 1399,
+      "srcPin": 0,
+      "dstId": 1393,
+      "dstPin": 1,
+      "id": 1401
+    },
+    {
+      "type": "element",
+      "elementType": "literal",
+      "master": "[,v('left')]",
+      "x": 1282.4584928475235,
+      "y": 514.9713177138669,
+      "state": "normal",
+      "id": 1403
+    },
+    {
+      "type": "wire",
+      "srcId": 1403,
+      "srcPin": 0,
+      "dstId": 1372,
+      "dstPin": 0,
+      "id": 1404
+    },
+    {
+      "type": "element",
+      "elementType": "literal",
+      "master": "[,v('left')]",
+      "x": 1295.4584928475235,
+      "y": 581.9713177138669,
+      "state": "normal",
+      "id": 1406
+    },
+    {
+      "type": "wire",
+      "srcId": 1406,
+      "srcPin": 0,
+      "dstId": 1374,
+      "dstPin": 0,
+      "id": 1407
     }
   ]
 }

@@ -1681,12 +1681,12 @@ Editor.prototype.initialize = function(canvasController) {
   this.renderer = new Renderer(canvasController.theme);
 
   let model = this.model,
+      viewModel = model.viewModel,
       renderer = this.renderer;
   model.dataModel.initialize();
 
   // Create an instance of every junction and literal.
-  let x, y;
-  x = 16, y = 16,
+  let x = 16, y = 16, h = 0, spacing = 8;
   this.junctions.forEach(function(junction) {
     let item = Object.assign(junction);
     item.x = x;
@@ -1694,11 +1694,14 @@ Editor.prototype.initialize = function(canvasController) {
     item.state = 'palette';
     model.editingModel.newItem(item);
     model.editingModel.addItem(item);
-    x += 40;
+    let r = viewModel.getItemRect(item);
+    x += r.w + spacing;
+    h = Math.max(h, r.h);
   });
+  y += h + spacing;
 
   // Create an instance of every primitive.
-  x = 16, y = 56;
+  x = 16, h = 0;
   this.primitives.forEach(function(primitive) {
     let item = Object.assign(primitive);
     item.x = x;
@@ -1706,9 +1709,11 @@ Editor.prototype.initialize = function(canvasController) {
     item.state = 'palette';
     model.editingModel.newItem(item);
     model.editingModel.addItem(item);
-    x += 48;
-    if (x > 256) {
-      x = 16, y += 56;
+    let r = viewModel.getItemRect(item);
+    x += r.w + spacing;
+    h = Math.max(h, r.h);
+    if (x > 208) {
+      x = 16, y += h + spacing, h = 0;
     }
   });
 }

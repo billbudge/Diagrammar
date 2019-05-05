@@ -12,7 +12,7 @@ Most data flow systems model restricted domains, and have limited ability to rep
 
 Circuit elements for built-in operations can be combined to form useful expressions. Input and Output pins are used to specify imports and exports, assign labels, and connect common imports.
 
-Note that there is fan-out but no fan-in in the graph. Each circuit element is conceptually a function. In the diagram below, we are creating:
+In the diagram below, we are creating:
 1. An increment-by-1 function.
 2. A decrement-by-1 function.
 3. A binary minimum out of the less-than relational operator and the trinary conditional operator.
@@ -23,6 +23,8 @@ Note that there is fan-out but no fan-in in the graph. Each circuit element is c
   <img src="/resources/basic_grouping.png"  alt="" title="Basic Grouping">
 </figure>
 
+Note that there is fan-out but no fan-in in the graph. There are no cycles allowed, so the graph is technically a directed acyclic graph (DAG). Each circuit element is conceptually a function and wires connect outputs of one function to inputs of another.
+
 After grouping, the new expressions can be used just like built-in functions.
 
 <figure>
@@ -31,7 +33,7 @@ After grouping, the new expressions can be used just like built-in functions.
 
 ## Function Abstraction
 
-This representation lacks power. We have to rebuild these graphs every time we want to create a similar function, for example cascading the multiplication binary operator. To make the graph representation more powerful, any function can be abstracted. This adds an input value, of the same type as the function, to indicate that the function operation is imported. This allows us to create a function that takes another function as input.
+This representation lacks expressive power. We have to rebuild these graphs every time we want to create a similar function, for example cascading multiplication or logical operations instead of addition. To make the graph representation more powerful, any function can be abstracted. This adds an input value, of the same type as the function, to indicate that the function operation is imported. This operation is called "opening" the function. This allows us to create a function that takes another function as input.
 
 <figure>
   <img src="/resources/function_abstraction.png"  alt="" title="Function Abstraction">
@@ -92,7 +94,7 @@ It would be cumbersome to have to create this graph every time we wanted to iter
   <img src="/resources/iteration2.png"  alt="" title="Iteration to apply binary op to range">
 </figure>
 
-Using this more generic function, we can create a familiar function easily now.
+Using this more generic function, we can create a factorial function easily now.
 
 <figure>
   <img src="/resources/iteration3.png"  alt="" title="Iteration adapted to compute factorial">
@@ -100,5 +102,32 @@ Using this more generic function, we can create a familiar function easily now.
 
 ## State
 
-TBD
+Without state, we can only create more and more complex expressions. Let's introduce two new functions, which allow us to treat values as objects or arrays.
+
+<figure>
+  <img src="/resources/state.png"  alt="" title="State functions">
+</figure>
+
+State allows us to perform more complex computations.
+
+## Quicksort
+
+```js
+function partition(a, i, j) {
+  let p = a[i];
+  while (1) {
+    while (a[i] < p) i++;
+    while (a[j] > p) j--;
+    if (i >= j) return j;
+    [a[i], a[j]] = [a[j], a[i]];
+    i++; j--;
+  }
+}
+function qsort(a, i, j) {
+  if (i >= j) return;
+  let k = partition(a, i, j);
+  qsort(a, i, k);
+  qsort(a, k + 1, j);
+}
+```
 
