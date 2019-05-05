@@ -1654,8 +1654,30 @@ function Editor(model, textInputController) {
   // Array adapter.
   primitives.push({
       type: 'element',
-      master: '[v,v(n)[v,v][vv,v]]([])',
+      master: '[,v(n)[v,v][vv,v]]([])',
   });
+  // Set adapter.
+  primitives.push({
+      type: 'element',
+      master: '[,v(size)[v,v](add)[v,v](has)[v,v](delete)[,v](clear)](set)',
+  });
+  // Map adapter.
+  primitives.push({
+      type: 'element',
+      master: '[,v(size)[v,v](get)[vv,v](set)[v,v](has)[v,v](delete)[,v](clear)](map)',
+  });
+  /*
+  Map.prototype​.clear()
+Map.prototype​.delete()
+Map.prototype​.entries()
+Map.prototype​.for​Each()
+Map.prototype​.get()
+Map.prototype​.has()
+Map.prototype​.keys()
+Map.prototype​.set()
+Map.prototype​.values()
+*/
+
   this.primitives = primitives;
 
   editingModel.extend(model);

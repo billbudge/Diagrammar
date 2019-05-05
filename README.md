@@ -23,7 +23,7 @@ In the diagram below, we are creating:
   <img src="/resources/basic_grouping.png"  alt="" title="Basic Grouping">
 </figure>
 
-Note that there is fan-out but no fan-in in the graph. There are no cycles allowed, so the graph is technically a directed acyclic graph (DAG). Each circuit element is conceptually a function and wires connect outputs of one function to inputs of another.
+Note that there is fan-out but no fan-in in the graph. There are no cycles allowed, so the graph is technically a directed acyclic graph (DAG). Each circuit element is conceptually a function and wires connect outputs of one function to inputs of another. Evaluation proceeds left-to-right, since inputs must be evaluated before producing outputs. The evaluation order of the graph is only partially ordered (by topologically sorting) so we have to take extra care when a specific sequential evaluation order is required.
 
 After grouping, the new expressions can be used just like built-in functions.
 
@@ -82,13 +82,17 @@ Similarly, we can implement a Fibonacci function that returns the i'th number in
 
 ### Generic iteration
 
-Let's try a more typical iteration, equivalent to a 'for' loop in Javascript. Let's try to add the numbers in the range [i..n].
+Let's try a more typical iteration, equivalent to the following for loop in Javascript. Let's try to add the numbers in the range [i..n].
+
+```js
+    for (let i = 0; i < n; i++) ...
+```
 
 <figure>
   <img src="/resources/iteration.png"  alt="" title="Iteration to add numbers from i to n">
 </figure>
 
-It would be cumbersome to have to create this graph every time we wanted to iterate over this range. But we can abstract the binary operation at the heart of this to create a generic iteration that is more useful.
+It would be cumbersome to have to create this graph every time we wanted to iterate over a range of integers. But we can abstract the binary operation at the heart of this to create a generic iteration that is more useful.
 
 <figure>
   <img src="/resources/iteration2.png"  alt="" title="Iteration to apply binary op to range">
