@@ -1646,15 +1646,15 @@ function Editor(model, textInputController) {
       master: '[vvv,v](?)',
   });
 
-  // Objects.
+  // Object adapter.
   primitives.push({
       type: 'element',
       master: '[v,v[v,v][vv,v]]({})',
   });
-  // Arrays.
+  // Array adapter.
   primitives.push({
       type: 'element',
-      master: '[v(n),v(n)[v,v][vv,v]]([])',
+      master: '[v,v(n)[v,v][vv,v]]([])',
   });
   this.primitives = primitives;
 
