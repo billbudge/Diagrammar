@@ -13,6 +13,7 @@ Most data flow systems model restricted domains, and have limited ability to rep
 Circuit elements for built-in operations can be combined to form useful expressions. Input and Output pins are used to specify imports and exports, assign labels, and connect common imports.
 
 In the diagram below, we are creating:
+
 1. An increment-by-1 function.
 2. A decrement-by-1 function.
 3. A binary minimum out of the less-than relational operator and the trinary conditional operator.
@@ -82,7 +83,7 @@ Similarly, we can implement a Fibonacci function that returns the i'th number in
 
 ### Generic iteration
 
-Let's try a more typical iteration, equivalent to the following for loop in Javascript. Let's try to add the numbers in the range [i..n].
+Let's try a more typical iteration, equivalent to the following for loop in Javascript. Let's try to add the numbers in the range [0..n].
 
 ```js
     for (let i = 0; i < n; i++) ...
@@ -98,7 +99,7 @@ It would be cumbersome to have to create this graph every time we wanted to iter
   <img src="/resources/iteration2.png"  alt="" title="Iteration to apply binary op to range">
 </figure>
 
-Using this more generic function, we can create a factorial function easily now.
+Using this more generic function, we can easily create a factorial function.
 
 <figure>
   <img src="/resources/iteration3.png"  alt="" title="Iteration adapted to compute factorial">
@@ -106,13 +107,22 @@ Using this more generic function, we can create a factorial function easily now.
 
 ## State
 
-Without state, we can only create more and more complex expressions. Let's introduce two new functions, which allow us to treat values as objects or arrays.
+Without state, we are limited to pure functional programming. One of our goals is to map directly to hardware, where we also have state. Let's introduce two new stateful functions, which allow us to "open up" values as objects or arrays.
+
+1. On the left is the "object" function, which takes a value as input and returns two functions. The first is the "getter" which takes a key value as input and returns a value. The second is the "setter" which takes a key and value, updates that field of the object and returns the previous value.
+2. On the right is the "array" function, which takes an object and returns the length, a "getter" function which takes an index and returns the value at that index, and a setter function which takes an index and value, updates the array at that index and returns the previous value.
 
 <figure>
-  <img src="/resources/state.png"  alt="" title="State functions">
+  <img src="/resources/state.png"  alt="" title="Stateful objects">
 </figure>
 
-State allows us to perform more complex computations.
+State allows us to perform more complex computations. Let's sum the elements of an array. To do this, we need to define a binary function similar to the one we created to sum integers in a range. This time, the function will use the iteration index to access the array value at the ith position.
+
+<figure>
+  <img src="/resources/state_and_iteration.png"  alt="" title="Iteration over stateful object">
+</figure>
+
+In the top left, we apply the array getter, and pass it as the first operand of an addition. This can be grouped and closed to create a function import for our iteration. We only need to set the range to [0..n-1] and pass an initial value of 0.
 
 ## Quicksort
 
@@ -134,4 +144,6 @@ function qsort(a, i, j) {
   qsort(a, k + 1, j);
 }
 ```
+
+## Semantic Details
 

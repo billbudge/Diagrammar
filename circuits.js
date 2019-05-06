@@ -1656,6 +1656,11 @@ function Editor(model, textInputController) {
       type: 'element',
       master: '[,v(n)[v,v][vv,v]]([])',
   });
+  // String adapter.
+  primitives.push({
+      type: 'element',
+      master: '[v,v(length)[vv,v](indexOf)[vv,v](lastIndexOf)[v,v](charAt)[vv,v](substring)](string)',
+  });
   // Set adapter.
   primitives.push({
       type: 'element',
@@ -1666,17 +1671,6 @@ function Editor(model, textInputController) {
       type: 'element',
       master: '[,v(size)[v,v](get)[vv,v](set)[v,v](has)[v,v](delete)[,v](clear)](map)',
   });
-  /*
-  Map.prototype​.clear()
-Map.prototype​.delete()
-Map.prototype​.entries()
-Map.prototype​.for​Each()
-Map.prototype​.get()
-Map.prototype​.has()
-Map.prototype​.keys()
-Map.prototype​.set()
-Map.prototype​.values()
-*/
 
   this.primitives = primitives;
 
