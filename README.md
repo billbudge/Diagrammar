@@ -1,4 +1,4 @@
-﻿# Diagrammar: Graphical Programming Environment
+﻿# Diagrammar: A Graphical Programming Language
 
 tl;dr Diagrammar is an experimental graphical programming environment. It follows the Data Flow model, with the ability to pass values and functions along graph edges. Since functions can be created and instantiated, more complex programs can be built. This introduction shows how Quicksort and some other classic algorithms can be built, and hopefully demonstrates the advantages of this approach.
 
@@ -10,7 +10,7 @@ Most data flow systems model restricted domains, and have limited ability to rep
 
 ## Building expressions and grouping
 
-Circuit elements for built-in operations can be combined to form useful expressions. Input and Output pins are used to specify imports and exports, assign labels, and connect common imports.
+For now, let's imagine a language with one value type, which can represent numbers, strings, arrays, or other types of objects. Then our circuits can be simpler, with only one primitive wire and pin type. Circuit elements for built-in operations can be provided by the language, and combined to form useful expressions. Input and Output pin elements can be used to specify imports and exports, assign labels, and connect common imports.
 
 In the diagram below, we are creating:
 
@@ -24,7 +24,7 @@ In the diagram below, we are creating:
   <img src="/resources/basic_grouping.png"  alt="" title="Basic Grouping">
 </figure>
 
-Note that there is fan-out but no fan-in in the graph. There are no cycles allowed, so the graph is technically a directed acyclic graph (DAG). Each circuit element is conceptually a function and wires connect outputs of one function to inputs of another. Evaluation proceeds left-to-right, since inputs must be evaluated before producing outputs. The evaluation order of the graph is only partially ordered (by topologically sorting) so we have to take extra care when a specific sequential evaluation order is required.
+Note that there is fan-out but no fan-in in our circuit graphs. There can be no cycles, so the circuit is a DAG (directed acyclic graph). Each circuit element is conceptually a function and wires connect outputs of one function to inputs of another. Evaluation proceeds left-to-right, since inputs must be evaluated before producing outputs. The evaluation order of the graph is only partially ordered (by topologically sorting) so we have to take extra care when a specific sequential evaluation order is required.
 
 After grouping, the new expressions can be used just like built-in functions.
 
@@ -34,7 +34,7 @@ After grouping, the new expressions can be used just like built-in functions.
 
 ## Function Abstraction
 
-This representation lacks expressive power. We have to rebuild these graphs every time we want to create a similar function, for example cascading multiplication or logical operations instead of addition. To make the graph representation more powerful, any function can be abstracted. This adds an input value, of the same type as the function, to indicate that the function operation is imported. This operation is called "opening" the function. This allows us to create a function that takes another function as input.
+So far this language lacks expressive power. We have to rebuild these graphs every time we want to create a similar function, for example cascading multiplication or logical operations instead of addition. To make the graph representation more powerful, any function can be abstracted. This adds an input value, of the same type as the function, to indicate that the function is merely a template and the function body is imported. This operation is called "opening" the function. This allows us to create a function that takes one or more other functions as input.
 
 <figure>
   <img src="/resources/function_abstraction.png"  alt="" title="Function Abstraction">
