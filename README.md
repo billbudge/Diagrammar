@@ -141,10 +141,11 @@ Using this more generic function, we can easily create a factorial function.
 
 ## State
 
-Without state, we are limited to pure functional programming. One of our goals is to map directly to hardware, where we also have state. Let's introduce two new stateful functions, which allow us to "open up" values as objects or arrays.
+Without state, we are limited to pure functional programming. One of our goals is to map directly to hardware, where we also have state. Let's introduce three new stateful functions, which allow us to hold state and "open" values as objects or arrays.
 
-1. On the left is the "object" adapter, which takes a value as input and returns two functions. The first is the "getter" which takes a key value as input and returns a value. The second is the "setter" which takes a key and value, updates that field of the object and returns the previous value.
-2. On the right is the "array" adapter, which takes an object and returns the length, a "getter" function which takes an index and returns the value at that index, and a setter function which takes an index and value, updates the array at that index and returns the previous value.
+1. On the left is the "let" element, which outputs a value and an assignment function. The value is the current value of the assignment, while the function takes an input and replaces the old value which is returned. This is convenient as we'll see in a moment.
+2. In the middle is the "object" adapter, which takes a value as input and returns two functions. The first is the "getter" which takes a key value as input and returns a value. The second is the "setter" which takes a key and value, updates that field of the object and returns the previous value.
+3. On the right is the "array" adapter, which takes an object and returns the length, a "getter" function which takes an index and returns the value at that index, and a setter function which takes an index and value, updates the array at that index and returns the previous value.
 
 <figure>
   <img src="/resources/state.png"  alt="" title="Stateful objects">
@@ -157,6 +158,12 @@ State allows us to perform more complex computations. Let's sum the elements of 
 </figure>
 
 In the top left, we apply the array getter, and pass it as the first operand of an addition. We add pins for the inputs that come from the iteration. This can be grouped and closed to create a function import for our iteration. On the bottom we hook it up, set the range to [0..n-1] and pass an initial 'acc' of 0.
+
+Using state is tricky in a graphical program without the normal sequential evaluation of an imperative language. Let's make an element to swap two "let" values. We start with two let values, and invoke their assignments. This is tricky. We can't simply assign the values in parallel because one will be evaluated first, clobbering the other. Instead, we take advantage of the assignment which returns the old value. We feed that into the second assignment, which is thus guaranteed to be evaluated after by the graph topology. There are other ways to represent sequencing which we'll see later. TODO
+
+<figure>
+  <img src="/resources/state2.png"  alt="" title="Implementing swap of two lets">
+</figure>
 
 ## Quicksort
 

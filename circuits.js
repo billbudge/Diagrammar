@@ -717,9 +717,9 @@ let editingModel = (function() {
       graphInfo.wires.forEach(function(wire) {
         selectionModel.remove(wire);
       });
-      // Open or close each non-junction element.
+      // Open or close each non-input/output element.
       graphInfo.elementSet.forEach(function(element) {
-        if (isJunction(element)) return;
+        if (isInput(element) || isOutput(element) || isLiteral(element)) return;
         let incomingWires = graphInfo.inputMap.get(element),
             outgoingWireArrays = graphInfo.outputMap.get(element);
 
