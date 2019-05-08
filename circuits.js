@@ -1654,23 +1654,23 @@ function Editor(model, textInputController) {
   // Object adapter.
   primitives.push({
       type: 'element',
-      master: '[v,v[v,v][vv,v]]({})',
+      master: '[v,[v,v[v,v]]]({})',
   });
   // Array adapter.
   primitives.push({
       type: 'element',
-      master: '[,v(n)[v,v][vv,v]]([])',
+      master: '[v,v(n)[v,v[v,v]]]([])',
   });
-  // Set adapter.
-  primitives.push({
-      type: 'element',
-      master: '[,v(size)[v,v](add)[v,v](has)[v,v](delete)[,v](clear)](set)',
-  });
-  // Map adapter.
-  primitives.push({
-      type: 'element',
-      master: '[,v(size)[v,v](get)[vv,v](set)[v,v](has)[v,v](delete)[,v](clear)](map)',
-  });
+  // // Set adapter.
+  // primitives.push({
+  //     type: 'element',
+  //     master: '[,v(size)[v,v](add)[v,v](has)[v,v](delete)[,v](clear)](set)',
+  // });
+  // // Map adapter.
+  // primitives.push({
+  //     type: 'element',
+  //     master: '[,v(size)[v,v](get)[vv,v](set)[v,v](has)[v,v](delete)[,v](clear)](map)',
+  // });
   // // String adapter.
   // primitives.push({
   //     type: 'element',
