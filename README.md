@@ -96,12 +96,12 @@ Let's try a more typical iteration, equivalent to the following for loop in Java
 This graph is recursive and equivalent to the following Javascript:
 
 ```js
-		let n, f0;
-    // f closes over n, f0.
-		function f(i) {
-			return i < n ? i + f(i + 1) : f0;
-	  }
-    return f(0);
+let n, f0;
+// f closes over n, f0.
+function f(i) {
+	return i < n ? i + f(i + 1) : f0;
+}
+return f(0);
 ```
 
 Another way to do this uses an accumulator. This recursion is closer to the for loop.
@@ -111,20 +111,20 @@ Another way to do this uses an accumulator. This recursion is closer to the for 
 </figure>
 
 ```js
-		let n, acc;
-    // f closes over n, acc.
-		function f(i, acc) {
-			return i < n ? f(i + 1, i + acc) : acc;
-	  }
-    return f(0, 0);
+let n, acc;
+// f closes over n, acc.
+function f(i, acc) {
+	return i < n ? f(i + 1, i + acc) : acc;
+}
+return f(0, 0);
 ```
 
 ```js
-		let acc = 0;
-		for (let i = 0; i < n; i++) {
-			acc += i;
-		}
-		return acc;
+let acc = 0;
+for (let i = 0; i < n; i++) {
+	acc += i;
+}
+return acc;
 ```
 
 Summing an integer range isn't really useful, and it would be cumbersome to have to create these graphs every time we wanted to iterate over a range of integers. But we can abstract the binary operation at the heart of this to create a generic iteration over an integer range that is more useful.
