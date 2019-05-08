@@ -93,7 +93,41 @@ Let's try a more typical iteration, equivalent to the following for loop in Java
   <img src="/resources/iteration.png"  alt="" title="Iteration to add numbers from i to n">
 </figure>
 
-It would be cumbersome to have to create this graph every time we wanted to iterate over a range of integers. But we can abstract the binary operation at the heart of this to create a generic iteration that is more useful.
+This graph is recursive and equivalent to the following Javascript:
+
+```js
+		let n, f0;
+    // f closes over n, f0.
+		function f(i) {
+			return i < n ? i + f(i + 1) : f0;
+	  }
+    return f(0);
+```
+
+Another way to do this uses an accumulator. This recursion is closer to the for loop.
+
+<figure>
+  <img src="/resources/iteration1.png"  alt="" title="Iteration to add numbers from i to n">
+</figure>
+
+```js
+		let n, acc;
+    // f closes over n, acc.
+		function f(i, acc) {
+			return i < n ? f(i + 1, i + acc) : acc;
+	  }
+    return f(0, 0);
+```
+
+```js
+		let acc = 0;
+		for (let i = 0; i < n; i++) {
+			acc += i;
+		}
+		return acc;
+```
+
+Summing an integer range isn't really useful, and it would be cumbersome to have to create these graphs every time we wanted to iterate over a range of integers. But we can abstract the binary operation at the heart of this to create a generic iteration over an integer range that is more useful.
 
 <figure>
   <img src="/resources/iteration2.png"  alt="" title="Iteration to apply binary op to range">
@@ -109,8 +143,8 @@ Using this more generic function, we can easily create a factorial function.
 
 Without state, we are limited to pure functional programming. One of our goals is to map directly to hardware, where we also have state. Let's introduce two new stateful functions, which allow us to "open up" values as objects or arrays.
 
-1. On the left is the "object" function, which takes a value as input and returns two functions. The first is the "getter" which takes a key value as input and returns a value. The second is the "setter" which takes a key and value, updates that field of the object and returns the previous value.
-2. On the right is the "array" function, which takes an object and returns the length, a "getter" function which takes an index and returns the value at that index, and a setter function which takes an index and value, updates the array at that index and returns the previous value.
+1. On the left is the "object" adapter, which takes a value as input and returns two functions. The first is the "getter" which takes a key value as input and returns a value. The second is the "setter" which takes a key and value, updates that field of the object and returns the previous value.
+2. On the right is the "array" adapter, which takes an object and returns the length, a "getter" function which takes an index and returns the value at that index, and a setter function which takes an index and value, updates the array at that index and returns the previous value.
 
 <figure>
   <img src="/resources/state.png"  alt="" title="Stateful objects">
@@ -122,9 +156,11 @@ State allows us to perform more complex computations. Let's sum the elements of 
   <img src="/resources/state_and_iteration.png"  alt="" title="Iteration over stateful object">
 </figure>
 
-In the top left, we apply the array getter, and pass it as the first operand of an addition. This can be grouped and closed to create a function import for our iteration. We only need to set the range to [0..n-1] and pass an initial value of 0.
+In the top left, we apply the array getter, and pass it as the first operand of an addition. We add pins for the inputs that come from the iteration. This can be grouped and closed to create a function import for our iteration. On the bottom we hook it up, set the range to [0..n-1] and pass an initial 'acc' of 0.
 
 ## Quicksort
+
+Quicksort is challenging to implement graphically. Let's try. Here is the source for a Javascript implementation of Quicksort which does the partition step in place. We'll start by implementing the iterations which advance indices to a pair of out of place elements.
 
 ```js
 function partition(a, i, j) {
@@ -144,6 +180,12 @@ function qsort(a, i, j) {
   qsort(a, k + 1, j);
 }
 ```
+
+<figure>
+  <img src="/resources/quicksort.png"  alt="" title="Quicksort partition-in-place loop">
+</figure>
+
+## Stateful Iteration Protocols
 
 ## Semantic Details
 

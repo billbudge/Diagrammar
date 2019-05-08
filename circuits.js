@@ -1646,6 +1646,11 @@ function Editor(model, textInputController) {
       master: '[vvv,v](?)',
   });
 
+  // Object reference.
+  primitives.push({
+      type: 'element',
+      master: '[,v[v,v]](let)',
+  });
   // Object adapter.
   primitives.push({
       type: 'element',
@@ -1655,11 +1660,6 @@ function Editor(model, textInputController) {
   primitives.push({
       type: 'element',
       master: '[,v(n)[v,v][vv,v]]([])',
-  });
-  // String adapter.
-  primitives.push({
-      type: 'element',
-      master: '[v,v(length)[vv,v](indexOf)[vv,v](lastIndexOf)[v,v](charAt)[vv,v](substring)](string)',
   });
   // Set adapter.
   primitives.push({
@@ -1671,6 +1671,11 @@ function Editor(model, textInputController) {
       type: 'element',
       master: '[,v(size)[v,v](get)[vv,v](set)[v,v](has)[v,v](delete)[,v](clear)](map)',
   });
+  // // String adapter.
+  // primitives.push({
+  //     type: 'element',
+  //     master: '[v,v(length)[vv,v](indexOf)[vv,v](lastIndexOf)[v,v](charAt)[vv,v](substring)](string)',
+  // });
 
   this.primitives = primitives;
 
