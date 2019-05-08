@@ -185,6 +185,10 @@ function qsort(a, i, j) {
   <img src="/resources/quicksort.png"  alt="" title="Quicksort partition-in-place loop">
 </figure>
 
+<figure>
+  <img src="/resources/quicksort2.png"  alt="" title="Iteration over stateful object">
+</figure>
+
 ## Stateful Iteration Protocols
 
 ## Semantic Details
