@@ -1646,7 +1646,7 @@ function Editor(model, textInputController) {
       master: '[vvv,v](?)',
   });
 
-  // Object reference.
+  // Object definition.
   primitives.push({
       type: 'element',
       master: '[,v[v,v]](let)',

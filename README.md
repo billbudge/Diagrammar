@@ -151,7 +151,7 @@ Without state, we are limited to pure functional programming. One of our goals i
   <img src="/resources/state.png"  alt="" title="Stateful objects">
 </figure>
 
-State allows us to perform more complex computations. Let's sum the elements of an array. To do this, we need to define a binary function similar to the one we created to sum integers in a range. This time, the function will use the iteration index to access the array value at the ith position.
+State allows us to perform more complex computations. Let's sum the elements of an array. To do this, we need to define a binary function similar to the one we created to sum integers in a range. This time, the function will use the iteration index to access the array value at the ith position. TODO update diagram.
 
 <figure>
   <img src="/resources/state_and_iteration.png"  alt="" title="Iteration over stateful object">
