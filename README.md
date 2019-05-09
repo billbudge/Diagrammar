@@ -54,10 +54,16 @@ Using closure, we can take our abstract 4-ary cascading function from before, an
   <img src="/resources/function_creation3.png"  alt="" title="Function Creation (continued)">
 </figure>
 
+We need one more special element to apply a function that has been imported, the Lambda element. This takes a function input and expands to an element with that functions inputs and outputs which can then be used in the graph like any other element.
+
+<figure>
+  <img src="/resources/function_application.png"  alt="" title="Function Application">
+</figure>
+
 Function closing is a powerful graph simplification mechanism. Imagine we wanted to apply our quadratic polynomial evaluation function to one polynomial at 4 different x values. Using the grouped expression 4 times leads to a complex graph that is becoming unwieldy. Applying the function to the polynomial coefficients and closing gives a simple unary function that we can apply 4 times, which is easier to understand.
 
 <figure>
-  <img src="/resources/function_creation2.png"  alt="" title="Function Creation (continued)">
+  <img src="/resources/function_creation2.png"  alt="" title="Function closing is a powerful graph simplification mechanism">
 </figure>
 
 ## Iteration

@@ -127,23 +127,43 @@ test("circuits.masteringModel", function() {
     type => deepEqual(stringifyMaster(test.decodeType(type)), type));
 });
 
-test("circuits.masteringModel.getUnlabeled", function() {
+test("circuits.masteringModel.unlabelType", function() {
   let test = newTestMasteringModel();
-  deepEqual(test.getUnlabeled('[v,vv](foo)'), '[v,vv]');
-  deepEqual(test.getUnlabeled('[v,vv]'), '[v,vv]');
-  deepEqual(test.getUnlabeled('[vvv(foo)'), '[vvv');
+  deepEqual(test.unlabelType('[v,vv](foo)'), '[v,vv]');
+  deepEqual(test.unlabelType('[v,vv]'), '[v,vv]');
+  deepEqual(test.unlabelType('[vvv(foo)'), '[vvv');
 });
 
 test("circuits.masteringModel.splitType", function() {
   let test = newTestMasteringModel();
-  let pairs = [
+  let tuples = [
     { type: '[vv,v](+)', split: 3 },
     { type: '[v(a)v(b),v(c)]', split: 9 },
     { type: '[,[,v][v,v]](@)', split: 1 },
     { type: '[[v,vv(q)](a)v(b),v(c)](foo)', split: 17 },
   ];
-  pairs.forEach(
-    pair => deepEqual(test.splitType(pair.type), pair.split));
+  tuples.forEach(
+    tuple => deepEqual(test.splitType(tuple.type), tuple.split));
+});
+
+test("circuits.masteringModel.joinTypeWithInput", function() {
+  let test = newTestMasteringModel();
+  let tuples = [
+    { type: '[,]', innerType: '*(x)', joined: '[*(x),]' },
+    { type: '[vv,v](+)', innerType: '*(x)', joined: '[vv*(x),v](+)' },
+  ];
+  tuples.forEach(
+    tuple => deepEqual(test.joinTypeWithInput(tuple.type, tuple.innerType), tuple.joined));
+});
+
+test("circuits.masteringModel.joinTypeWithOutput", function() {
+  let test = newTestMasteringModel();
+  let tuples = [
+    { type: '[,]', innerType: '*(x)', joined: '[,*(x)]' },
+    { type: '[vv,v](+)', innerType: '*(x)', joined: '[vv,v*(x)](+)' },
+  ];
+  tuples.forEach(
+    tuple => deepEqual(test.joinTypeWithOutput(tuple.type, tuple.innerType), tuple.joined));
 });
 
 test("circuits.editingAndMastering", function() {
@@ -426,7 +446,7 @@ test("circuits.editingModel.makeProtoGroup", function() {
       wire2 = addWire(test, input2, 0, elem, 1),
       wire3 = addWire(test, elem, 0, output, 0);
   let groupElement = test.makeProtoGroup([input2, elem, output]);
-  deepEqual(groupElement.master, '[v(f),v](@)');
+  deepEqual(groupElement.master, '[v(f),v]');
   ok(items.length === 7);
 });
 
@@ -438,52 +458,9 @@ test("circuits.editingModel.wireConsistency", function() {
       elem2 = addElement(test, newTypedElement('[vv,v]')),
       wire = addWire(test, elem1, 0, elem2, 1);
 
-  // Complete the two element group, then collect graph info.
+  // Remove element and make sure dependent wire is also deleted.
   test.deleteItem(elem1);
   test.makeConsistent();
   ok(!items.includes(wire));
 });
 
-test("circuits.editingModel.junctionConsistency", function() {
-  let test = newTestEditingModel(),
-      circuit = test.model,
-      items = circuit.root.items,
-      elem1 = addElement(test, newInputJunction('[,*]')),
-      elem2 = addElement(test, newTypedElement('[v[v,v],v]')),
-      wire = addWire(test, elem1, 0, elem2, 1);
-
-  // Complete the two element group, then collect graph info.
-  test.makeConsistent();
-  deepEqual(elem1.master, '[,[v,v]]');
-  test.deleteItem(wire);
-  test.makeConsistent();
-  deepEqual(elem1.master, '[,*]');
-});
-
-test("circuits.editingModel.passThroughConsistency", function() {
-  let test = newTestEditingModel(),
-      circuit = test.model,
-      selectionModel = circuit.selectionModel,
-      items = circuit.root.items,
-      elem1 = addElement(test, newInputJunction('[,*]')),
-      elem2 = addElement(test, newOutputJunction('[*,]')),
-      wire = addWire(test, elem1, 0, elem2, 0);
-
-  // Group the junctions into [*,*].
-  selectionModel.add(elem1);
-  selectionModel.add(elem2);
-  test.doGroup(false);
-  let group = items[0];
-  deepEqual(group.master, '[*,*]');
-  deepEqual(items.length, 1);
-
-  let output = addElement(test, newOutputJunction('[*,]')),
-      elem3 = addElement(test, newTypedElement('[v,[v,v]]')),
-      wire1 = addWire(test, group, 0, output, 0),
-      wire2 = addWire(test, elem3, 0, group, 0);
-  test.makeConsistent();
-  deepEqual(output.master, '[[v,v],]');
-  test.deleteItem(wire2);
-  test.makeConsistent();
-  deepEqual(output.master, '[*,]');
-});

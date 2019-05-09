@@ -22,7 +22,7 @@ function isLiteral(item) {
 
 function isJunction(item) {
   return item.elementType == 'input' || item.elementType == 'output' ||
-         item.elementType == 'apply';
+         item.elementType == 'lambda';
 }
 
 function isClosed(item) {
@@ -41,8 +41,8 @@ function isOutput(item) {
   return item.elementType == 'output';
 }
 
-function isApplication(item) {
-  return item.elementType == 'apply';
+function isLambda(item) {
+  return item.elementType == 'lambda';
 }
 
 function isGroup(item) {
@@ -54,7 +54,7 @@ function isCircuit(item) {
 }
 
 function isInputPinLabeled(item) {
-  return isOutput(item) || isOpened(item) || isApplication(item);
+  return isOutput(item) || isOpened(item) || isLambda(item);
 }
 
 function isOutputPinLabeled(item) {
@@ -65,7 +65,9 @@ function isFunctionType(type) {
   return type[0] == '[';
 }
 
-//------------------------------------------------------------------------------
+let inputElementType = '[,*]',
+    outputElementType = '[*,]',
+    lambdaElementType = '[*(λ),]';
 
 let _master = Symbol('master'),
     _y = Symbol('y'),
@@ -179,7 +181,7 @@ let masteringModel = (function() {
     },
 
     // Removes any trailing label. Type may be ill-formed, e.g. '[v(f)'
-    getUnlabeled: function(type) {
+    unlabelType: function(type) {
       if (type[type.length - 1] == ')')
         type = type.substring(0, type.lastIndexOf('('));
       return type;
@@ -197,6 +199,16 @@ let masteringModel = (function() {
           if (level == 1) return j;
         j++;
       }
+    },
+
+    joinTypeWithInput: function(type, inputType) {
+      let i = this.splitType(type);
+      return type.substring(0, i) + inputType + type.substring(i);
+    },
+
+    joinTypeWithOutput: function(type, outputType) {
+      let i = type.lastIndexOf(']');
+      return type.substring(0, i) + outputType + type.substring(i);
     },
 
     initialize: function(item) {
@@ -466,7 +478,7 @@ let editingModel = (function() {
         // Let user name pin.
         x: pinPoint.x - 32,
         y: pinPoint.y,
-        master: '[,' + dstPin.type + ']',
+        master: inputElementType,
       };
       this.newItem(junction);
       this.addItem(junction);
@@ -492,7 +504,7 @@ let editingModel = (function() {
         // Let user name pin.
         x: pinPoint.x + 32,
         y: pinPoint.y,
-        master: '[' + srcPin.type + ',]',
+        master: outputElementType,
       };
       this.newItem(junction);
       this.addItem(junction);
@@ -556,12 +568,12 @@ let editingModel = (function() {
         let j = masteringModel.splitType(master),
             prefix = master.substring(0, j),
             suffix = master.substring(j);
-        newMaster = masteringModel.getUnlabeled(prefix) + label + suffix;
+        newMaster = masteringModel.unlabelType(prefix) + label + suffix;
       } else if (isOutputPinLabeled(item)) {
         let prefix = master.substring(0, master.length - 1);
-        newMaster = masteringModel.getUnlabeled(prefix) + label + ']';
+        newMaster = masteringModel.unlabelType(prefix) + label + ']';
       } else {
-        newMaster = masteringModel.getUnlabeled(master) + label;
+        newMaster = masteringModel.unlabelType(master) + label;
       }
       return newMaster;
     },
@@ -578,7 +590,7 @@ let editingModel = (function() {
           let label = master.inputs[0].name;
           label = label ? '(' + label + ')' : '';
           newMaster = '[' + newType + label + ',]';
-        } else if (isApplication(item)) {
+        } else if (isLambda(item)) {
           // let label = master.inputs[0].name;
           // newMaster = '[,' + master.outputs[0].type + label + ']';
         }
@@ -586,27 +598,10 @@ let editingModel = (function() {
       return newMaster;
     },
 
-    getClosedType: function(element, inputWires) {
-      // Create a function type whose inputs are the disconnected inputs,
-      // and whose outputs are all the outputs, connected or not.
-      let master = getMaster(element);
-      let fnType = '[';
-      master.inputs.forEach(function(input, i) {
-        if (!inputWires[i])
-          fnType += input.type;
-      });
-      fnType += ',';
-      master.outputs.forEach(function(output, i) {
-        fnType += output.type;
-      });
-      fnType += ']';
-      // console.log('closedType', fnType);
-      return fnType;
-    },
-
     closeFunction: function(element, incomingWires, outgoingWireArrays) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
+          masteringModel = model.masteringModel,
           observableModel = model.observableModel,
           master = getMaster(element);
 
@@ -620,6 +615,7 @@ let editingModel = (function() {
       let id = dataModel.assignId(newElement);
 
       let type = '[',
+          closedType = '[',
           pinIndex = 0;
       // Add only connected input pins to inputs.
       master.inputs.forEach(function(pin, i) {
@@ -630,10 +626,13 @@ let editingModel = (function() {
           observableModel.changeValue(incomingWire, 'dstId', id);
           observableModel.changeValue(incomingWire, 'dstPin', pinIndex);
           pinIndex++;
+        } else {
+          closedType += pin.type;
         }
       });
       // Add only connected output pins to outputs.
       type += ',';
+      closedType += ',';
       pinIndex = 0;
       master.outputs.forEach(function(pin, i) {
         let outgoingWires = outgoingWireArrays[i];
@@ -646,22 +645,21 @@ let editingModel = (function() {
           });
           pinIndex++;
         }
+        closedType += pin.type;
       });
-      type += self.getClosedType(element, incomingWires);
       type += ']';
+      closedType += ']';
+      type = masteringModel.joinTypeWithOutput(type, closedType);
 
       newElement.master = type;
       dataModel.initialize(newElement);
       return newElement;
     },
 
-    getOpenedType: function(element) {
-      return this.model.masteringModel.getUnlabeled(element.master);
-    },
-
     openFunction: function(element, incomingWires, outgoingWireArrays) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
+          masteringModel = model.masteringModel,
           observableModel = model.observableModel,
           master = getMaster(element);
 
@@ -675,11 +673,9 @@ let editingModel = (function() {
       let id = dataModel.assignId(newElement);
 
       // Add all input pins to inputs.
-      let type = '[',
-          pinIndex = 0;
+      let pinIndex = 0;
       master.inputs.forEach(function(pin, i) {
         let incomingWire = incomingWires[i];
-        type += self.getPinType(pin);
         // remap wire to new element and pin.
         if (incomingWire) {
           observableModel.changeValue(incomingWire, 'dstId', id);
@@ -687,13 +683,10 @@ let editingModel = (function() {
           pinIndex++;
         }
       });
-      type += self.getOpenedType(element);
       // Add all output pins to outputs.
-      type += ',';
       pinIndex = 0;
       master.outputs.forEach(function(pin, i) {
         let outgoingWires = outgoingWireArrays[i];
-        type += self.getPinType(pin);
         outgoingWires.forEach(function(outgoingWire, j) {
           // remap wires to new element and pin.
           observableModel.changeValue(outgoingWire, 'srcId', id);
@@ -701,8 +694,9 @@ let editingModel = (function() {
         });
         pinIndex++;
       });
-      type += ']';
 
+      let innerType = masteringModel.unlabelType(element.master),
+          type = masteringModel.joinTypeWithInput(innerType, innerType);
       newElement.master = type;
       dataModel.initialize(newElement);
       return newElement;
@@ -785,8 +779,11 @@ let editingModel = (function() {
         let index = wire.srcPin;
         if (srcIndices[index] === undefined) {
           srcIndices[index] = pinIndex++;
-          let srcPin = srcPins[index];
-          master += self.getPinType(srcPin);
+          let srcPin = srcPins[index],
+              srcType = self.getPinType(srcPin);
+          if (srcType.startsWith('*'))
+            srcType = self.findDstType(wire, graphInfo) + srcType.substring(1);
+          master += srcType;
         }
         return srcIndices[index];
       }
@@ -825,7 +822,7 @@ let editingModel = (function() {
             // Let output override source name.
             let name = getMaster(dst).inputs[0].name;
             if (name)
-              master =  masteringModel.getUnlabeled(master) + '(' + name + ')';
+              master =  masteringModel.unlabelType(master) + '(' + name + ')';
           }
         } else {
           // If this is the first instance of the source...
@@ -921,19 +918,22 @@ let editingModel = (function() {
       outputs.forEach(function(element) {
         master += self.getPinType(getMaster(element).inputs[0]);
       });
-      master += '](@)';
+      master += ']';
 
       groupElement.master = master;
       return groupElement;
     },
 
-    setApply: function(wire) {
+    setLambda: function(wire) {
       let self = this, model = this.model,
+          masteringModel = model.masteringModel,
           observableModel = model.observableModel,
           srcItem = this.getWireSrc(wire),
           srcPin = getMaster(srcItem).outputs[wire.srcPin],
-          dstItem = this.getWireDst(wire),
-          dstPin = getMaster(dstItem).inputs[wire.dstPin];
+          lambda = this.getWireDst(wire),
+          lambaPin = getMaster(lambda).inputs[wire.dstPin];
+      let innerType = srcPin.type,
+          j = masteringModel.splitType(innerType);
       // If srcPin is a function, add those inputs and output pins.
       let master = getMaster(srcPin);
       if (master) {
@@ -948,11 +948,11 @@ let editingModel = (function() {
         });
         newMaster += ']';
         observableModel.changeValue(wire, 'dstPin', master.inputs.length);
-        observableModel.changeValue(dstItem, 'master', newMaster);
+        observableModel.changeValue(lambda, 'master', newMaster);
       }
     },
 
-    resetApply: function(element, graphInfo) {
+    resetLambda: function(element, graphInfo) {
       let self = this, model = this.model,
           observableModel = model.observableModel;
       // Delete all wires except the incoming function input.
@@ -970,12 +970,11 @@ let editingModel = (function() {
           self.deleteItem(wires[j]);
         }
       }
-      let wire = inputWires[inputWires.length - 1],
-          dstPin = getMaster(element).inputs[0];
-
+      let wire = inputWires[inputWires.length - 1];
       if (wire) {
         observableModel.changeValue(wire, 'dstPin', 0);
       }
+      observableModel.changeValue(element, 'master', lambdaElementType);
     },
 
     findSrcType: function(wire, graphInfo) {
@@ -1086,67 +1085,29 @@ let editingModel = (function() {
     makeConsistent: function () {
       let self = this, model = this.model,
           dataModel = model.dataModel,
-          observableModel = model.observableModel,
-          masteringModel = model.masteringModel;
+          masteringModel = model.masteringModel,
+          observableModel = model.observableModel;
       // Collect info for entire graph.
       let graphInfo = this.collectGraphInfo(this.diagram.items),
           elementSet = graphInfo.elementSet,
           wires = graphInfo.wires;
-      // Make sure junctions are consistent.
+      // Make sure lambdas are consistent.
       elementSet.forEach(function(element) {
-        if (isJunction(element)) {
-          switch (element.elementType) {
-            case 'input': {
-              // Input junction pin 0 type should match all of its destinations.
-              // Just trace the first one.
-              let outputPin = getMaster(element).outputs[0],
-                  type = outputPin.type,
-                  dstType = '*',
-                  wires = graphInfo.outputMap.get(element)[0];
-              if (wires.length > 0) {
-                dstType = self.findDstType(wires[0], graphInfo);
-              }
-              if (type != dstType) {
-                observableModel.changeValue(element, 'master',
-                  self.changeType(element, dstType));
-              }
-              break;
-            }
-            case 'output': {
-              // Output junction pin 0 type should match its unique source.
-              let inputPin = getMaster(element).inputs[0],
-                  type = inputPin.type,
-                  srcType = '*',
-                  wire = graphInfo.inputMap.get(element)[0];
-              if (wire) {
-                srcType = self.findSrcType(wire, graphInfo);
-              }
-              if (type != srcType) {
-                observableModel.changeValue(element, 'master',
-                  self.changeType(element, srcType));
-              }
-              break;
-            }
-            case 'apply': {
-              let inputPins = getMaster(element).inputs,
-                  lastIndex = inputPins.length - 1,
-                  inputPin = inputPins[lastIndex],
-                  type = inputPin.type,
-                  srcType = '*',
-                  wire = graphInfo.inputMap.get(element)[lastIndex];
-              if (wire) {
-                srcType = self.findSrcType(wire, graphInfo);
-              }
-              if (type != srcType) {
-                if (type != '*') {
-                  self.resetApply(element, graphInfo);
-                }
-                if (srcType != '*') {
-                  self.setApply(wire);
-                }
-              }
-              break;
-            }
+        if (!isLambda(element)) return;
+
+        let master = getMaster(element),
+            inputPins = master.inputs,
+            lastIndex = inputPins.length - 1,
+            wire = graphInfo.inputMap.get(element)[lastIndex];
+        if (wire) {
+          let type = masteringModel.joinTypeWithInput(self.findSrcType(wire, graphInfo), '*');
+          if (element.master != type) {
+            self.resetLambda(element, graphInfo);
+            self.setLambda(wire);
+          }
+        } else {
+          if (element.master != lambdaElementType) {
+            self.resetLambda(element, graphInfo);
           }
         }
       });
@@ -1606,15 +1567,15 @@ function Editor(model, textInputController) {
   let junctions = [
     { type: 'element',
       elementType: 'input',
-      master: '[,*]',
+      master: inputElementType,
     },
     { type: 'element',
       elementType: 'output',
-      master: '[*,]',
+      master: outputElementType,
     },
     { type: 'element',
-      elementType: 'apply',
-      master: '[*(λ),]',
+      elementType: 'lambda',
+      master: lambdaElementType,
     },
     { type: 'element',
       elementType: 'literal',
