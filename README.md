@@ -193,7 +193,23 @@ function qsort(a, i, j) {
 </figure>
 
 <figure>
-  <img src="/resources/quicksort2.png"  alt="" title="Iteration over stateful object">
+  <img src="/resources/quicksort2.png"  alt="" title="TODO">
+</figure>
+
+<figure>
+  <img src="/resources/quicksort3.png"  alt="" title="TODO">
+</figure>
+
+<figure>
+  <img src="/resources/quicksort4.png"  alt="" title="TODO">
+</figure>
+
+<figure>
+  <img src="/resources/quicksort5.png"  alt="" title="TODO">
+</figure>
+
+<figure>
+  <img src="/resources/quicksort6.png"  alt="" title="TODO">
 </figure>
 
 ## Stateful Iteration Protocols
