@@ -912,11 +912,19 @@ let editingModel = (function() {
 
       let master = '[';
       inputs.forEach(function(element) {
-        master += self.getPinType(getMaster(element).outputs[0]);
+        let wire = graphInfo.outputMap.get(element)[0][0],
+            type = self.getPinType(getMaster(element).outputs[0]);
+        if (wire)
+          type = type.replace('*', self.findDstType(wire, graphInfo));
+        master += type;
       });
       master += ',';
       outputs.forEach(function(element) {
-        master += self.getPinType(getMaster(element).inputs[0]);
+        let wire = graphInfo.inputMap.get(element)[0],
+            type = self.getPinType(getMaster(element).inputs[0]);
+        if (wire)
+          type = type.replace('*', self.findSrcType(wire, graphInfo));
+        master += type;
       });
       master += ']';
 
