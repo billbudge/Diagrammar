@@ -1108,10 +1108,15 @@ let editingModel = (function() {
             lastIndex = inputPins.length - 1,
             wire = graphInfo.inputMap.get(element)[lastIndex];
         if (wire) {
-          let type = masteringModel.joinTypeWithInput(self.findSrcType(wire, graphInfo), '*');
-          if (element.master != type) {
-            self.resetLambda(element, graphInfo);
-            self.setLambda(wire);
+          let srcType = self.findSrcType(wire, graphInfo);
+          if (!isFunctionType(srcType)) {
+            self.deleteItem(wire);
+          } else {
+            let type = masteringModel.joinTypeWithInput(srcType, '*');
+            if (element.master != type) {
+              self.resetLambda(element, graphInfo);
+              self.setLambda(wire);
+            }
           }
         } else {
           if (element.master != lambdaElementType) {
