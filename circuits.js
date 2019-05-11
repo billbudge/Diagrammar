@@ -376,12 +376,15 @@ let editingModel = (function() {
     deleteItem: function(item) {
       let model = this.model,
           hierarchicalModel = model.hierarchicalModel,
+          selectionModel = model.selectionModel,
           parent = hierarchicalModel.getParent(item);
       if (parent) {
         let items = parent.items,
             index = items.indexOf(item);
-        if (index >= 0)
+        if (index >= 0) {
           model.observableModel.removeElement(parent, 'items', index);
+          selectionModel.remove(item);
+        }
       }
     },
 
@@ -932,29 +935,18 @@ let editingModel = (function() {
       return groupElement;
     },
 
-    setLambda: function(wire) {
+    setLambda: function(wire, graphInfo) {
       let self = this, model = this.model,
-          masteringModel = model.masteringModel,
           observableModel = model.observableModel,
           srcItem = this.getWireSrc(wire),
           srcPin = getMaster(srcItem).outputs[wire.srcPin],
+          master = getMaster(srcPin),
           lambda = this.getWireDst(wire),
           lambaPin = getMaster(lambda).inputs[wire.dstPin];
-      let innerType = srcPin.type,
-          j = masteringModel.splitType(innerType);
-      // If srcPin is a function, add those inputs and output pins.
-      let master = getMaster(srcPin);
+      // If srcPin is a function, set the lambda to the input function type,
+      // plus an untyped input.
       if (master) {
-        let newMaster = '[';
-        master.inputs.forEach(function(pin) {
-          newMaster += pin.type;
-        });
-        newMaster += '*';
-        newMaster += ','
-        master.outputs.forEach(function(pin) {
-          newMaster += pin.type;
-        });
-        newMaster += ']';
+        let newMaster = self.model.masteringModel.joinTypeWithInput(master.type, '*');
         observableModel.changeValue(wire, 'dstPin', master.inputs.length);
         observableModel.changeValue(lambda, 'master', newMaster);
       }
@@ -962,10 +954,10 @@ let editingModel = (function() {
 
     resetLambda: function(element, graphInfo) {
       let self = this, model = this.model,
-          observableModel = model.observableModel;
-      // Delete all wires except the incoming function input.
-      let inputWires = graphInfo.inputMap.get(element),
+          observableModel = model.observableModel,
+          inputWires = graphInfo.inputMap.get(element),
           outputWires = graphInfo.outputMap.get(element);
+      // Delete all wires except the incoming function input.
       for (let i = 0; i < inputWires.length - 1; i++) {
         let wire = inputWires[i];
         if (wire) {
@@ -1094,15 +1086,14 @@ let editingModel = (function() {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           masteringModel = model.masteringModel,
-          observableModel = model.observableModel;
-      // Collect info for entire graph.
-      let graphInfo = this.collectGraphInfo(this.diagram.items),
+          observableModel = model.observableModel,
+          graphInfo = this.collectGraphInfo(this.diagram.items),
           elementSet = graphInfo.elementSet,
           wires = graphInfo.wires;
       // Make sure lambdas are consistent.
       elementSet.forEach(function(element) {
-        if (!isLambda(element)) return;
-
+        if (!isLambda(element))
+          return;
         let master = getMaster(element),
             inputPins = master.inputs,
             lastIndex = inputPins.length - 1,
@@ -1111,6 +1102,7 @@ let editingModel = (function() {
           let srcType = self.findSrcType(wire, graphInfo);
           if (!isFunctionType(srcType)) {
             self.deleteItem(wire);
+            self.resetLambda(element, graphInfo);
           } else {
             let type = masteringModel.joinTypeWithInput(srcType, '*');
             if (element.master != type) {
