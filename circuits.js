@@ -46,7 +46,7 @@ function isLambda(item) {
 }
 
 function isGroup(item) {
-  return isElement(item) && item.groupItems;
+  return isElement(item) && item.items;
 }
 
 function isCircuit(item) {
@@ -403,14 +403,11 @@ let editingModel = (function() {
     copyItems: function(items, map) {
       let model = this.model, dataModel = model.dataModel,
           diagram = this.diagram,
-          transformableModel = model.transformableModel,
           copies = this.prototype.copyItems(items, map);
       items.forEach(function(item) {
         let copy = map.get(dataModel.getId(item));
         if (isElement(copy)) {
           copy.state = 'normal';
-          let toGlobal = transformableModel.getToParent(item, diagram);
-          geometry.matMulPt(copy, toGlobal);
         }
       });
       return copies;
@@ -436,9 +433,6 @@ let editingModel = (function() {
       if (oldParent === parent)
         return;
       if (!isWire(item)) {
-        let transformableModel = model.transformableModel,
-            toParent = transformableModel.getToParent(item, parent);
-        geometry.matMulPt(item, toParent);
       }
       if (isCircuit(parent)) {
         if (!Array.isArray(parent.items))
@@ -874,7 +868,7 @@ let editingModel = (function() {
       }
       master += ']';
 
-      groupElement.groupItems = groupItems;
+      groupElement.items = groupItems;
       groupItems.forEach(item => self.deleteItem(item));
 
       groupElement.master = master;
@@ -1132,7 +1126,6 @@ let editingModel = (function() {
     dataModels.selectionModel.extend(model);
     dataModels.referencingModel.extend(model);
     dataModels.hierarchicalModel.extend(model);
-    dataModels.transformableModel.extend(model);
     dataModels.transactionModel.extend(model);
     dataModels.transactionHistory.extend(model);
     dataModels.instancingModel.extend(model);
@@ -1167,8 +1160,9 @@ let editingModel = (function() {
 let viewModel = (function() {
   let proto = {
     getItemRect: function (item) {
-      let transform = this.model.transformableModel.getAbsolute(item),
-          x = transform[4], y = transform[5], w, h;
+      if (isWire(item))
+        return;
+      let x = item.x, y = item.y, w, h;
       switch (item.type) {
         case 'element':
           w = getMaster(item)[_width];
@@ -1183,6 +1177,7 @@ let viewModel = (function() {
           xMax = -Number.POSITIVE_INFINITY, yMax = -Number.POSITIVE_INFINITY;
       for (let item of items) {
         let rect = this.getItemRect(item);
+        if (!rect) continue;
         xMin = Math.min(xMin, rect.x);
         yMin = Math.min(yMin, rect.y);
         xMax = Math.max(xMax, rect.x + rect.w);
@@ -1213,8 +1208,6 @@ let viewModel = (function() {
   }
 
   function extend(model) {
-    dataModels.transformableModel.extend(model);
-
     let instance = Object.create(proto);
     instance.model = model;
 
@@ -1243,7 +1236,6 @@ function Renderer(theme) {
 
 Renderer.prototype.beginDraw = function(model, ctx) {
   this.model = model;
-  this.transformableModel = model.transformableModel;
   this.ctx = ctx;
   ctx.save();
   ctx.font = this.theme.font;
@@ -1255,9 +1247,9 @@ Renderer.prototype.endDraw = function() {
   this.ctx = null;
 }
 
+// TODO factor out common code from viewModel.
 Renderer.prototype.getItemRect = function(item) {
-  var transform = this.transformableModel.getAbsolute(item),
-      x = transform[4], y = transform[5], w, h;
+  let x = item.x, y = item.y, w, h;
   // TODO update
   switch (item.type) {
     case 'element':
@@ -1534,29 +1526,45 @@ Renderer.prototype.hitTest = function(item, p, tol, mode) {
   return hitInfo;
 }
 
-Renderer.prototype.drawHoverText = function(item, p) {
-  var self = this, theme = this.theme,
-      props = [];
-  this.model.dataModel.visitProperties(item, function(item, attr) {
-    var value = item[attr];
-    if (Array.isArray(value))
-      return;
-    props.push({ name: attr, value: value });
-  });
-  var x = p.x, y = p.y,
-      textSize = theme.fontSize, gap = 16, border = 4,
-      height = textSize * props.length + 2 * border,
-      maxWidth = diagrams.measureNameValuePairs(props, gap, ctx) + 2 * border;
+Renderer.prototype.drawHoverInfo = function(item, p) {
+  let self = this, theme = this.theme;
   ctx.fillStyle = theme.hoverColor;
-  ctx.fillRect(x, y, maxWidth, height);
-  ctx.fillStyle = theme.hoverTextColor;
-  props.forEach(function(prop) {
-    ctx.textAlign = 'left';
-    ctx.fillText(prop.name, x + border, y + textSize);
-    ctx.textAlign = 'right';
-    ctx.fillText(prop.value, x + maxWidth - border, y + textSize);
-    y += textSize;
-  });
+  if (isGroup(item)) {
+    let viewModel = this.model.viewModel;
+    item.items.forEach(function(item) {
+      self.layout(item);
+    });
+    let r = viewModel.getItemRects(item.items);
+    ctx.translate(p.x - r.x, p.y - r.y);
+    let border = 4;
+    ctx.fillRect(r.x - border, r.y - border, r.width + 2 * border, r.height + 2 * border);
+    ctx.fillStyle = theme.hoverTextColor;
+    item.items.forEach(function(item) {
+      self.draw(item, normalMode);
+    });
+  } else {
+    // Just list properties as text.
+    let props = [];
+    this.model.dataModel.visitProperties(item, function(item, attr) {
+      var value = item[attr];
+      if (Array.isArray(value))
+        return;
+      props.push({ name: attr, value: value });
+    });
+    var x = p.x, y = p.y,
+        textSize = theme.fontSize, gap = 16, border = 4,
+        height = textSize * props.length + 2 * border,
+        maxWidth = diagrams.measureNameValuePairs(props, gap, ctx) + 2 * border;
+    ctx.fillRect(x, y, maxWidth, height);
+    ctx.fillStyle = theme.hoverTextColor;
+    props.forEach(function(prop) {
+      ctx.textAlign = 'left';
+      ctx.fillText(prop.name, x + border, y + textSize);
+      ctx.textAlign = 'right';
+      ctx.fillText(prop.value, x + maxWidth - border, y + textSize);
+      y += textSize;
+    });
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -1761,7 +1769,7 @@ Editor.prototype.draw = function() {
   var hoverHitInfo = this.hoverHitInfo;
   if (hoverHitInfo) {
     renderer.beginDraw(model, ctx);
-    renderer.drawHoverText(hoverHitInfo.item, hoverHitInfo.p);
+    renderer.drawHoverInfo(hoverHitInfo.item, hoverHitInfo.p);
     renderer.endDraw();
   }
 }
