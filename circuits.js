@@ -1160,24 +1160,19 @@ let editingModel = (function() {
 let viewModel = (function() {
   let proto = {
     getItemRect: function (item) {
-      if (isWire(item))
+      if (!isElement(item))
         return;
-      let x = item.x, y = item.y, w, h;
-      switch (item.type) {
-        case 'element':
-          w = getMaster(item)[_width];
-          h = getMaster(item)[_height];
-          break;
-      }
-      return { x: x, y: y, w: w, h: h };
+      let master = getMaster(item);
+      return { x: item.x, y: item.y, w: master[_width], h: master[_height] };
     },
 
     getItemRects: function(items) {
-      let xMin = Number.POSITIVE_INFINITY, yMin = Number.POSITIVE_INFINITY,
+      let self = this,
+          xMin = Number.POSITIVE_INFINITY, yMin = Number.POSITIVE_INFINITY,
           xMax = -Number.POSITIVE_INFINITY, yMax = -Number.POSITIVE_INFINITY;
       for (let item of items) {
-        let rect = this.getItemRect(item);
-        if (!rect) continue;
+        if (!isElement(item)) continue;
+        let rect = self.getItemRect(item);
         xMin = Math.min(xMin, rect.x);
         yMin = Math.min(yMin, rect.y);
         xMax = Math.max(xMax, rect.x + rect.w);
@@ -1236,6 +1231,7 @@ function Renderer(theme) {
 
 Renderer.prototype.beginDraw = function(model, ctx) {
   this.model = model;
+  this.viewModel = model.viewModel || viewModel.extend(model);
   this.ctx = ctx;
   ctx.save();
   ctx.font = this.theme.font;
@@ -1245,39 +1241,6 @@ Renderer.prototype.endDraw = function() {
   this.ctx.restore();
   this.model = null;
   this.ctx = null;
-}
-
-// TODO factor out common code from viewModel.
-Renderer.prototype.getItemRect = function(item) {
-  let x = item.x, y = item.y, w, h;
-  // TODO update
-  switch (item.type) {
-    case 'element':
-      w = getMaster(item)[_width];
-      h = getMaster(item)[_height];
-      break;
-  }
-  return { x: x, y: y, w: w, h: h };
-}
-
-Renderer.prototype.pinToPoint = function(item, pin, input) {
-  let rect = this.getItemRect(item),
-      x = rect.x, y = rect.y, w = rect.w, h = rect.h;
-  // Element.
-  if (input) {
-    pin = getMaster(item).inputs[pin];
-  } else {
-    pin = getMaster(item).outputs[pin];
-    x += w;
-  }
-  y += pin[_y] + pin[_height] / 2;
-
-  return {
-    x: x,
-    y: y,
-    nx: input ? -1 : 1,
-    ny: 0,
-  }
 }
 
 function drawValue(renderer, x, y, type) {
@@ -1351,6 +1314,7 @@ Renderer.prototype.layoutMaster = function(master) {
     wOut = Math.max(wOut, w);
   }
 
+  // TODO use viewModel to set
   master[_width] = Math.max(width, wIn + 2 * spacing + wOut, minMasterWidth);
   master[_height] = Math.max(yIn, yOut, minMasterHeight) + spacing / 2;
   return master;
@@ -1368,7 +1332,7 @@ Renderer.prototype.layoutPin = function(pin) {
 }
 
 Renderer.prototype.drawMaster = function(master, x, y, mode) {
-  var self = this, ctx = this.ctx, theme = this.theme,
+  let self = this, ctx = this.ctx, theme = this.theme,
       width = master[_width], height = master[_height];
   switch (mode) {
     case normalMode:
@@ -1429,11 +1393,11 @@ Renderer.prototype.drawPin = function(pin, x, y, mode) {
 }
 
 Renderer.prototype.hitTestElement = function(element, p, tol, mode) {
-  var rect = this.getItemRect(element),
+  let rect = this.viewModel.getItemRect(element),
       x = rect.x, y = rect.y, width = rect.w, height = rect.h,
       hitInfo = diagrams.hitTestRect(x, y, width, height, p, tol);
   if (hitInfo) {
-    var master = getMaster(element),
+    let master = getMaster(element),
         inputs = master.inputs, outputs = master.outputs,
         self = this;
     inputs.forEach(function(input, i) {
@@ -1450,17 +1414,18 @@ Renderer.prototype.hitTestElement = function(element, p, tol, mode) {
 }
 
 Renderer.prototype.layoutWire = function(wire) {
-  let referencingModel = this.model.referencingModel,
+  let viewModel = this.viewModel,
+      referencingModel = this.model.referencingModel,
       src = referencingModel.getReference(wire, 'srcId'),
       dst = referencingModel.getReference(wire, 'dstId'),
       p1 = wire[_p1], p2 = wire[_p2];
   let srcFunction, dstFunction;
   if (src) {
-    p1 = this.pinToPoint(src, wire.srcPin, false);
+    p1 = viewModel.pinToPoint(src, wire.srcPin, false);
     srcFunction = isFunctionType(getMaster(src).outputs[wire.srcPin].type);
   }
   if (dst) {
-    p2 = this.pinToPoint(dst, wire.dstPin, true);
+    p2 = viewModel.pinToPoint(dst, wire.dstPin, true);
     dstFunction = isFunctionType(getMaster(dst).inputs[wire.dstPin].type);
   }
   wire[_background] = srcFunction || dstFunction;
@@ -1468,7 +1433,7 @@ Renderer.prototype.layoutWire = function(wire) {
 }
 
 Renderer.prototype.drawWire = function(wire, mode) {
-  var ctx = this.ctx;
+  let ctx = this.ctx;
   diagrams.bezierEdgePath(wire[_bezier], ctx, 0);
   switch (mode) {
     case normalMode:
@@ -1500,7 +1465,7 @@ Renderer.prototype.draw = function(item, mode) {
   let rect;
   switch (item.type) {
     case 'element':
-      rect = this.getItemRect(item);
+      rect = this.viewModel.getItemRect(item);
       if (item.state == 'palette' && mode == normalMode)
         mode = paletteMode;
       this.drawMaster(getMaster(item), rect.x, rect.y, mode);
@@ -1527,15 +1492,16 @@ Renderer.prototype.hitTest = function(item, p, tol, mode) {
 }
 
 Renderer.prototype.drawHoverInfo = function(item, p) {
-  let self = this, theme = this.theme;
+  let self = this, theme = this.theme,
+      x = p.x, y = p.y;
   ctx.fillStyle = theme.hoverColor;
   if (isGroup(item)) {
-    let viewModel = this.model.viewModel;
+    let viewModel = this.viewModel;
     item.items.forEach(function(item) {
       self.layout(item);
     });
     let r = viewModel.getItemRects(item.items);
-    ctx.translate(p.x - r.x, p.y - r.y);
+    ctx.translate(x - r.x, y - r.y);
     let border = 4;
     ctx.fillRect(r.x - border, r.y - border, r.width + 2 * border, r.height + 2 * border);
     ctx.fillStyle = theme.hoverTextColor;
@@ -1546,13 +1512,12 @@ Renderer.prototype.drawHoverInfo = function(item, p) {
     // Just list properties as text.
     let props = [];
     this.model.dataModel.visitProperties(item, function(item, attr) {
-      var value = item[attr];
+      let value = item[attr];
       if (Array.isArray(value))
         return;
       props.push({ name: attr, value: value });
     });
-    var x = p.x, y = p.y,
-        textSize = theme.fontSize, gap = 16, border = 4,
+    let textSize = theme.fontSize, gap = 16, border = 4,
         height = textSize * props.length + 2 * border,
         maxWidth = diagrams.measureNameValuePairs(props, gap, ctx) + 2 * border;
     ctx.fillRect(x, y, maxWidth, height);
