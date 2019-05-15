@@ -1166,13 +1166,17 @@ let viewModel = (function() {
       return { x: item.x, y: item.y, w: master[_width], h: master[_height] };
     },
 
+    setItemRect: function (item, x, y, width, height) {
+      item[_width] = width;
+      item[_height] = height;
+    },
+
     getItemRects: function(items) {
-      let self = this,
-          xMin = Number.POSITIVE_INFINITY, yMin = Number.POSITIVE_INFINITY,
+      let xMin = Number.POSITIVE_INFINITY, yMin = Number.POSITIVE_INFINITY,
           xMax = -Number.POSITIVE_INFINITY, yMax = -Number.POSITIVE_INFINITY;
       for (let item of items) {
         if (!isElement(item)) continue;
-        let rect = self.getItemRect(item);
+        let rect = this.getItemRect(item);
         xMin = Math.min(xMin, rect.x);
         yMin = Math.min(yMin, rect.y);
         xMax = Math.max(xMax, rect.x + rect.w);
@@ -1314,9 +1318,11 @@ Renderer.prototype.layoutMaster = function(master) {
     wOut = Math.max(wOut, w);
   }
 
-  // TODO use viewModel to set
-  master[_width] = Math.max(width, wIn + 2 * spacing + wOut, minMasterWidth);
-  master[_height] = Math.max(yIn, yOut, minMasterHeight) + spacing / 2;
+  this.viewModel.setItemRect(
+    master,
+    0, 0,
+    Math.max(width, wIn + 2 * spacing + wOut, minMasterWidth),
+    Math.max(yIn, yOut, minMasterHeight) + spacing / 2)
   return master;
 }
 

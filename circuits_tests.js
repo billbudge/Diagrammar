@@ -62,6 +62,12 @@ function newOutputJunction(type) {
   return element;
 }
 
+function newApplyJunction() {
+  let element = newTypedElement('[*,]');
+  element.elementType = 'apply';
+  return element;
+}
+
 function newLiteral(value) {
   let element = newTypedElement('[,v(' + value + ')]');
   element.elementType = 'literal';
@@ -462,5 +468,21 @@ test("circuits.editingModel.wireConsistency", function() {
   test.deleteItem(elem1);
   test.makeConsistent();
   ok(!items.includes(wire));
+});
+
+test("circuits.editingModel.lambdas", function() {
+  let test = newTestEditingModel(),
+      circuit = test.model,
+      items = circuit.root.items,
+      elem = addElement(test, newTypedElement('[,[v,v]]')),
+      apply = addElement(test, newApplyJunction()),
+      wire = addWire(test, elem, 0, apply, 0),
+      graphInfo = test.collectGraphInfo(items);
+
+  test.setLambda(wire, graphInfo);
+  deepEqual(apply.master, '[v*,v]');
+
+  test.resetLambda(apply, graphInfo);
+  deepEqual(apply.master, '[*(λ),]');
 });
 
