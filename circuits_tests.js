@@ -152,24 +152,24 @@ test("circuits.masteringModel.splitType", function() {
     tuple => deepEqual(test.splitType(tuple.type), tuple.split));
 });
 
-test("circuits.masteringModel.joinTypeWithInput", function() {
+test("circuits.masteringModel.addInputToType", function() {
   let test = newTestMasteringModel();
   let tuples = [
     { type: '[,]', innerType: '*(x)', joined: '[*(x),]' },
     { type: '[vv,v](+)', innerType: '*(x)', joined: '[vv*(x),v](+)' },
   ];
   tuples.forEach(
-    tuple => deepEqual(test.joinTypeWithInput(tuple.type, tuple.innerType), tuple.joined));
+    tuple => deepEqual(test.addInputToType(tuple.type, tuple.innerType), tuple.joined));
 });
 
-test("circuits.masteringModel.joinTypeWithOutput", function() {
+test("circuits.masteringModel.addOutputToType", function() {
   let test = newTestMasteringModel();
   let tuples = [
     { type: '[,]', innerType: '*(x)', joined: '[,*(x)]' },
     { type: '[vv,v](+)', innerType: '*(x)', joined: '[vv,v*(x)](+)' },
   ];
   tuples.forEach(
-    tuple => deepEqual(test.joinTypeWithOutput(tuple.type, tuple.innerType), tuple.joined));
+    tuple => deepEqual(test.addOutputToType(tuple.type, tuple.innerType), tuple.joined));
 });
 
 test("circuits.editingAndMastering", function() {
@@ -437,6 +437,22 @@ test("circuits.editingModel.makeGroup", function() {
   deepEqual(groupElement.master, '[vv(f),v]');
   ok(!items.includes(elem) && !items.includes(output) &&
      !items.includes(wire3));
+  ok(items.length === 4);
+});
+
+test("circuits.editingModel.makeVoidGroup", function() {
+  let test = newTestEditingModel(),
+      circuit = test.model,
+      items = circuit.root.items,
+      elem = addElement(test, newTypedElement('[vv,v]')),
+      input1 = addElement(test, newInputJunction('[*,v]')),
+      input2 = addElement(test, newInputJunction('[*,v(f)]')),
+      wire1 = addWire(test, input1, 0, elem, 0),
+      wire2 = addWire(test, input2, 0, elem, 1);
+  let groupElement = test.makeGroup([elem]);
+  // make sure it has a single 'use' output.
+  deepEqual(groupElement.master, '[vv(f),*]');
+  ok(!items.includes(elem) && items.includes(wire1) && items.includes(wire2));
   ok(items.length === 4);
 });
 

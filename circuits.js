@@ -201,12 +201,16 @@ let masteringModel = (function() {
       }
     },
 
-    joinTypeWithInput: function(type, inputType) {
+    hasOutput: function(type) {
+      return !type.endsWith(',]');
+    },
+
+    addInputToType: function(type, inputType) {
       let i = this.splitType(type);
       return type.substring(0, i) + inputType + type.substring(i);
     },
 
-    joinTypeWithOutput: function(type, outputType) {
+    addOutputToType: function(type, outputType) {
       let i = type.lastIndexOf(']');
       return type.substring(0, i) + outputType + type.substring(i);
     },
@@ -646,7 +650,7 @@ let editingModel = (function() {
       });
       type += ']';
       closedType += ']';
-      type = masteringModel.joinTypeWithOutput(type, closedType);
+      type = masteringModel.addOutputToType(type, closedType);
 
       newElement.master = type;
       dataModel.initialize(newElement);
@@ -693,7 +697,7 @@ let editingModel = (function() {
       });
 
       let innerType = masteringModel.unlabelType(element.master),
-          type = masteringModel.joinTypeWithInput(innerType, innerType);
+          type = masteringModel.addInputToType(innerType, innerType);
       newElement.master = type;
       dataModel.initialize(newElement);
       return newElement;
@@ -719,7 +723,7 @@ let editingModel = (function() {
           self.openFunction(element, incomingWires, outgoingWireArrays);
 
         selectionModel.remove(element);
-        selectionModel.add(newElement)
+        selectionModel.add(newElement);
 
         self.deleteItem(element);
         self.addItem(newElement);
@@ -836,6 +840,12 @@ let editingModel = (function() {
           observableModel.changeValue(wire, 'srcPin', index);
         }
       });
+      master += ']';
+      if (!masteringModel.hasOutput(master)) {
+        // Add a 'use' pin so group can be evaluated.
+        // Like 'return void'.
+        master = masteringModel.addOutputToType(master, '*');
+      }
 
       // Compute wildcard pass throughs.
       let passThroughs = new Set();
@@ -866,7 +876,6 @@ let editingModel = (function() {
       if (passThroughs.size) {
         groupElement.passThroughs = Array.from(passThroughs);
       }
-      master += ']';
 
       groupElement.items = groupItems;
       groupItems.forEach(item => self.deleteItem(item));
@@ -940,7 +949,7 @@ let editingModel = (function() {
       // If srcPin is a function, set the lambda to the input function type,
       // plus an untyped input.
       if (master) {
-        let newMaster = self.model.masteringModel.joinTypeWithInput(master.type, '*');
+        let newMaster = self.model.masteringModel.addInputToType(master.type, '*');
         observableModel.changeValue(wire, 'dstPin', master.inputs.length);
         observableModel.changeValue(lambda, 'master', newMaster);
       }
@@ -1098,7 +1107,7 @@ let editingModel = (function() {
             self.deleteItem(wire);
             self.resetLambda(element, graphInfo);
           } else {
-            let type = masteringModel.joinTypeWithInput(srcType, '*');
+            let type = masteringModel.addInputToType(srcType, '*');
             if (element.master != type) {
               self.resetLambda(element, graphInfo);
               self.setLambda(wire);
