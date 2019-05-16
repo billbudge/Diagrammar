@@ -896,6 +896,7 @@ let editingModel = (function() {
       // Create the new group element.
       let groupElement = {
         type: 'element',
+        elementType: 'proto',
         x: extents.x + extents.width / 2,
         y: extents.y + extents.height / 2,
       };
@@ -1231,9 +1232,8 @@ let viewModel = (function() {
 //------------------------------------------------------------------------------
 
 let normalMode = 1,
-    paletteMode = 2,
-    highlightMode = 3,
-    hotTrackMode = 4;
+    highlightMode = 2,
+    hotTrackMode = 3;
 
 function Renderer(theme) {
   this.theme = theme || diagrams.theme.create();
@@ -1254,19 +1254,6 @@ Renderer.prototype.endDraw = function() {
   this.ctx.restore();
   this.model = null;
   this.ctx = null;
-}
-
-function drawValue(renderer, x, y, type) {
-  let ctx = renderer.ctx, r = renderer.knobbyRadius;
-  ctx.lineWidth = 0.5;
-  if (type == 'v') {
-    let d = 2 * r;
-    ctx.strokeRect(x, y, d, d);
-  } else {
-    ctx.beginPath();
-    ctx.arc(x + r, y + r, r, 0, Math.PI * 2, true);
-    ctx.stroke();
-  }
 }
 
 const spacing = 6;
@@ -1330,8 +1317,8 @@ Renderer.prototype.layoutMaster = function(master) {
   this.viewModel.setItemRect(
     master,
     0, 0,
-    Math.max(width, wIn + 2 * spacing + wOut, minMasterWidth),
-    Math.max(yIn, yOut, minMasterHeight) + spacing / 2)
+    Math.round(Math.max(width, wIn + 2 * spacing + wOut, minMasterWidth)),
+    Math.round(Math.max(yIn, yOut, minMasterHeight) + spacing / 2));
   return master;
 }
 
@@ -1346,64 +1333,122 @@ Renderer.prototype.layoutPin = function(pin) {
   }
 }
 
-Renderer.prototype.drawMaster = function(master, x, y, mode) {
+Renderer.prototype.drawMaster = function(master, x, y) {
   let self = this, ctx = this.ctx, theme = this.theme,
+      textSize = theme.fontSize, name = master.name,
+      inputs = master.inputs, outputs = master.outputs,
       width = master[_width], height = master[_height];
+  ctx.lineWidth = 0.5;
+  ctx.fillStyle = theme.textColor;
+  ctx.textBaseline = 'bottom';
+  if (name) {
+    ctx.textAlign = 'center';
+    ctx.fillText(name, x + width / 2, y + textSize + spacing / 2);
+  }
+  inputs.forEach(function(pin, i) {
+    let name = pin.name;
+    self.drawPin(pin, x, y + pin[_y]);
+    if (name) {
+      ctx.textAlign = 'left';
+      ctx.fillText(name, x + pin[_width] + spacing, y + pin[_baseline]);
+    }
+  });
+  outputs.forEach(function(pin) {
+    let name = pin.name, left = x + width - pin[_width];
+    self.drawPin(pin, left, y + pin[_y]);
+    if (name) {
+      ctx.textAlign = 'right';
+      ctx.fillText(name, left - spacing, y + pin[_baseline]);
+    }
+  });
+}
+
+Renderer.prototype.drawPin = function(pin, x, y) {
+  ctx.strokeStyle = theme.strokeColor;
+  if (pin.type == 'v' || pin.type == '*') {
+    let r = this.knobbyRadius;
+    ctx.beginPath();
+    if (pin.type == 'v') {
+      let d = 2 * r;
+      ctx.rect(x, y, d, d);
+    } else {
+      ctx.arc(x + r, y + r, r, 0, Math.PI * 2, true);
+    }
+    ctx.stroke();
+  } else {
+    let master = getMaster(pin),
+        width = master[_width], height = master[_height];
+    this.ctx.scale(shrink, shrink);
+    x *= inv_shrink; y *= inv_shrink;
+    ctx.strokeRect(x, y, width, height);
+    this.drawMaster(master, x, y);
+    this.ctx.scale(inv_shrink, inv_shrink);
+  }
+}
+
+Renderer.prototype.drawElement = function(element, mode) {
+  let ctx = this.ctx, theme = this.theme,
+      master = getMaster(element),
+      x = element.x, y = element.y,
+      width = master[_width], height = master[_height],
+      right = x + width, bottom = y + height;
+  const indent = 6;
+  switch (element.elementType) {
+    case 'input':
+      ctx.beginPath();
+      ctx.moveTo(x, y); ctx.lineTo(right, y);
+      ctx.lineTo(right, y + height); ctx.lineTo(x, y + height);
+      ctx.lineTo(x + indent, y + height / 2); ctx.lineTo(x, y);
+      break;
+    case 'output':
+      ctx.beginPath();
+      ctx.moveTo(x, y); ctx.lineTo(right - indent, y);
+      ctx.lineTo(right, y + height / 2); ctx.lineTo(right - indent, y + height);
+      ctx.lineTo(x, y + height); ctx.lineTo(x, y);
+      break;
+    case 'literal':
+      diagrams.roundRectPath(x, y, width, height, indent, ctx);
+      break;
+    case 'lambda':
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + width, y);
+      ctx.lineTo(x + width, y + height);
+      ctx.lineTo(x + indent, y + height);
+      ctx.quadraticCurveTo(x, y + height, x, y + height - indent);
+      ctx.lineTo(x, y);
+      break;
+    default:
+      ctx.beginPath();
+      ctx.rect(x, y, width, height);
+      break;
+  }
   switch (mode) {
     case normalMode:
-    case paletteMode:
-      let textSize = theme.fontSize, name = master.name,
-          inputs = master.inputs, outputs = master.outputs;
       ctx.fillStyle = theme.bgColor;
-      ctx.fillStyle = mode == paletteMode ? theme.altBgColor : theme.bgColor;
-      ctx.fillRect(x, y, width, height);
+      ctx.fillStyle = element.state == 'palette' ? theme.altBgColor : theme.bgColor;
+      ctx.fill();
       ctx.strokeStyle = theme.strokeColor;
       ctx.lineWidth = 0.5;
-      ctx.strokeRect(x, y, width, height);
-      ctx.fillStyle = theme.textColor;
-      ctx.textBaseline = 'bottom';
-      if (name) {
-        ctx.textAlign = 'center';
-        ctx.fillText(name, x + width / 2, y + textSize + spacing / 2);
+      if (element.elementType == 'proto') {
+        ctx.setLineDash([5,1]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else {
+        ctx.stroke();
       }
-      inputs.forEach(function(pin, i) {
-        let name = pin.name;
-        self.drawPin(pin, x, y + pin[_y], mode);
-        if (name) {
-          ctx.textAlign = 'left';
-          ctx.fillText(name, x + pin[_width] + spacing, y + pin[_baseline]);
-        }
-      });
-      outputs.forEach(function(pin) {
-        let name = pin.name, left = x + width - pin[_width];
-        self.drawPin(pin, left, y + pin[_y], mode);
-        if (name) {
-          ctx.textAlign = 'right';
-          ctx.fillText(name, left - spacing, y + pin[_baseline]);
-        }
-      });
+      this.drawMaster(master, x, y);
       break;
     case highlightMode:
       ctx.strokeStyle = theme.highlightColor;
       ctx.lineWidth = 2;
-      ctx.strokeRect(x, y, width, height);
+      ctx.stroke();
       break;
     case hotTrackMode:
       ctx.strokeStyle = theme.hotTrackColor;
       ctx.lineWidth = 2;
-      ctx.strokeRect(x, y, width, height);
+      ctx.stroke();
       break;
-  }
-}
-
-Renderer.prototype.drawPin = function(pin, x, y, mode) {
-  if (pin.type == 'v' || pin.type == '*') {
-    drawValue(this, x, y, pin.type);
-  } else {
-    let master = getMaster(pin);
-    this.ctx.scale(shrink, shrink);
-    this.drawMaster(master, inv_shrink * x, inv_shrink * y, mode);
-    this.ctx.scale(inv_shrink, inv_shrink);
   }
 }
 
@@ -1477,18 +1522,10 @@ Renderer.prototype.layout = function(item) {
 }
 
 Renderer.prototype.draw = function(item, mode) {
-  let rect;
-  switch (item.type) {
-    case 'element':
-      rect = this.viewModel.getItemRect(item);
-      if (item.state == 'palette' && mode == normalMode)
-        mode = paletteMode;
-      this.drawMaster(getMaster(item), rect.x, rect.y, mode);
-      break;
-    case 'wire':
-      this.drawWire(item, mode);
-      break;
-  }
+  if (isElement(item))
+    this.drawElement(item, mode);
+  else
+    this.drawWire(item, mode);
 }
 
 Renderer.prototype.hitTest = function(item, p, tol, mode) {
@@ -2180,7 +2217,6 @@ return {
   viewModel: viewModel,
 
   normalMode: normalMode,
-  paletteMode: paletteMode,
   highlightMode: highlightMode,
   hotTrackMode: hotTrackMode,
 
