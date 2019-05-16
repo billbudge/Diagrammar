@@ -29,8 +29,8 @@ function isClosed(item) {
   return item.elementType == 'closed';
 }
 
-function isOpened(item) {
-  return item.elementType == 'opened';
+function isAbstract(item) {
+  return item.elementType == 'abstract';
 }
 
 function isInput(item) {
@@ -45,6 +45,10 @@ function isLambda(item) {
   return item.elementType == 'lambda';
 }
 
+function isProto(item) {
+  return item.elementType == 'proto';
+}
+
 function isGroup(item) {
   return isElement(item) && item.items;
 }
@@ -54,7 +58,7 @@ function isCircuit(item) {
 }
 
 function isInputPinLabeled(item) {
-  return isOutput(item) || isOpened(item) || isLambda(item);
+  return isOutput(item) || isAbstract(item) || isLambda(item);
 }
 
 function isOutputPinLabeled(item) {
@@ -667,7 +671,7 @@ let editingModel = (function() {
       let newElement = {
         type: 'element',
         element: element,
-        elementType: 'opened',
+        elementType: 'abstract',
         x: element.x,
         y: element.y,
       };
@@ -738,6 +742,7 @@ let editingModel = (function() {
           viewModel = model.viewModel;
 
       let graphInfo = this.collectGraphInfo(elements),
+          entireGraphInfo = this.collectGraphInfo(this.diagram.items),
           groupItems = elements.concat(graphInfo.interiorWires),
           extents = viewModel.getItemRects(graphInfo.elementSet),
           inputs = [], outputs = [];
@@ -782,8 +787,12 @@ let editingModel = (function() {
           srcIndices[index] = pinIndex++;
           let srcPin = srcPins[index],
               srcType = self.getPinType(srcPin);
-          if (srcType.startsWith('*'))
-            srcType = self.findDstType(wire, graphInfo) + srcType.substring(1);
+          if (srcType.startsWith('*')) {
+            if (isInput(src))
+              srcType = self.findDstType(wire, entireGraphInfo) + srcType.substring(1);
+            else
+              srcType = self.findSrcType(wire, entireGraphInfo);
+          }
           master += srcType;
         }
         return srcIndices[index];
@@ -828,7 +837,7 @@ let editingModel = (function() {
         } else {
           // If this is the first instance of the source...
           if (index == pinIndex - 1) {
-            // Add an input junction to represent the source.
+            // Add an output junction to represent the source.
             let element = self.getWireSrc(wire),
                 pin = wire.srcPin,
                 connection = self.connectOutput(element, pin);
@@ -842,8 +851,7 @@ let editingModel = (function() {
       });
       master += ']';
       if (!masteringModel.hasOutput(master)) {
-        // Add a 'use' pin so group can be evaluated.
-        // Like 'return void'.
+        // Add a 'use' pin so group can be evaluated. Like 'return void'.
         master = masteringModel.addOutputToType(master, '*');
       }
 
@@ -891,6 +899,7 @@ let editingModel = (function() {
           viewModel = model.viewModel;
 
       let graphInfo = this.collectGraphInfo(elements),
+          entireGraphInfo = this.collectGraphInfo(this.diagram.items),
           extents = viewModel.getItemRects(graphInfo.elementSet),
           inputs = [], outputs = [];
       // Create the new group element.
@@ -922,7 +931,7 @@ let editingModel = (function() {
         let wire = graphInfo.outputMap.get(element)[0][0],
             type = self.getPinType(getMaster(element).outputs[0]);
         if (wire)
-          type = type.replace('*', self.findDstType(wire, graphInfo));
+          type = type.replace('*', self.findDstType(wire, entireGraphInfo));
         master += type;
       });
       master += ',';
@@ -930,7 +939,7 @@ let editingModel = (function() {
         let wire = graphInfo.inputMap.get(element)[0],
             type = self.getPinType(getMaster(element).inputs[0]);
         if (wire)
-          type = type.replace('*', self.findSrcType(wire, graphInfo));
+          type = type.replace('*', self.findSrcType(wire, entireGraphInfo));
         master += type;
       });
       master += ']';
@@ -944,15 +953,15 @@ let editingModel = (function() {
           observableModel = model.observableModel,
           srcItem = this.getWireSrc(wire),
           srcPin = getMaster(srcItem).outputs[wire.srcPin],
-          master = getMaster(srcPin),
+          fnType = self.findSrcType(wire, graphInfo),
           lambda = this.getWireDst(wire),
           lambaPin = getMaster(lambda).inputs[wire.dstPin];
-      // If srcPin is a function, set the lambda to the input function type,
-      // plus an untyped input.
-      if (master) {
-        let newMaster = self.model.masteringModel.addInputToType(master.type, '*');
-        observableModel.changeValue(wire, 'dstPin', master.inputs.length);
+      // If type is a function, set the lambda to the function type,
+      // plus the untyped fn input.
+      if (isFunctionType(fnType)) {
+        let newMaster = self.model.masteringModel.addInputToType(fnType, '*');
         observableModel.changeValue(lambda, 'master', newMaster);
+        observableModel.changeValue(wire, 'dstPin', getMaster(lambda).inputs.length - 1);
       }
     },
 
@@ -1111,7 +1120,7 @@ let editingModel = (function() {
             let type = masteringModel.addInputToType(srcType, '*');
             if (element.master != type) {
               self.resetLambda(element, graphInfo);
-              self.setLambda(wire);
+              self.setLambda(wire, graphInfo);
             }
           }
         } else {
@@ -1395,28 +1404,14 @@ Renderer.prototype.drawElement = function(element, mode) {
   const indent = 6;
   switch (element.elementType) {
     case 'input':
-      ctx.beginPath();
-      ctx.moveTo(x, y); ctx.lineTo(right, y);
-      ctx.lineTo(right, y + height); ctx.lineTo(x, y + height);
-      ctx.lineTo(x + indent, y + height / 2); ctx.lineTo(x, y);
+      diagrams.inFlagPath(x, y, width, height, indent, ctx);
       break;
     case 'output':
-      ctx.beginPath();
-      ctx.moveTo(x, y); ctx.lineTo(right - indent, y);
-      ctx.lineTo(right, y + height / 2); ctx.lineTo(right - indent, y + height);
-      ctx.lineTo(x, y + height); ctx.lineTo(x, y);
+      diagrams.outFlagPath(x, y, width, height, indent, ctx);
       break;
-    case 'literal':
-      diagrams.roundRectPath(x, y, width, height, indent, ctx);
-      break;
+    case 'proto':
     case 'lambda':
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + width, y);
-      ctx.lineTo(x + width, y + height);
-      ctx.lineTo(x + indent, y + height);
-      ctx.quadraticCurveTo(x, y + height, x, y + height - indent);
-      ctx.lineTo(x, y);
+      diagrams.roundRectPath(x, y, width, height, indent, ctx);
       break;
     default:
       ctx.beginPath();
@@ -1425,13 +1420,13 @@ Renderer.prototype.drawElement = function(element, mode) {
   }
   switch (mode) {
     case normalMode:
-      ctx.fillStyle = theme.bgColor;
       ctx.fillStyle = element.state == 'palette' ? theme.altBgColor : theme.bgColor;
       ctx.fill();
       ctx.strokeStyle = theme.strokeColor;
       ctx.lineWidth = 0.5;
-      if (element.elementType == 'proto') {
-        ctx.setLineDash([5,1]);
+      let dashed = isProto(element);
+      if (dashed) {
+        ctx.setLineDash([6,3]);
         ctx.stroke();
         ctx.setLineDash([]);
       } else {
@@ -1479,16 +1474,21 @@ Renderer.prototype.layoutWire = function(wire) {
       src = referencingModel.getReference(wire, 'srcId'),
       dst = referencingModel.getReference(wire, 'dstId'),
       p1 = wire[_p1], p2 = wire[_p2];
-  let srcFunction, dstFunction;
+  let srcDim, dstDim;
   if (src) {
     p1 = viewModel.pinToPoint(src, wire.srcPin, false);
-    srcFunction = isFunctionType(getMaster(src).outputs[wire.srcPin].type);
+    let master = getMaster(src),
+        pin = master.outputs[wire.srcPin];
+    srcDim = isFunctionType(pin.type);
   }
   if (dst) {
     p2 = viewModel.pinToPoint(dst, wire.dstPin, true);
-    dstFunction = isFunctionType(getMaster(dst).inputs[wire.dstPin].type);
+    let master = getMaster(dst),
+        pin = master.inputs[wire.dstPin];
+    dstDim = isFunctionType(pin.type) ||
+             (isLambda(dst) && wire.dstPin == master.inputs.length - 1);
   }
-  wire[_background] = srcFunction || dstFunction;
+  wire[_background] = srcDim || dstDim;
   wire[_bezier] = diagrams.getEdgeBezier(p1, p2);
 }
 

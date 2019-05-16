@@ -1,27 +1,28 @@
 
 // Diagrams module.
 
-var diagrams = (function() {
+let diagrams = (function() {
 
 //------------------------------------------------------------------------------
 
 // Rendering utilities.
 
-function roundRectPath(x, y, w, h, r, ctx) {
+function roundRectPath(x, y, width, height, r, ctx) {
+  let right = x + width, bottom = y + height;
   ctx.beginPath();
   ctx.moveTo(x, y + r);
-  ctx.lineTo(x, y + h - r);
-  ctx.quadraticCurveTo(x, y + h, x + r, y + h);
-  ctx.lineTo(x + w - r, y + h);
-  ctx.quadraticCurveTo(x + w, y + h, x + w, y + h - r);
-  ctx.lineTo(x + w, y + r);
-  ctx.quadraticCurveTo(x + w, y, x + w - r, y);
+  ctx.lineTo(x, bottom - r);
+  ctx.quadraticCurveTo(x, bottom, x + r, bottom);
+  ctx.lineTo(right - r, bottom);
+  ctx.quadraticCurveTo(right, bottom, right, bottom - r);
+  ctx.lineTo(right, y + r);
+  ctx.quadraticCurveTo(right, y, right - r, y);
   ctx.lineTo(x + r, y);
   ctx.quadraticCurveTo(x, y, x, y + r);
 }
 
 function rectParamToPoint(left, top, width, height, t) {
-  var right = left + width, bottom = top + height,
+  let right = left + width, bottom = top + height,
       x0, y0, nx, ny, dx = 0, dy = 0;
   if (t < 2) {  // + side
     if (t < 1) {  // right
@@ -64,8 +65,8 @@ function rectParamToPoint(left, top, width, height, t) {
 }
 
 function circleParamToPoint(cx, cy, r, t) {
-  var radians = ((t - 0.5) / 4) * 2 * Math.PI,
-      nx = Math.cos(radians), ny = Math.sin(radians);
+  let rads = ((t - 0.5) / 4) * 2 * Math.PI,
+      nx = Math.cos(rads), ny = Math.sin(rads);
   return { x: cx + nx * r,
            y: cy + ny * r,
            nx: nx,
@@ -74,7 +75,7 @@ function circleParamToPoint(cx, cy, r, t) {
 }
 
 function roundRectParamToPoint(left, top, width, height, r, t) {
-  var right = left + width, bottom = top + height,
+  let right = left + width, bottom = top + height,
       wr = r / width, hr = r / height, omwr = 1 - wr, omhr = 1 - hr,
       tc;
   if (t < 2) {  // + side
@@ -116,14 +117,14 @@ function circlePointToParam(cx, cy, p) {
 
 function rectPointToParam(left, top, width, height, p) {
   // translate problem to one with origin at center of rect
-  var dx = width / 2, dy = height / 2,
+  let dx = width / 2, dy = height / 2,
       cx = left + dx, cy = top + dy,
       px = p.x - cx, py = p.y - cy;
 
   // rotate problem into quadrant 0
   // use "PerpDot" product to determine relative orientation
   // (Graphics Gems IV, page 138)
-  var result, temp;
+  let result, temp;
   if (dy * px + dx * py > 0) {  // quadrant 0 or 1
     if (-dy * px + dx * py < 0) { // quadrant 0
       result = 0;
@@ -144,7 +145,7 @@ function rectPointToParam(left, top, width, height, p) {
     }
   }
 
-  var y = dx * py / px;
+  let y = dx * py / px;
   result += (y + dy) / (dy * 2);
 
   return result;
@@ -155,13 +156,13 @@ function diskPath(x, y, r, ctx) {
   ctx.arc(x, y, r, 0, 360, false);
 }
 
-function getEdgePoint(x, y, w, h, t) {
-  geometry.rectParamToPoint(x, y, w, h, t);
+function getEdgePoint(x, y, width, height, t) {
+  geometry.rectParamToPoint(x, y, width, height, t);
 }
 
 // p1, p2 have x, y, nx, ny.
 function getEdgeBezier(p1, p2) {
-  var dx = p1.x - p2.x, dy = p1.y - p2.y,
+  let dx = p1.x - p2.x, dy = p1.y - p2.y,
       nx1 = p1.nx || 0, ny1 = p1.ny || 0, nx2 = p2.nx || 0, ny2 = p2.ny || 0,
       tanLength = Math.min(Math.sqrt(dx * dx + dy * dy), 64) * 0.5,
       // tanLength = (Math.abs(p2.x - p1.x) + Math.abs(p2.y - p1.y)) * 0.166,
@@ -171,7 +172,7 @@ function getEdgeBezier(p1, p2) {
 }
 
 function arrowPath(p, ctx, arrowSize) {
-  var cos45 = 0.866, sin45 = 0.500,
+  let cos45 = 0.866, sin45 = 0.500,
       nx = p.nx, ny = p.ny;
   ctx.moveTo(p.x + arrowSize * (nx * cos45 - ny * sin45),
              p.y + arrowSize * (nx * sin45 + ny * cos45));
@@ -189,7 +190,7 @@ function lineEdgePath(p1, p2, ctx, arrowSize) {
 }
 
 function bezierEdgePath(bezier, ctx, arrowSize) {
-  var p1 = bezier[0], c1 = bezier[1], c2 = bezier[2], p2 = bezier[3];
+  let p1 = bezier[0], c1 = bezier[1], c2 = bezier[2], p2 = bezier[3];
   ctx.beginPath();
   ctx.moveTo(p1.x, p1.y);
   ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, p2.x, p2.y);
@@ -197,12 +198,28 @@ function bezierEdgePath(bezier, ctx, arrowSize) {
     arrowPath(p2, ctx, arrowSize);
 }
 
+function inFlagPath(x, y, width, height, indent, ctx) {
+  let right = x + width, bottom = y + height;
+  ctx.beginPath();
+  ctx.moveTo(x, y); ctx.lineTo(right, y);
+  ctx.lineTo(right, y + height); ctx.lineTo(x, y + height);
+  ctx.lineTo(x + indent, y + height / 2); ctx.lineTo(x, y);
+}
+
+function outFlagPath(x, y, width, height, indent, ctx) {
+  let right = x + width, bottom = y + height;
+  ctx.beginPath();
+  ctx.moveTo(x, y); ctx.lineTo(right - indent, y);
+  ctx.lineTo(right, y + height / 2); ctx.lineTo(right - indent, y + height);
+  ctx.lineTo(x, y + height); ctx.lineTo(x, y);
+}
+
 function closedPath(points, ctx) {
   ctx.beginPath();
-  var length = points.length, pLast = points[length - 1];
+  let length = points.length, pLast = points[length - 1];
   ctx.moveTo(pLast.x, pLast.y);
-  for (var i = 0; i < length; i++) {
-    var pi = points[i];
+  for (let i = 0; i < length; i++) {
+    let pi = points[i];
     ctx.lineTo(pi.x, pi.y);
   }
 }
@@ -212,12 +229,12 @@ function hitPoint(x, y, p, tol) {
   return Math.abs(x - p.x) <= tol && Math.abs(y - p.y) <= tol;
 }
 
-function hitTestRect(x, y, w, h, p, tol) {
-  var right = x + w, bottom = y + h,
+function hitTestRect(x, y, width, height, p, tol) {
+  let right = x + width, bottom = y + height,
       px = p.x, py = p.y;
   if (px > x - tol && px < right + tol &&
       py > y - tol && py < bottom + tol) {
-    var hitTop = Math.abs(py - y) < tol,
+    let hitTop = Math.abs(py - y) < tol,
         hitLeft = Math.abs(px - x) < tol,
         hitBottom = Math.abs(py - bottom) < tol,
         hitRight = Math.abs(px - right) < tol,
@@ -234,11 +251,11 @@ function hitTestRect(x, y, w, h, p, tol) {
 }
 
 function hitTestDisk(x, y, r, p, tol) {
-  var dx = x - p.x, dy = y - p.y,
+  let dx = x - p.x, dy = y - p.y,
       dSquared = dx * dx + dy * dy,
       inner = Math.max(0, r - tol), outer = r + tol;
   if (dSquared < outer * outer) {
-    var border = dSquared > inner * inner;
+    let border = dSquared > inner * inner;
     return { interior: !border, border: border };
   }
 }
@@ -254,7 +271,7 @@ function hitTestLine(p1, p2, p, tol) {
 }
 
 function hitTestBezier(bezier, p, tol) {
-  var p1 = bezier[0], p2 = bezier[3];
+  let p1 = bezier[0], p2 = bezier[3];
   if (geometry.pointToPointDist(p1, p) < tol) {
     return { p1: true };
   } else if (geometry.pointToPointDist(p2, p) < tol) {
@@ -266,14 +283,13 @@ function hitTestBezier(bezier, p, tol) {
 
 function hitTestConvexHull(hull, p, tol) {
   if (geometry.pointInConvexHull(hull, p, tol)) {
-    var interior = geometry.pointInConvexHull(hull, p, -tol);
+    let interior = geometry.pointInConvexHull(hull, p, -tol);
       return { interior: interior, border: !interior };
   }
 }
 
 function resizeCanvas(canvas, ctx, width, height) {
-  var ctx = canvas.getContext('2d'),
-      devicePixelRatio = window.devicePixelRatio || 1,
+  let devicePixelRatio = window.devicePixelRatio || 1,
       backingStoreRatio = ctx.webkitBackingStorePixelRatio ||
                           ctx.mozBackingStorePixelRatio ||
                           ctx.msBackingStorePixelRatio ||
@@ -294,9 +310,9 @@ function resizeCanvas(canvas, ctx, width, height) {
 // justified, values are right justified, and gap is the minimum space between
 // name and value.
 function measureNameValuePairs(pairs, gap, ctx) {
-  var maxWidth = 0;
+  let maxWidth = 0;
   pairs.forEach(function(pair) {
-    var nameWidth = ctx.measureText(pair.name).width,
+    let nameWidth = ctx.measureText(pair.name).width,
         valueWidth = ctx.measureText(pair.value).width,
         width = nameWidth + gap + valueWidth;
     maxWidth = Math.max(maxWidth, width);
@@ -344,10 +360,10 @@ function CanvasController(canvas, ctx, theme) {
 }
 
 CanvasController.prototype.configure = function(layers) {
-  var controller = this, length = layers.length;
+  let controller = this, length = layers.length;
   this.layers = layers.slice(0);
-  for (var i = 0; i < length; i++) {
-    var layer = layers[i];
+  for (let i = 0; i < length; i++) {
+    let layer = layers[i];
     if (layer.initialize)
       layer.initialize(controller, i);
   }
@@ -358,7 +374,7 @@ CanvasController.prototype.configure = function(layers) {
 }
 
 CanvasController.prototype.setTransform = function(translation, scale) {
-  var tx = 0, ty = 0, sx = 1, sy = 1, sin = 0, cos = 1;
+  let tx = 0, ty = 0, sx = 1, sy = 1, sin = 0, cos = 1;
   if (translation) {
     tx = translation.x;
     ty = translation.y;
@@ -370,14 +386,14 @@ CanvasController.prototype.setTransform = function(translation, scale) {
     this.scale = scale;
   }
   this.transform = [sx, 0, 0, sy, tx, ty];
-  var ooSx = 1.0 / sx, ooSy = 1.0 / sy;
+  let ooSx = 1.0 / sx, ooSy = 1.0 / sy;
   this.inverseTransform = [ooSx, 0, 0, ooSy, -tx * ooSx, -ty * ooSy];
 
   this.cancelHover_();
 }
 
 CanvasController.prototype.applyTransform = function() {
-  var t = this.transform;
+  let t = this.transform;
   this.ctx.transform(t[0], t[1], t[2], t[3], t[4], t[5]);
 }
 
@@ -387,20 +403,20 @@ CanvasController.prototype.viewToCanvas = function(p) {
 
 // TODO make controller less mouse-centric.
 function getPointerPosition(e, canvas) {
-  var rect = canvas.getBoundingClientRect();
+  let rect = canvas.getBoundingClientRect();
   if (e.clientX !== undefined && e.clientY !== undefined) {
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   } else {
-    var touches = e.touches;
+    let touches = e.touches;
     if (touches && touches.length) {
-      var touch = touches[0];
+      let touch = touches[0];
       return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
     }
   }
 }
 
 CanvasController.prototype.onMouseDown = function(e) {
-  var self = this,
+  let self = this,
       mouse = this.mouse = this.click = getPointerPosition(e, this.canvas),
       alt = (e.button !== 0);
   this.layers.some(function(layer) {
@@ -416,10 +432,10 @@ CanvasController.prototype.onMouseDown = function(e) {
 }
 
 CanvasController.prototype.onMouseMove = function(e) {
-  var mouse = this.mouse = getPointerPosition(e, this.canvas),
+  let mouse = this.mouse = getPointerPosition(e, this.canvas),
       click = this.click;
   if (this.clickOwner) {
-    var dx = mouse.x - click.x,
+    let dx = mouse.x - click.x,
         dy = mouse.y - click.y;
     if (!this.isDragging) {
       this.isDragging = Math.abs(dx) >= this.dragThreshold ||
@@ -440,7 +456,7 @@ CanvasController.prototype.onMouseMove = function(e) {
 }
 
 CanvasController.prototype.onMouseUp = function(e) {
-  var mouse = this.mouse = getPointerPosition(e, this.canvas);
+  let mouse = this.mouse = getPointerPosition(e, this.canvas);
   if (this.isDragging) {
     this.isDragging = false;
     this.clickOwner.onEndDrag(mouse);
@@ -456,7 +472,7 @@ CanvasController.prototype.onMouseOut = function(e) {
 }
 
 CanvasController.prototype.onDoubleClick = function(e) {
-  var self = this,
+  let self = this,
       mouse = this.mouse = this.click = getPointerPosition(e, this.canvas),
       alt = (e.button !== 0),
       handler;
@@ -472,7 +488,7 @@ CanvasController.prototype.onDoubleClick = function(e) {
 }
 
 CanvasController.prototype.onKeyDown = function(e) {
-  var self = this;
+  let self = this;
   this.shiftKeyDown = e.shiftKey;
   this.cmdKeyDown = e.ctrlKey || e.metaKey;
   this.layers.some(function(layer) {
@@ -492,7 +508,7 @@ CanvasController.prototype.onKeyDown = function(e) {
 CanvasController.prototype.onKeyUp = function(e) {
   this.shiftKeyDown = e.shiftKey;
   this.cmdKeyDown = e.ctrlKey || e.metaKey;
-  var keyOwner = this.keyOwner;
+  let keyOwner = this.keyOwner;
   if (keyOwner) {
     if (keyOwner.onKeyUp)
       keyOwner.onKeyUp(e);
@@ -502,7 +518,7 @@ CanvasController.prototype.onKeyUp = function(e) {
 }
 
 CanvasController.prototype.startHover_ = function() {
-  var self = this;
+  let self = this;
   if (this.hovering_)
     this.cancelHover_();
   this.hovering_ = window.setTimeout(function() {
@@ -531,12 +547,12 @@ CanvasController.prototype.cancelHover_ = function() {
 }
 
 CanvasController.prototype.draw = function() {
-  var canvas = this.canvas, ctx = this.ctx,
+  let canvas = this.canvas, ctx = this.ctx,
       layers = this.layers, length = layers.length,
       t = this.transform_;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  for (var i = length - 1; i >= 0; i--) {
-    var layer = layers[i];
+  for (let i = length - 1; i >= 0; i--) {
+    let layer = layers[i];
     if (layer.draw)
       layer.draw();
   }
@@ -557,11 +573,11 @@ function CanvasPanZoomLayer() {
 }
 
 CanvasPanZoomLayer.prototype.initialize = function(canvasController) {
-  var self = this;
+  let self = this;
   this.canvasController = canvasController;
 
   canvasController.canvas.addEventListener('mousewheel', function(e) {
-    var pan = self.pan, zoom = self.zoom,
+    let pan = self.pan, zoom = self.zoom,
         center = { x: e.offsetX, y: e.offsetY },
         dZoom = 1.0 + e.wheelDelta / 8192,
         newZoom = zoom * dZoom;
@@ -580,7 +596,7 @@ CanvasPanZoomLayer.prototype.initialize = function(canvasController) {
 }
 
 CanvasPanZoomLayer.prototype.setTransform_ = function(p) {
-  var pan = this.pan, zoom = this.zoom;
+  let pan = this.pan, zoom = this.zoom;
   this.canvasController.setTransform(pan, { x: zoom, y: zoom });
 }
 
@@ -594,7 +610,7 @@ CanvasPanZoomLayer.prototype.onBeginDrag = function(p0) {
 }
 
 CanvasPanZoomLayer.prototype.onDrag = function(p0, p) {
-  var dx = p.x - p0.x, dy = p.y - p0.y,
+  let dx = p.x - p0.x, dy = p.y - p0.y,
       t0 = this.pan0;
   this.pan = { x: t0.x + dx, y: t0.y + dy };
   this.setTransform_();
@@ -615,7 +631,7 @@ CanvasMultiselectLayer.prototype.initialize = function(canvasController) {
 }
 
 CanvasMultiselectLayer.prototype.draw = function() {
-  var ctx = this.ctx;
+  let ctx = this.ctx;
   ctx.save();
   ctx.strokeStyle = 'red';
   ctx.strokeRect(0, 0, 32, 32);
@@ -624,8 +640,8 @@ CanvasMultiselectLayer.prototype.draw = function() {
 
 //------------------------------------------------------------------------------
 
-var theme = (function() {
-  var themes = {
+let theme = (function() {
+  let themes = {
     normal: {
       bgColor: 'white',
       altBgColor: '#F0F0F0',
@@ -684,6 +700,8 @@ return {
   arrowPath: arrowPath,
   lineEdgePath: lineEdgePath,
   bezierEdgePath: bezierEdgePath,
+  inFlagPath: inFlagPath,
+  outFlagPath: outFlagPath,
   closedPath: closedPath,
   hitPoint: hitPoint,
   hitTestRect: hitTestRect,
