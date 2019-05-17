@@ -502,3 +502,41 @@ test("circuits.editingModel.lambdas", function() {
   deepEqual(apply.master, '[*(λ),]');
 });
 
+test("circuits.editingModel.findSrcType", function() {
+  let test = newTestEditingModel(),
+      circuit = test.model,
+      items = circuit.root.items,
+      elem1 = addElement(test, newInputJunction('[,*]')),
+      elem2 = addElement(test, newOutputJunction('[*,]')),
+      wire = addWire(test, elem1, 0, elem2, 0),
+      group = test.makeGroup([elem1, elem2]),
+      elem3 = addElement(test, group),
+      expectedType = '[v,v]',
+      elem4 = addElement(test, newTypedElement('[,' + expectedType + ']')),
+      elem5 = addElement(test, newOutputJunction('[*,]')),
+      wire2 = addWire(test, elem4, 0, elem3, 0),
+      wire3 = addWire(test, elem3, 0, elem5, 0),
+      actualType = test.findSrcType(wire3, test.collectGraphInfo(items));
+
+  deepEqual(actualType, expectedType);
+});
+
+test("circuits.editingModel.findDstType", function() {
+  let test = newTestEditingModel(),
+      circuit = test.model,
+      items = circuit.root.items,
+      elem1 = addElement(test, newInputJunction('[,*]')),
+      elem2 = addElement(test, newOutputJunction('[*,]')),
+      wire = addWire(test, elem1, 0, elem2, 0),
+      group = test.makeGroup([elem1, elem2]),
+      elem3 = addElement(test, group),
+      expectedType = '[v,v]',
+      elem4 = addElement(test, newTypedElement('[' + expectedType + ',]')),
+      elem5 = addElement(test, newInputJunction('[,*]')),
+      wire2 = addWire(test, elem5, 0, elem3, 0),
+      wire3 = addWire(test, elem3, 0, elem4, 0),
+      actualType = test.findDstType(wire2, test.collectGraphInfo(items));
+
+  deepEqual(actualType, expectedType);
+});
+
