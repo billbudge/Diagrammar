@@ -12,19 +12,24 @@ Most data flow systems model restricted domains, and have limited ability to rep
 
 For now, let's imagine a language with one value type, which can represent numbers, strings, arrays, or other types of objects. Then our circuits can be simpler, with only one primitive wire and pin type. Circuit elements for built-in operations can be provided by the language, and combined to form useful expressions. Input and Output pin elements can be used to specify imports and exports, assign labels, and connect common imports.
 
-In the diagram below, we are creating:
+<figure>
+  <img src="/resources/palette.png"  alt="" title="Primitive elements (palette)">
+</figure>
+
+On the top row are some "junction" elements, which specify imports and exports, and a literal element, which can represent numbers or other value types. On the second row are the unary functions, and on the third row are binary functions, and the only 3-ary function, which is the conditional operator.
+
+We can combine these primitives to define new functions. In the diagram below, we are creating:
 
 1. An increment-by-1 function.
-2. A decrement-by-1 function.
-3. A binary minimum out of the less-than relational operator and the trinary conditional operator.
-4. A 4-ary addition operator by cascading binary addition operators
+2. A 2-ary minimum out of the less-than relational operator and the 3-ary conditional operator.
+4. A 3-ary addition operator by cascading binary addition operators
 5. A function to evaluate a general quadratic polynomial at a given x.
 
 <figure>
   <img src="/resources/basic_grouping.png"  alt="" title="Basic Grouping">
 </figure>
 
-Note that there is fan-out but no fan-in in our circuit graphs. There can be no cycles, so the circuit is a DAG (directed acyclic graph). Each circuit element is conceptually a function and wires connect outputs of one function to inputs of another. Evaluation proceeds left-to-right, since inputs must be evaluated before producing outputs. The evaluation order of the graph is only partially ordered (by topologically sorting) so we have to take extra care when a specific sequential evaluation order is required.
+Note that there is fan-out but no fan-in in our circuit graphs. There are no cycles, so the circuit is a DAG (directed acyclic graph). Each circuit element is conceptually a function and wires connect outputs of one function to inputs of another. Evaluation proceeds left-to-right, since inputs must be evaluated before producing outputs. The evaluation order of the graph is only partially ordered (by topologically sorting) so we have to take extra care when a specific sequential evaluation order is required.
 
 After grouping, the new expressions can be used just like built-in functions.
 
@@ -34,7 +39,7 @@ After grouping, the new expressions can be used just like built-in functions.
 
 ## Function Abstraction
 
-So far this language lacks expressive power. We have to rebuild these graphs every time we want to create a similar function, for example cascading multiplication or logical operations instead of addition. To make the graph representation more powerful, any function can be abstracted. This adds an input value, of the same type as the function, to indicate that the function is merely a template and the function body is imported. This operation is called "opening" the function. This allows us to create a function that takes one or more other functions as input.
+So far this language lacks expressive power. We have to rebuild these graphs every time we want to create a similar function, for example cascading multiplication or logical operations instead of addition. To make the graph representation more powerful, any function can be abstracted. This adds an input value, of the same type as the function, to indicate that the function is merely a template and the function body is imported. This operation is called "opening" the function. This allows us to create a function that takes a function as input.
 
 <figure>
   <img src="/resources/function_abstraction.png"  alt="" title="Function Abstraction">
@@ -42,13 +47,13 @@ So far this language lacks expressive power. We have to rebuild these graphs eve
 
 ## Function Creation
 
-Now we need a way to create functions that can be imported. The mechanism is function closure. Any function element can be closed, which creates a function output whose type is all disconnected inputs, and all outputs. This is exactly analogous to function closure in regular programming languages. In the diagram below, we can create an incrementing function by grouping as before, or by applying addition to a literal 1 value and closing to get a unary incrementing function.
+Now we need a way to create functions that can be imported. The mechanism is function closure. Any function element can be closed, which creates a function output whose type is all disconnected inputs, and all outputs. This is exactly analogous to function closure in regular programming languages. In the diagram below, we can create an incrementing function by grouping as before, or by partially applying addition to a literal 1 value and closing to get a unary incrementing function.
 
 <figure>
   <img src="/resources/function_creation.png"  alt="" title="Function Creation">
 </figure>
 
-Using closure, we can take our abstract 4-ary cascading function from before, and specialize it for addition. We combine it with an addition with no inputs which we close to get a binary output function. We connect it and add pins for the 4 inputs and 1 output.
+Using closure, we can take our abstract 3-ary cascading function from before, and specialize it for addition. We combine it with an addition with no inputs which we close to get a binary output function. We connect it and add pins for the 4 inputs and 1 output.
 
 <figure>
   <img src="/resources/function_creation3.png"  alt="" title="Function Creation (continued)">
@@ -72,7 +77,7 @@ Iteration can be challenging in a data flow system. Let's start with everyone's 
 
 ### Factorial
 
-We can create most of this with simple operations, but we get stuck at the recursive part. We need to use the function that we're in the middle of creating. The solution is to provide a special proto-function operation. A part of the graph can be selected, and a proto-function element will be created that matches what would be created from the selection by the normal grouping operation. This proto-function element can then be used in the graph to represent recursion. This will also be our mechanism for iteration a little later on.
+We can create most of this with simple operations, but we get stuck at the recursive part. We need to use the function that we're in the middle of creating. The solution is to provide a special proto-function operation. A part of the graph can be selected, and a proto-function element will be created that matches what would be created from the selection by the normal grouping operation. This proto-function element can then be used in the graph to represent recursion. This will also be our mechanism for iteration in a moment.
 
 <figure>
   <img src="/resources/factorial.png"  alt="" title="Iteration with Factorials">
@@ -92,46 +97,16 @@ Similarly, we can implement a Fibonacci function that returns the i'th number in
 Let's try a more typical iteration, equivalent to the following for loop in Javascript. Let's try to add the numbers in the range [0..n].
 
 ```js
-    for (let i = 0; i < n; i++) ...
-```
-
-<figure>
-  <img src="/resources/iteration.png"  alt="" title="Iteration to add numbers from i to n">
-</figure>
-
-This graph is recursive and equivalent to the following Javascript:
-
-```js
-let n, f0;
-// f closes over n, f0.
-function f(i) {
-	return i < n ? i + f(i + 1) : f0;
-}
-return f(0);
-```
-
-Another way to do this uses an accumulator. This recursion is closer to the for loop.
-
-<figure>
-  <img src="/resources/iteration1.png"  alt="" title="Iteration to add numbers from i to n">
-</figure>
-
-```js
-let n, acc;
-// f closes over n, acc.
-function f(i, acc) {
-	return i < n ? f(i + 1, i + acc) : acc;
-}
-return f(0, 0);
-```
-
-```js
 let acc = 0;
 for (let i = 0; i < n; i++) {
 	acc += i;
 }
 return acc;
 ```
+
+<figure>
+  <img src="/resources/iteration.png"  alt="" title="Iteration to add numbers from i to n">
+</figure>
 
 Summing an integer range isn't really useful, and it would be cumbersome to have to create these graphs every time we wanted to iterate over a range of integers. But we can abstract the binary operation at the heart of this to create a generic iteration over an integer range that is more useful.
 
@@ -147,7 +122,7 @@ Using this more generic function, we can easily create a factorial function.
 
 ## State
 
-Without state, we are limited to pure functional programming. One of our goals is to map directly to hardware, where we also have state. Let's introduce three new stateful functions, which allow us to hold state and "open" values as objects or arrays.
+So far we haven't used the ability to pass functions as parameters very much. However, they make it possible to express many different things besides expressions. Let's introduce three new stateful elements, which allow us to hold state and "open" values as objects or arrays.
 
 1. On the left is the "let" element, which outputs a value and an assignment function. The value is the current value of the assignment, while the function takes an input and replaces the old value which is returned. This is convenient as we'll see in a moment.
 2. In the middle is the "object" adapter, which takes a value as input and returns two functions. The first is the "getter" which takes a key value as input and returns a value. The second is the "setter" which takes a key and value, updates that field of the object and returns the previous value.

@@ -327,32 +327,40 @@ test("hierarchicalModel extend", function() {
 });
 
 test("hierarchicalModel", function() {
-  var child1 = { id: 3 },
+  let child1 = { id: 3 },
       child2 = { id: 4 },
       child3 = { id: 5 };
   child2.items = [ child3 ];
-  var root = {
+  let root = {
     id: 1,
     item: { id: 2 },
     items: [
       child1,
     ],
   };
-  var model = { root: root };
-  var test = dataModels.hierarchicalModel.extend(model);
+  let model = { root: root },
+      test = dataModels.hierarchicalModel.extend(model);
   deepEqual(test.getParent(root), null);
   deepEqual(test.getParent(child1), root);
 
-  model.observableModel.insertElement(root, 'items', root.items.length - 1, child2);
+  // Append child2 and subtree to root items.
+  model.observableModel.insertElement(root, 'items', root.items.length, child2);
   deepEqual(test.getParent(child2), root);
   deepEqual(test.getParent(child3), child2);
 
-  var selection = dataModels.selectionModel.extend(model);
+  let selection = dataModels.selectionModel.extend(model);
   selection.set([ root, child1, child2, child3 ]);
   selection.set(test.reduceSelection());
-  var contents = selection.contents();
+  let contents = selection.contents();
   deepEqual(contents.length, 1);
   deepEqual(contents[0], root);
+
+  // Remove child3 from child2.
+  model.observableModel.removeElement(child2, 'items', child2.items.indexOf(child3));
+  deepEqual(test.getParent(child3), null);
+  // Remove child1 from root.
+  model.observableModel.removeElement(root, 'items', root.items.indexOf(child1));
+  deepEqual(test.getParent(child1), null);
 });
 
 // Selection model unit tests.
