@@ -12,6 +12,14 @@ function isElement(item) {
   return item.type == 'element';
 }
 
+function isGroup(item) {
+  return item.type == 'group';
+}
+
+function isElementOrGroup(item) {
+  return isElement(item) || isGroup(item);
+}
+
 function isWire(item) {
   return item.type == 'wire';
 }
@@ -49,7 +57,7 @@ function isProto(item) {
   return item.elementType == 'proto';
 }
 
-function isGroup(item) {
+function isHoverable(item) {
   return isElement(item) && item.items;
 }
 
@@ -284,6 +292,8 @@ let editingModel = (function() {
           for (let i = 0; i < arrays.length; i++)
             arrays[i] = new Array();
           outputMap.set(item, arrays);
+        } else if (isGroup(item)) {
+          self.collectGraphInfo(item.items);
         }
       });
       // Separate wires into incoming, outgoing, and interior. Populate
@@ -340,7 +350,7 @@ let editingModel = (function() {
           result = new Set();
       while (items.length > 0) {
         let item = items.pop();
-        if (!isElement(item)) continue;
+        if (!isElementOrGroup(item)) continue;
         result.add(item);
         if (upstream) {
           graphInfo.inputMap.get(item).forEach(function(wire) {
@@ -365,9 +375,7 @@ let editingModel = (function() {
       let model = this.model,
           selectionModel = model.selectionModel,
           graphInfo = this.collectGraphInfo(selectionModel.contents());
-      let elements = Array.from(graphInfo.elementSet.values());
-      let closure = graphInfo.interiorWires.concat(elements);
-      selectionModel.set(closure);
+      selectionModel.add(graphInfo.interiorWires);
     },
 
     newItem: function(item) {
@@ -414,7 +422,7 @@ let editingModel = (function() {
           copies = this.prototype.copyItems(items, map);
       items.forEach(function(item) {
         let copy = map.get(dataModel.getId(item));
-        if (isElement(copy)) {
+        if (isElementOrGroup(copy)) {
           copy.state = 'normal';
         }
       });
@@ -425,7 +433,7 @@ let editingModel = (function() {
       let selectionModel = this.model.selectionModel;
       this.reduceSelection();
       selectionModel.contents().forEach(function(item) {
-        if (!isElement(item))
+        if (!isElementOrGroup(item))
           selectionModel.remove(item);
       });
       this.selectInteriorWires();
@@ -465,7 +473,7 @@ let editingModel = (function() {
     doPaste: function(dx, dy) {
       this.getScrap().forEach(function(item) {
         // Offset pastes so the user can see them.
-        if (isElement(item)) {
+        if (isElementOrGroup(item)) {
           item.x += dx;
           item.y += dy;
         }
@@ -734,7 +742,7 @@ let editingModel = (function() {
       });
     },
 
-    makeGroup: function(elements) {
+    makeGroup: function(elements, new_grouping) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           masteringModel = model.masteringModel,
@@ -888,7 +896,16 @@ let editingModel = (function() {
       groupElement.items = groupItems;
       groupItems.forEach(item => self.deleteItem(item));
 
-      groupElement.master = master;
+      if (new_grouping) {
+        groupElement.type = 'group';
+        groupElement.x = groupElement.originX = extents.x;
+        groupElement.y = groupElement.originY = extents.y;
+        viewModel.setItemBounds(groupElement,
+            extents.width, extents.height);
+      } else {
+        groupElement.master = master;
+      }
+
       return groupElement;
     },
 
@@ -1062,14 +1079,14 @@ let editingModel = (function() {
       model.transactionModel.endTransaction();
     },
 
-    doGroup: function(protoGroup) {
+    doGroup: function(protoGroup, new_grouping) {
       let model = this.model;
       this.reduceSelection();
-      let elements = model.selectionModel.contents().filter(isElement);
+      let elements = model.selectionModel.contents().filter(isElementOrGroup);
       model.transactionModel.beginTransaction(
         'group' + (protoGroup ? '(proto)' : ''));
       let groupElement = protoGroup ?
-        this.makeProtoGroup(elements) : this.makeGroup(elements);
+        this.makeProtoGroup(elements) : this.makeGroup(elements, new_grouping);
       // console.log(groupElement.master);
       model.dataModel.initialize(groupElement);
       this.addItem(groupElement);
@@ -1179,13 +1196,21 @@ let editingModel = (function() {
 let viewModel = (function() {
   let proto = {
     getItemRect: function (item) {
-      if (!isElement(item))
+      if (isWire(item))
         return;
-      let master = getMaster(item);
-      return { x: item.x, y: item.y, w: master[_width], h: master[_height] };
+      let width, height;
+      if (isGroup(item)) {
+        width = item[_width];
+        height = item[_height];
+      } else if (isElement(item)) {
+        let master = getMaster(item);
+        width = master[_width];
+        height = master[_height];
+      }
+      return { x: item.x, y: item.y, w: width, h: height };
     },
 
-    setItemRect: function (item, x, y, width, height) {
+    setItemBounds: function (item, width, height) {
       item[_width] = width;
       item[_height] = height;
     },
@@ -1194,7 +1219,8 @@ let viewModel = (function() {
       let xMin = Number.POSITIVE_INFINITY, yMin = Number.POSITIVE_INFINITY,
           xMax = -Number.POSITIVE_INFINITY, yMax = -Number.POSITIVE_INFINITY;
       for (let item of items) {
-        if (!isElement(item)) continue;
+        if (isWire(item))
+          continue;
         let rect = this.getItemRect(item);
         xMin = Math.min(xMin, rect.x);
         yMin = Math.min(yMin, rect.y);
@@ -1323,9 +1349,8 @@ Renderer.prototype.layoutMaster = function(master) {
     wOut = Math.max(wOut, w);
   }
 
-  this.viewModel.setItemRect(
+  this.viewModel.setItemBounds(
     master,
-    0, 0,
     Math.round(Math.max(width, wIn + 2 * spacing + wOut, minMasterWidth)),
     Math.round(Math.max(yIn, yOut, minMasterHeight) + spacing / 2));
   return master;
@@ -1401,17 +1426,16 @@ Renderer.prototype.drawElement = function(element, mode) {
       x = element.x, y = element.y,
       width = master[_width], height = master[_height],
       right = x + width, bottom = y + height;
-  const indent = 6;
   switch (element.elementType) {
     case 'input':
-      diagrams.inFlagPath(x, y, width, height, indent, ctx);
+      diagrams.inFlagPath(x, y, width, height, spacing, ctx);
       break;
     case 'output':
-      diagrams.outFlagPath(x, y, width, height, indent, ctx);
+      diagrams.outFlagPath(x, y, width, height, spacing, ctx);
       break;
     case 'proto':
     case 'lambda':
-      diagrams.roundRectPath(x, y, width, height, indent, ctx);
+      diagrams.roundRectPath(x, y, width, height, spacing, ctx);
       break;
     default:
       ctx.beginPath();
@@ -1447,6 +1471,41 @@ Renderer.prototype.drawElement = function(element, mode) {
   }
 }
 
+Renderer.prototype.drawGroup = function(group, mode) {
+  let ctx = this.ctx, theme = this.theme,
+      x = group.x - spacing, y = group.y - spacing,
+      width = group[_width] + 2 * spacing, height = group[_height] + 2 * spacing,
+      right = x + width, bottom = y + height;
+  ctx.beginPath();
+  ctx.rect(x, y, width, height);
+  switch (mode) {
+    case normalMode:
+      ctx.fillStyle = theme.bgColor;
+      ctx.fill();
+      ctx.strokeStyle = theme.strokeColor;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+      let dx = group.x - group.originX,
+          dy = group.y - group.originY;
+      ctx.translate(dx, dy);
+      for (let i = 0; i < group.items.length; i++) {
+        this.draw(group.items[i], mode);
+      }
+      ctx.translate(-dx, -dy);
+      break;
+    case highlightMode:
+      ctx.strokeStyle = theme.highlightColor;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      break;
+    case hotTrackMode:
+      ctx.strokeStyle = theme.hotTrackColor;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      break;
+  }
+}
+
 Renderer.prototype.hitTestElement = function(element, p, tol, mode) {
   let rect = this.viewModel.getItemRect(element),
       x = rect.x, y = rect.y, width = rect.w, height = rect.h,
@@ -1464,6 +1523,17 @@ Renderer.prototype.hitTestElement = function(element, p, tol, mode) {
           y + output[_y], output[_width], output[_height], p, 0))
         hitInfo.output = i;
     });
+  }
+  return hitInfo;
+}
+
+Renderer.prototype.hitTestGroup = function(group, p, tol, mode) {
+  let rect = this.viewModel.getItemRect(group),
+      x = rect.x - spacing, y = rect.y - spacing,
+      width = rect.w + 2 * spacing, height = rect.h + 2 * spacing,
+      hitInfo = diagrams.hitTestRect(x, y, width, height, p, tol);
+  if (hitInfo) {
+    // TODO edge hits?
   }
   return hitInfo;
 }
@@ -1519,13 +1589,30 @@ Renderer.prototype.hitTestWire = function(wire, p, tol, mode) {
 Renderer.prototype.layout = function(item) {
   if (item.type == 'wire')
     this.layoutWire(item);
+  else if (item.type == 'group') {
+    let self = this;
+    item.items.forEach(function(subItem) {
+      self.layout(subItem);
+    });
+    let viewModel = this.viewModel,
+        extents = viewModel.getItemRects(item.items);
+    viewModel.setItemBounds(item,
+            extents.width, extents.height);
+  }
 }
 
 Renderer.prototype.draw = function(item, mode) {
-  if (isElement(item))
-    this.drawElement(item, mode);
-  else
-    this.drawWire(item, mode);
+  switch (item.type) {
+    case 'element':
+      this.drawElement(item, mode);
+      break;
+    case 'group':
+      this.drawGroup(item, mode);
+      break;
+    case 'wire':
+      this.drawWire(item, mode);
+      break;
+  }
 }
 
 Renderer.prototype.hitTest = function(item, p, tol, mode) {
@@ -1533,6 +1620,9 @@ Renderer.prototype.hitTest = function(item, p, tol, mode) {
   switch (item.type) {
     case 'element':
       hitInfo = this.hitTestElement(item, p, tol, mode);
+      break;
+    case 'group':
+      hitInfo = this.hitTestGroup(item, p, tol, mode);
       break;
     case 'wire':
       hitInfo = this.hitTestWire(item, p, tol, mode);
@@ -1547,7 +1637,7 @@ Renderer.prototype.drawHoverInfo = function(item, p) {
   let self = this, theme = this.theme,
       x = p.x, y = p.y;
   ctx.fillStyle = theme.hoverColor;
-  if (isGroup(item)) {
+  if (isHoverable(item)) {
     let viewModel = this.viewModel;
     item.items.forEach(function(item) {
       self.layout(item);
@@ -1676,6 +1766,17 @@ function Editor(model, textInputController) {
 
   editingModel.extend(model);
 
+  this.model.dataModel.addInitializer(function(item) {
+    if (!isGroup(item))
+      return;
+    let ctx = self.ctx,
+        renderer = self.renderer,
+        model = self.model;
+    renderer.beginDraw(model, ctx);
+    renderer.layout(item);
+    renderer.endDraw();
+  });
+
   let masters = masteringModel.extend(model);
   masters.addHandler('masterInserted', function(type, master) {
     let ctx = self.ctx,
@@ -1683,7 +1784,6 @@ function Editor(model, textInputController) {
         model = self.model;
     renderer.beginDraw(model, ctx);
     renderer.layoutMaster(master);
-    // console.log(master);
     renderer.endDraw();
   });
 
@@ -1759,7 +1859,7 @@ Editor.prototype.draw = function() {
   ctx.strokeRect(300, 10, 700, 300);
 
   diagram.items.forEach(function(item) {
-    if (isElement(item)) {
+    if (isElementOrGroup(item)) {
       renderer.layout(item);
       renderer.draw(item, normalMode);
     }
@@ -1818,7 +1918,7 @@ Editor.prototype.hitTest = function(p) {
   // TODO hit test selection first, in highlight, first.
   reverseForEach(diagram.items, isWire,
     item => pushInfo(renderer.hitTest(item, cp, cTol, normalMode)));
-  reverseForEach(diagram.items, isElement,
+  reverseForEach(diagram.items, isElementOrGroup,
     item => pushInfo(renderer.hitTest(item, cp, cTol, normalMode)));
   return hitList;
 }
@@ -1945,6 +2045,7 @@ Editor.prototype.onBeginDrag = function(p0) {
   } else {
     switch (type) {
       case 'element':
+      case 'group':
         if (mouseHitInfo.moveCopy) {
           drag = { type: 'moveCopySelection', name: 'Move copy of selection' };
         } else {
@@ -1971,7 +2072,6 @@ Editor.prototype.onBeginDrag = function(p0) {
     } else {
       drag.item = dragItem;
       if (mouseHitInfo.moveCopy) {
-        editingModel.reduceSelection();
         editingModel.selectInteriorWires();
         let map = new Map(),
             copies = editingModel.copyItems(selectionModel.contents(), map);
@@ -2013,7 +2113,7 @@ Editor.prototype.onDrag = function(p0, p) {
   switch (drag.type) {
     case 'moveSelection':
     case 'moveCopySelection':
-      if (isElement(dragItem)) {
+      if (isElementOrGroup(dragItem)) {
         hitInfo = this.getFirstHit(hitList, isContainerTarget);
         selectionModel.forEach(function(item) {
           let snapshot = transactionModel.getSnapshot(item);
@@ -2086,7 +2186,7 @@ Editor.prototype.onEndDrag = function(p) {
     } else {
       // Reparent existing items.
       selectionModel.forEach(function(item) {
-        if (isElement(item)) {
+        if (isElementOrGroup(item)) {
           editingModel.addItem(item, parent);
         }
       });
@@ -2193,6 +2293,9 @@ Editor.prototype.onKeyDown = function(e) {
         return true;
       case 76:  // 'l'
         editingModel.doAbstract();
+        return true;
+      case 66:  // 'b'
+        editingModel.doGroup(false, true);
         return true;
       case 71:  // 'g'
         editingModel.doGroup(shiftKey);
