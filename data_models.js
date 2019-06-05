@@ -1060,6 +1060,7 @@ let hierarchicalModel = (function () {
 
     dataModel.extend(model);
     observableModel.extend(model);
+    // TODO selectionModel shouldn't be a dependency.
     selectionModel.extend(model);
 
     let instance = Object.create(proto);
@@ -1075,6 +1076,133 @@ let hierarchicalModel = (function () {
     instance.init(model.dataModel.getRoot(), null);
 
     model.hierarchicalModel = instance;
+    return instance;
+  }
+
+  return {
+    extend: extend,
+  };
+})();
+
+//------------------------------------------------------------------------------
+
+// translatableModel maintains absolute positions on a hierarchy of items.
+let translatableModel = (function () {
+  let _x = Symbol('x'), _y = Symbol('y');
+  let proto = {
+    // Getter functions which determine translation parameters. Override to
+    // fit the model.
+    getX: function(item) {
+      return item.x;
+    },
+
+    getY: function(item) {
+      return item.y;
+    },
+
+    hasTranslation: function (item) {
+      return (typeof this.getX(item) == 'number') &&
+             (typeof this.getY(item) == 'number');
+    },
+
+    globalX: function(item) {
+      return item[_x];
+    },
+
+    globalY: function(item) {
+      return item[_y];
+    },
+
+    // Gets the translation to move an item from its current parent to
+    // newParent. Handles the cases where current parent or newParent are null.
+    getToParent: function (item, newParent) {
+      let oldParent = this.model.hierarchicalModel.getParent(item),
+          dx = 0, dy = 0;
+      if (oldParent) {
+        dx += this.globalX(oldParent);
+        dy += this.globalY(oldParent);
+      }
+      if (newParent) {
+        dx -= this.globalX(newParent);
+        dy -= this.globalY(newParent);
+      }
+      return { x: dx, y: dy };
+    },
+
+    updateTranslation: function (item) {
+      if (!this.hasTranslation(item))
+        return;
+
+      let hierarchicalModel = this.model.hierarchicalModel,
+          parent = hierarchicalModel.getParent(item),
+          x = this.getX(item), y = this.getY(item);
+      while (parent && !this.hasTranslation(parent))
+        parent = hierarchicalModel.getParent(parent);
+
+      if (parent) {
+        item[_x] = x + parent[_x];
+        item[_y] = y + parent[_y];
+      } else {
+        item[_x] = x;
+        item[_y] = y;
+      }
+    },
+
+    update: function (item) {
+      let self = this;
+      this.updateTranslation(item);
+      this.model.hierarchicalModel.visitDescendants(item, function (child, parent) {
+        self.updateTranslation(child);
+      });
+    },
+
+    onChanged_: function (change) {
+      let dataModel = this.model.dataModel,
+          item = change.item, attr = change.attr;
+      switch (change.type) {
+        case 'change': {
+          let newValue = item[attr];
+          if (dataModel.isItem(newValue))
+            this.update(newValue);
+          else
+            this.update(item);
+          break;
+        }
+        case 'insert': {
+          let newValue = item[attr][change.index];
+          if (dataModel.isItem(newValue))
+            this.update(newValue);
+          break;
+        }
+        case 'remove':
+          break;
+      }
+    },
+  }
+
+  function extend(model) {
+    if (model.translatableModel)
+      return model.translatableModel;
+
+    dataModel.extend(model);
+    hierarchicalModel.extend(model);
+
+    let instance = Object.create(proto);
+    instance.model = model;
+
+    if (model.observableModel) {
+      // Create wrappers here to capture 'instance'.
+      model.observableModel.addHandler('changed', function (change) {
+        instance.onChanged_(change);
+      });
+    }
+
+    // Make sure new items have translations.
+    model.dataModel.addInitializer(function(item) {
+      instance.updateTranslation(item);
+    });
+
+    model.translatableModel = instance;
     return instance;
   }
 
@@ -1349,6 +1477,7 @@ let openingModel = (function () {
     instancingModel: instancingModel,
     editingModel: editingModel,
     hierarchicalModel: hierarchicalModel,
+    translatableModel: translatableModel,
     transformableModel: transformableModel,
     openingModel: openingModel,
   }

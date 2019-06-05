@@ -4,8 +4,12 @@
 
 let circuits = (function() {
 
-function isContainer(item) {
+function isCircuit(item) {
   return item.type == 'circuit';
+}
+
+function isContainer(item) {
+  return item.type == 'circuit' || item.type == 'group';
 }
 
 function isElement(item) {
@@ -61,10 +65,6 @@ function isHoverable(item) {
   return isElement(item) && item.items;
 }
 
-function isCircuit(item) {
-  return item.type == 'circuit';
-}
-
 function isInputPinLabeled(item) {
   return isOutput(item) || isAbstract(item) || isLambda(item);
 }
@@ -81,15 +81,7 @@ let inputElementType = '[,*]',
     outputElementType = '[*,]',
     lambdaElementType = '[*(λ),]';
 
-let _master = Symbol('master'),
-    _y = Symbol('y'),
-    _baseline = Symbol('baseline'),
-    _width = Symbol('width'),
-    _height = Symbol('height'),
-    _p1 = Symbol('p1'),
-    _p2 = Symbol('p2'),
-    _bezier = Symbol('bezier'),
-    _background = Symbol('background');
+let _master = Symbol('master');
 
 //------------------------------------------------------------------------------
 
@@ -443,20 +435,23 @@ let editingModel = (function() {
     addItem: function(item, parent) {
       let model = this.model,
           hierarchicalModel = model.hierarchicalModel,
+          translatableModel = model.translatableModel,
           oldParent = hierarchicalModel.getParent(item);
       if (!parent)
         parent = this.diagram;
       if (oldParent === parent)
         return;
-      if (!isWire(item)) {
-      }
       if (isCircuit(parent)) {
         if (!Array.isArray(parent.items))
           model.observableModel.changeValue(parent, 'items', []);
       }
       if (oldParent !== parent) {
-        if (oldParent)            // if non-null, first remove from old parent.
-          this.deleteItem(item);  // notifies observer
+        let translation = translatableModel.getToParent(item, parent);
+        model.observableModel.changeValue(item, 'x', item.x + translation.x);
+        model.observableModel.changeValue(item, 'y', item.y + translation.y);
+
+        if (oldParent)
+          this.deleteItem(item);
         model.observableModel.insertElement(
           parent, 'items', parent.items.length, item);
       }
@@ -757,8 +752,8 @@ let editingModel = (function() {
       // Create the new group element.
       let groupElement = {
         type: 'element',
-        x: extents.x + extents.width / 2,
-        y: extents.y + extents.height / 2,
+        x: extents.x + extents.w / 2,
+        y: extents.y + extents.h / 2,
       };
 
       let groupId = dataModel.assignId(groupElement);
@@ -894,14 +889,18 @@ let editingModel = (function() {
       }
 
       groupElement.items = groupItems;
-      groupItems.forEach(item => self.deleteItem(item));
+      groupItems.forEach(function(item) {
+        if (!isWire(item)) {
+          observableModel.changeValue(item, 'x', item.x - extents.x);
+          observableModel.changeValue(item, 'y', item.y - extents.y);
+        }
+        self.deleteItem(item);
+      });
 
       if (new_grouping) {
         groupElement.type = 'group';
-        groupElement.x = groupElement.originX = extents.x;
-        groupElement.y = groupElement.originY = extents.y;
-        viewModel.setItemBounds(groupElement,
-            extents.width, extents.height);
+        groupElement.x = extents.x;
+        groupElement.y = extents.y;
       } else {
         groupElement.master = master;
       }
@@ -923,8 +922,8 @@ let editingModel = (function() {
       let groupElement = {
         type: 'element',
         elementType: 'proto',
-        x: extents.x + extents.width / 2,
-        y: extents.y + extents.height / 2,
+        x: extents.x + extents.w / 2,
+        y: extents.y + extents.h / 2,
       };
 
       dataModel.assignId(groupElement);
@@ -1115,41 +1114,64 @@ let editingModel = (function() {
     makeConsistent: function () {
       let self = this, model = this.model,
           dataModel = model.dataModel,
+          viewModel = model.viewModel,
           masteringModel = model.masteringModel,
+          selectionModel = model.selectionModel,
           observableModel = model.observableModel,
           graphInfo = this.collectGraphInfo(this.diagram.items),
           elementSet = graphInfo.elementSet,
           wires = graphInfo.wires;
       // Make sure lambdas are consistent.
       elementSet.forEach(function(element) {
-        if (!isLambda(element))
-          return;
-        let master = getMaster(element),
-            inputPins = master.inputs,
-            lastIndex = inputPins.length - 1,
-            wire = graphInfo.inputMap.get(element)[lastIndex];
-        if (wire) {
-          let srcType = self.findSrcType(wire, graphInfo);
-          if (!isFunctionType(srcType)) {
-            self.deleteItem(wire);
-            self.resetLambda(element, graphInfo);
-          } else {
-            let type = masteringModel.addInputToType(srcType, '*');
-            if (element.master != type) {
+        if (isLambda(element)) {
+          let master = getMaster(element),
+              inputPins = master.inputs,
+              lastIndex = inputPins.length - 1,
+              wire = graphInfo.inputMap.get(element)[lastIndex];
+          if (wire) {
+            let srcType = self.findSrcType(wire, graphInfo);
+            if (!isFunctionType(srcType)) {
+              self.deleteItem(wire);
               self.resetLambda(element, graphInfo);
-              self.setLambda(wire, graphInfo);
+            } else {
+              let type = masteringModel.addInputToType(srcType, '*');
+              if (element.master != type) {
+                self.resetLambda(element, graphInfo);
+                self.setLambda(wire, graphInfo);
+              }
             }
-          }
-        } else {
-          if (element.master != lambdaElementType) {
-            self.resetLambda(element, graphInfo);
+          } else {
+            if (element.master != lambdaElementType) {
+              self.resetLambda(element, graphInfo);
+            }
           }
         }
       });
+
+      // Make sure groups are layed out.
+      function layoutGroup(item) {
+        if (!isGroup(item))
+          return;
+        let groupItems = item.items;
+        groupItems.forEach(function(groupItem) {
+          layoutGroup(groupItem);
+        });
+        let extents = viewModel.getItemRects(groupItems),
+            x = extents.x, y = extents.y;
+        if (item.x != x) {
+          observableModel.changeValue(item, 'x', x);
+        }
+        if (item.y != y) {
+          observableModel.changeValue(item, 'y', y);
+        }
+        viewModel.setItemBounds(item, extents.w, extents.h);
+      }
+      this.diagram.items.forEach(layoutGroup);
+
       // Eliminate dangling wires.
       wires.forEach(function(wire) {
         let src = self.getWireSrc(wire), dst = self.getWireDst(wire);
-        if (!elementSet.has(src) || !elementSet.has(dst)) {
+        if (!src || !elementSet.has(src) || !dst || !elementSet.has(dst)) {
           self.deleteItem(wire);
         }
       });
@@ -1193,12 +1215,25 @@ let editingModel = (function() {
 
 //------------------------------------------------------------------------------
 
+let _x = Symbol('x'),
+    _y = Symbol('y'),
+    _baseline = Symbol('baseline'),
+    _width = Symbol('width'),
+    _height = Symbol('height'),
+    _p1 = Symbol('p1'),
+    _p2 = Symbol('p2'),
+    _bezier = Symbol('bezier'),
+    _background = Symbol('background');
+
 let viewModel = (function() {
   let proto = {
     getItemRect: function (item) {
       if (isWire(item))
         return;
-      let width, height;
+      let translatableModel = this.model.translatableModel,
+          x = translatableModel.globalX(item),
+          y = translatableModel.globalY(item),
+          width, height;
       if (isGroup(item)) {
         width = item[_width];
         height = item[_height];
@@ -1207,7 +1242,7 @@ let viewModel = (function() {
         width = master[_width];
         height = master[_height];
       }
-      return { x: item.x, y: item.y, w: width, h: height };
+      return { x: x, y: y, w: width, h: height };
     },
 
     setItemBounds: function (item, width, height) {
@@ -1227,7 +1262,7 @@ let viewModel = (function() {
         xMax = Math.max(xMax, rect.x + rect.w);
         yMax = Math.max(yMax, rect.y + rect.h);
       }
-      return { x: xMin, y: yMin, width: xMax - xMin, height: yMax - yMin };
+      return { x: xMin, y: yMin, w: xMax - xMin, h: yMax - yMin };
     },
 
     pinToPoint: function(item, index, isInput) {
@@ -1252,6 +1287,8 @@ let viewModel = (function() {
   }
 
   function extend(model) {
+    dataModels.translatableModel.extend(model);
+
     let instance = Object.create(proto);
     instance.model = model;
 
@@ -1422,9 +1459,8 @@ Renderer.prototype.drawPin = function(pin, x, y) {
 
 Renderer.prototype.drawElement = function(element, mode) {
   let ctx = this.ctx, theme = this.theme,
-      master = getMaster(element),
-      x = element.x, y = element.y,
-      width = master[_width], height = master[_height],
+      rect = this.viewModel.getItemRect(element),
+      x = rect.x, y = rect.y, width = rect.w, height = rect.h,
       right = x + width, bottom = y + height;
   switch (element.elementType) {
     case 'input':
@@ -1456,6 +1492,7 @@ Renderer.prototype.drawElement = function(element, mode) {
       } else {
         ctx.stroke();
       }
+      let master = getMaster(element);
       this.drawMaster(master, x, y);
       break;
     case highlightMode:
@@ -1473,8 +1510,9 @@ Renderer.prototype.drawElement = function(element, mode) {
 
 Renderer.prototype.drawGroup = function(group, mode) {
   let ctx = this.ctx, theme = this.theme,
-      x = group.x - spacing, y = group.y - spacing,
-      width = group[_width] + 2 * spacing, height = group[_height] + 2 * spacing,
+      rect = this.viewModel.getItemRect(group),
+      x = rect.x - spacing, y = rect.y - spacing,
+      width = rect.w + 2 * spacing, height = rect.h + 2 * spacing,
       right = x + width, bottom = y + height;
   ctx.beginPath();
   ctx.rect(x, y, width, height);
@@ -1485,13 +1523,9 @@ Renderer.prototype.drawGroup = function(group, mode) {
       ctx.strokeStyle = theme.strokeColor;
       ctx.lineWidth = 0.5;
       ctx.stroke();
-      let dx = group.x - group.originX,
-          dy = group.y - group.originY;
-      ctx.translate(dx, dy);
       for (let i = 0; i < group.items.length; i++) {
         this.draw(group.items[i], mode);
       }
-      ctx.translate(-dx, -dy);
       break;
     case highlightMode:
       ctx.strokeStyle = theme.highlightColor;
@@ -1587,17 +1621,13 @@ Renderer.prototype.hitTestWire = function(wire, p, tol, mode) {
 }
 
 Renderer.prototype.layout = function(item) {
-  if (item.type == 'wire')
+  if (isWire(item)) {
     this.layoutWire(item);
-  else if (item.type == 'group') {
+  } else if (isGroup(item)) {
     let self = this;
     item.items.forEach(function(subItem) {
       self.layout(subItem);
     });
-    let viewModel = this.viewModel,
-        extents = viewModel.getItemRects(item.items);
-    viewModel.setItemBounds(item,
-            extents.width, extents.height);
   }
 }
 
@@ -1639,15 +1669,16 @@ Renderer.prototype.drawHoverInfo = function(item, p) {
   ctx.fillStyle = theme.hoverColor;
   if (isHoverable(item)) {
     let viewModel = this.viewModel;
-    item.items.forEach(function(item) {
-      self.layout(item);
-    });
+    // item.items.forEach(function(item) {
+    //   self.layout(item);
+    // });
     let r = viewModel.getItemRects(item.items);
     ctx.translate(x - r.x, y - r.y);
     let border = 4;
-    ctx.fillRect(r.x - border, r.y - border, r.width + 2 * border, r.height + 2 * border);
+    ctx.fillRect(r.x - border, r.y - border, r.w + 2 * border, r.h + 2 * border);
     ctx.fillStyle = theme.hoverTextColor;
     item.items.forEach(function(item) {
+      self.layout(item);
       self.draw(item, normalMode);
     });
   } else {
@@ -1677,7 +1708,7 @@ Renderer.prototype.drawHoverInfo = function(item, p) {
 //------------------------------------------------------------------------------
 
 function Editor(model, textInputController) {
-  var self = this;
+  let self = this;
   this.model = model;
   this.diagram = model.root;
   this.textInputController = textInputController;
@@ -1766,16 +1797,16 @@ function Editor(model, textInputController) {
 
   editingModel.extend(model);
 
-  this.model.dataModel.addInitializer(function(item) {
-    if (!isGroup(item))
-      return;
-    let ctx = self.ctx,
-        renderer = self.renderer,
-        model = self.model;
-    renderer.beginDraw(model, ctx);
-    renderer.layout(item);
-    renderer.endDraw();
-  });
+  // model.dataModel.addInitializer(function(item) {
+  //   if (!isGroup(item))
+  //     return;
+  //   let ctx = self.ctx,
+  //       renderer = self.renderer,
+  //       model = self.model;
+  //   renderer.beginDraw(model, ctx);
+  //   renderer.layout(item);
+  //   renderer.endDraw();
+  // });
 
   let masters = masteringModel.extend(model);
   masters.addHandler('masterInserted', function(type, master) {
@@ -1908,17 +1939,21 @@ Editor.prototype.hitTest = function(p) {
     if (info)
       hitList.push(info);
   }
-  function reverseForEach(items, filter, fn) {
-    for (let i = items.length - 1; i >= 0; i--) {
-      let item = items[i];
-      if (!filter || filter(item))
-        fn(item);
+  function reverseVisit(item, filter, fn) {
+    if (isContainer(item)) {
+      let items = item.items;
+      for (let i = items.length - 1; i >= 0; i--) {
+        reverseVisit(items[i], filter, fn);
+      }
     }
+    if (!filter || filter(item))
+      fn(item);
   }
-  // TODO hit test selection first, in highlight, first.
-  reverseForEach(diagram.items, isWire,
+
+  // TODO hit test selection first.
+  reverseVisit(diagram, isWire,
     item => pushInfo(renderer.hitTest(item, cp, cTol, normalMode)));
-  reverseForEach(diagram.items, isElementOrGroup,
+  reverseVisit(diagram, isElementOrGroup,
     item => pushInfo(renderer.hitTest(item, cp, cTol, normalMode)));
   return hitList;
 }
@@ -2193,20 +2228,20 @@ Editor.prototype.onEndDrag = function(p) {
     }
   }
 
-  if (isWire(dragItem)) {
-    // if (newItem) {
-    //   if (newItem.srcId && !newItem.dstId) {
-    //     // Create an output junction.
-    //   } else if (newItem.dstId && !newItem.srcId) {
-    //     // Create an input junction.
-    //   }
-    // }
-    // If dragItem is a disconnected wire, delete it.
-    if (!dragItem.srcId || !dragItem.dstId) {
-      editingModel.deleteItem(dragItem);
-      selectionModel.remove(dragItem);
-    }
-  }
+  // if (isWire(dragItem)) {
+  //   // if (newItem) {
+  //   //   if (newItem.srcId && !newItem.dstId) {
+  //   //     // Create an output junction.
+  //   //   } else if (newItem.dstId && !newItem.srcId) {
+  //   //     // Create an input junction.
+  //   //   }
+  //   // }
+  //   // If dragItem is a disconnected wire, delete it.
+  //   if (!dragItem.srcId || !dragItem.dstId) {
+  //     editingModel.deleteItem(dragItem);
+  //     selectionModel.remove(dragItem);
+  //   }
+  // }
 
   model.transactionModel.endTransaction();
 
