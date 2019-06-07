@@ -94,13 +94,18 @@ let inputElementType = '[,*]',
     outputElementType = '[*,]',
     lambdaElementType = '[*(λ),]';
 
-let _master = Symbol('master');
-
-//------------------------------------------------------------------------------
+let _master = Symbol('master'),
+    _closure = Symbol('closure');
 
 function getMaster(item) {
   return item[_master];
 }
+
+function getClosure(item) {
+  return item[_closure];
+}
+
+//------------------------------------------------------------------------------
 
 let masteringModel = (function() {
   let proto = {
@@ -233,9 +238,13 @@ let masteringModel = (function() {
     },
 
     initialize: function(item) {
-      if (item.type == 'element') {
+      if (isElementOrGroup(item) && item.master) {
         item[_master] = this.masterMap_.get(item.master) ||
                         this.decodeType(item.master);
+        if (isGroup(item) && item.closure) {
+          item[_closure] = this.masterMap_.get(item.closure) ||
+                           this.decodeType(item.closure);
+        }
       }
     },
   }
@@ -752,6 +761,14 @@ let editingModel = (function() {
       });
     },
 
+    getGroupType: function(elements) {
+
+    },
+
+    getClosureType: function(elements) {
+
+    },
+
     makeGroup: function(elements, new_grouping) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
@@ -767,8 +784,6 @@ let editingModel = (function() {
       // Create the new group element.
       let groupElement = {
         type: 'element',
-        x: extents.x + extents.w / 2,
-        y: extents.y + extents.h / 2,
       };
 
       let groupId = dataModel.assignId(groupElement);
@@ -788,6 +803,7 @@ let editingModel = (function() {
       graphInfo.outputWires.sort(compareOutgoingWires);
 
       let master = '[';
+      let closure = '[';
       let pinIndex = 0;
 
       // Use srcMap to ensure that an internal or external source is only
@@ -823,6 +839,8 @@ let editingModel = (function() {
         let src = self.getWireSrc(wire);
         if (graphInfo.elementSet.has(src)) {
           observableModel.changeValue(src, 'pinIndex', index);
+          let srcType = self.findDstType(wire, entireGraphInfo);
+          closure += srcType;
         } else {
           // If this is the first instance of the source...
           if (index == pinIndex - 1) {
@@ -839,6 +857,7 @@ let editingModel = (function() {
         }
       });
       master += ',';
+      closure += ',';
       pinIndex = 0;
       // Add output pins for outputWires.
       graphInfo.outputWires.forEach(function(wire) {
@@ -852,6 +871,7 @@ let editingModel = (function() {
             if (name)
               master =  masteringModel.unlabelType(master) + '(' + name + ')';
           }
+          closure += self.findSrcType(wire);
         } else {
           // If this is the first instance of the source...
           if (index == pinIndex - 1) {
@@ -868,6 +888,7 @@ let editingModel = (function() {
         }
       });
       master += ']';
+      closure += ']';
       if (!masteringModel.hasOutput(master)) {
         // Add a 'use' pin so group can be evaluated. Like 'return void'.
         master = masteringModel.addOutputToType(master, '*');
@@ -914,10 +935,14 @@ let editingModel = (function() {
 
       if (new_grouping) {
         groupElement.type = 'group';
+        groupElement.master = master != '[,]' ? master : null;
+        groupElement.closure = closure != '[,]' && closure != master ? closure : null;
         groupElement.x = extents.x;
         groupElement.y = extents.y;
       } else {
         groupElement.master = master;
+        groupElement.x = extents.x + extents.w / 2;
+        groupElement.y = extents.y + extents.h / 2;
       }
 
       return groupElement;
@@ -1135,9 +1160,9 @@ let editingModel = (function() {
           graphInfo = this.collectGraphInfo(this.diagram.items),
           elementSet = graphInfo.elementSet,
           wires = graphInfo.wires;
-      // Make sure lambdas are consistent.
       elementSet.forEach(function(element) {
         if (isLambda(element)) {
+          // Make sure lambdas are consistent.
           let master = getMaster(element),
               inputPins = master.inputs,
               lastIndex = inputPins.length - 1,
@@ -1159,6 +1184,10 @@ let editingModel = (function() {
               self.resetLambda(element, graphInfo);
             }
           }
+        } else if (isGroup(element)) {
+          // Delete empty groups.
+          if (element.items.length == 0)
+            self.deleteItem(element);
         }
       });
 
@@ -1477,27 +1506,33 @@ Renderer.prototype.drawPin = function(pin, x, y) {
   }
 }
 
-Renderer.prototype.drawElement = function(element, mode) {
-  let ctx = this.ctx, theme = this.theme,
-      rect = this.viewModel.getItemRect(element),
-      x = rect.x, y = rect.y, width = rect.w, height = rect.h,
-      right = x + width, bottom = y + height;
-  switch (element.elementType) {
+function strokePath(elementType, x, y, w, h, ctx) {
+  switch (elementType) {
     case 'input':
-      diagrams.inFlagPath(x, y, width, height, spacing, ctx);
+      diagrams.inFlagPath(x, y, w, h, spacing, ctx);
       break;
     case 'output':
-      diagrams.outFlagPath(x, y, width, height, spacing, ctx);
+      diagrams.outFlagPath(x, y, w, h, spacing, ctx);
       break;
     case 'proto':
     case 'lambda':
-      diagrams.roundRectPath(x, y, width, height, spacing, ctx);
+      diagrams.roundRectPath(x, y, w, h, spacing, ctx);
       break;
     default:
       ctx.beginPath();
-      ctx.rect(x, y, width, height);
+      ctx.rect(x, y, w, h);
       break;
   }
+}
+
+Renderer.prototype.drawElement = function(element, mode) {
+  let ctx = this.ctx, theme = this.theme,
+      rect = this.viewModel.getItemRect(element),
+      x = rect.x, y = rect.y, w = rect.w, h = rect.h,
+      right = x + w, bottom = y + h;
+
+  strokePath(element.elementType, x, y, w, h, ctx);
+
   switch (mode) {
     case normalMode:
       ctx.fillStyle = element.state == 'palette' ? theme.altBgColor : theme.bgColor;
@@ -1532,10 +1567,10 @@ Renderer.prototype.drawGroup = function(group, mode) {
   let ctx = this.ctx, theme = this.theme,
       rect = this.viewModel.getItemRect(group),
       x = rect.x - spacing, y = rect.y - spacing,
-      width = rect.w + 2 * spacing, height = rect.h + 2 * spacing,
-      right = x + width, bottom = y + height;
+      w = rect.w + 2 * spacing, h = rect.h + 2 * spacing,
+      right = x + w, bottom = y + h;
   ctx.beginPath();
-  ctx.rect(x, y, width, height);
+  ctx.rect(x, y, w, h);
   switch (mode) {
     case normalMode:
       ctx.fillStyle = theme.bgColor;
@@ -1545,6 +1580,33 @@ Renderer.prototype.drawGroup = function(group, mode) {
       ctx.stroke();
       for (let i = 0; i < group.items.length; i++) {
         this.draw(group.items[i], mode);
+      }
+      ctx.fillStyle = theme.bgColor;
+      ctx.fill();
+      ctx.strokeStyle = theme.strokeColor;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+      let elementY = y;
+      if (group.master) {
+        let master = getMaster(group);
+        strokePath('', right + spacing, elementY, master[_width], master[_height], ctx);
+        ctx.fill();
+        ctx.stroke();
+        this.drawMaster(master, right + spacing, elementY);
+        elementY += master[_height] + spacing;
+      }
+      ctx.fillStyle = theme.bgColor;
+      ctx.fill();
+      ctx.strokeStyle = theme.strokeColor;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+      if (group.closure) {
+        let closure = getClosure(group);
+        strokePath('', right + spacing, elementY, closure[_width], closure[_height], ctx);
+        ctx.fill();
+        ctx.stroke();
+        this.drawMaster(closure, right + spacing, elementY);
+        elementY += closure[_height] + spacing;
       }
       break;
     case highlightMode:
