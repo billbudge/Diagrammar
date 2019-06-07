@@ -73,6 +73,10 @@ function isOutputPinLabeled(item) {
   return isInput(item) || isLiteral(item) || isClosed(item);
 }
 
+function isPaletted(item) {
+  return isElement(item) && item.state == 'palette';
+}
+
 function isFunctionType(type) {
   return type[0] == '[';
 }
@@ -88,6 +92,24 @@ function visitItems(items, fn, filter) {
     }
   }
   items.forEach(item => visit(item));
+}
+
+function reverseVisitItems(items, fn, filter) {
+  function visit(item) {
+    // Pre-order traversal.
+    if (isGroup(item)) {
+      let items = item.items;
+      for (let i = items.length - 1; i >= 0; i--) {
+        visit(items[i], fn, filter);
+      }
+    }
+    if (!filter || filter(item)) {
+      fn(item);
+    }
+  }
+  for (let i = items.length - 1; i >= 0; i--) {
+    visit(items[i], fn, filter);
+  }
 }
 
 let inputElementType = '[,*]',
@@ -498,6 +520,34 @@ let editingModel = (function() {
         }
       });
       this.prototype.doPaste.call(this);
+    },
+
+    replaceItem: function(item, newItem) {
+      let self = this, model = this.model,
+          hierarchicalModel = model.hierarchicalModel,
+          observableModel = model.observableModel,
+          graphInfo = this.collectGraphInfo([item]),
+          itemInputs = graphInfo.inputMap.get(item),
+          itemOutputs = graphInfo.outputMap.get(item),
+          newId = model.dataModel.getId(newItem),
+          newMaster = getMaster(newItem);
+      itemInputs.forEach(function(wire, pin) {
+        if (wire) {
+          observableModel.changeValue(wire, 'dstId', newId);
+        }
+      });
+      itemOutputs.forEach(function(wires, pin) {
+        wires.forEach(function(wire) {
+          observableModel.changeValue(wire, 'srcId', newId);
+        });
+      });
+      let parent = hierarchicalModel.getParent(newItem),
+          newParent = hierarchicalModel.getParent(item);
+      if (parent != newParent)
+        self.addItem(newItem, newParent);
+      observableModel.changeValue(newItem, 'x', item.x);
+      observableModel.changeValue(newItem, 'y', item.y);
+      self.deleteItem(item);
     },
 
     connectInput: function(element, pin) {
@@ -2009,42 +2059,33 @@ Editor.prototype.draw = function() {
 }
 
 Editor.prototype.hitTest = function(p) {
-  var renderer = this.renderer,
+  let renderer = this.renderer,
       canvasController = this.canvasController,
       cp = canvasController.viewToCanvas(p),
       scale = canvasController.scale,
       zoom = Math.max(scale.x, scale.y),
-      tol = this.hitTolerance, cTol = tol / zoom,
+      tol = this.hitTolerance,
+      cTol = tol / zoom,
       diagram = this.diagram,
       hitList = [];
-  function pushInfo(info) {
+  function pushHit(info) {
     if (info)
       hitList.push(info);
   }
-  function reverseVisit(item, filter, fn) {
-    if (isContainer(item)) {
-      let items = item.items;
-      for (let i = items.length - 1; i >= 0; i--) {
-        reverseVisit(items[i], filter, fn);
-      }
-    }
-    if (!filter || filter(item))
-      fn(item);
-  }
-
   // TODO hit test selection first.
-  reverseVisit(diagram, isWire,
-    item => pushInfo(renderer.hitTest(item, cp, cTol, normalMode)));
-  reverseVisit(diagram, isElementOrGroup,
-    item => pushInfo(renderer.hitTest(item, cp, cTol, normalMode)));
+  reverseVisitItems(diagram.items,
+    item => pushHit(renderer.hitTest(item, cp, cTol, normalMode)), isWire);
+  reverseVisitItems(diagram.items,
+    item => pushHit(renderer.hitTest(item, cp, cTol, normalMode)), isElementOrGroup);
   return hitList;
 }
 
 Editor.prototype.getFirstHit = function(hitList, filterFn) {
   if (hitList) {
-    var model = this.model, length = hitList.length;
-    for (var i = 0; i < length; i++) {
-      var hitInfo = hitList[i];
+    let model = this.model,
+    length = hitList.length;
+    for (let i = 0; i < length; i++) {
+      let hitInfo = hitList[i];
       if (filterFn(hitInfo, model))
         return hitInfo;
     }
@@ -2065,8 +2106,17 @@ function isOutputPin(hitInfo, model) {
 }
 
 function isContainerTarget(hitInfo, model) {
-  var item = hitInfo.item;
+  let item = hitInfo.item;
   return isContainer(item) &&
+         !model.hierarchicalModel.isItemInSelection(item);
+}
+
+function isContainerTargetOrElementSlot(hitInfo, model) {
+  if (isContainerTarget(hitInfo, model))
+    return true;
+  // TODO drop element on function inputs.
+  let item = hitInfo.item;
+  return isElement(item) && !isPaletted(item) &&
          !model.hierarchicalModel.isItemInSelection(item);
 }
 
@@ -2179,8 +2229,11 @@ Editor.prototype.onBeginDrag = function(p0) {
   }
   this.drag = drag;
   if (drag) {
-    if (drag.type === 'moveSelection' || drag.type == 'moveCopySelection')
+    if (drag.type === 'moveSelection' || drag.type == 'moveCopySelection') {
       editingModel.reduceSelection();
+      let items = selectionModel.contents();
+      drag.isSingleElement = items.length == 1 && isElement(items[0]);
+    }
     model.transactionModel.beginTransaction(drag.name);
     if (newItem) {
       drag.item = newItem;
@@ -2231,7 +2284,9 @@ Editor.prototype.onDrag = function(p0, p) {
     case 'moveSelection':
     case 'moveCopySelection':
       if (isElementOrGroup(dragItem)) {
-        hitInfo = this.getFirstHit(hitList, isContainerTarget);
+        let filter = drag.isSingleElement ?
+                     isContainerTargetOrElementSlot : isContainerTarget;
+        hitInfo = this.getFirstHit(hitList, filter);
         selectionModel.forEach(function(item) {
           let snapshot = transactionModel.getSnapshot(item);
           if (snapshot) {
@@ -2294,18 +2349,26 @@ Editor.prototype.onEndDrag = function(p) {
   if (drag.type == 'moveSelection' ||
       drag.type == 'moveCopySelection' || newItem) {
     // Find element beneath mouse.
-    var hitList = this.hitTest(p),
-        hitInfo = this.getFirstHit(hitList, isContainerTarget),
+    let hitList = this.hitTest(p),
+        filter = drag.isSingleElement ?
+                 isContainerTargetOrElementSlot : isContainerTarget,
+        hitInfo = this.getFirstHit(hitList, filter),
         parent = hitInfo ? hitInfo.item : diagram;
-    // Add new items.
     if (newItem) {
+      // Add new item.
       editingModel.addItem(newItem, parent);
-      selectionModel.set([newItem]);
+      selectionModel.set(newItem);
     } else {
-      // Reparent existing items.
-      selectionModel.contents().forEach(function(item) {
-        editingModel.addItem(item, parent);
-      });
+      let selection = selectionModel.contents();
+      if (drag.isSingleElement && parent && !isContainer(parent)) {
+        // Replace parent item.
+        editingModel.replaceItem(parent, selection[0]);
+      } else {
+        // Reparent existing items.
+        selection.forEach(function(item) {
+          editingModel.addItem(item, parent);
+        });
+      }
     }
   }
 
