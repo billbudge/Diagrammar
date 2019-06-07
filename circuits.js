@@ -416,13 +416,21 @@ let editingModel = (function() {
     },
 
     copyItems: function(items, map) {
-      let model = this.model, dataModel = model.dataModel,
+      let model = this.model,
           diagram = this.diagram,
+          dataModel = model.dataModel,
+          translatableModel = model.translatableModel,
           copies = this.prototype.copyItems(items, map);
       items.forEach(function(item) {
         let copy = map.get(dataModel.getId(item));
         if (isElementOrGroup(copy)) {
+          // De-palettize clone.
           copy.state = 'normal';
+          // Clone coordinates should be in circuit-space. Get global position
+          // from original item.
+          let translation = translatableModel.getToParent(item, diagram);
+          copy.x += translation.x;
+          copy.y += translation.y;
         }
       });
       return copies;
@@ -1168,15 +1176,17 @@ let editingModel = (function() {
           viewModel = model.viewModel,
           hierarchicalModel = model.hierarchicalModel,
           translatableModel = model.translatableModel;
-      // Make sure groups are layed out.
+      // Make sure groups are big enough to enclose contents.
       visitItems(this.diagram.items, function(group) {
         let extents = viewModel.getItemRects(group.items),
             parent = hierarchicalModel.getParent(group),
             parentX = translatableModel.globalX(parent),
             parentY = translatableModel.globalY(parent),
+            groupX = translatableModel.globalX(group),
+            groupY = translatableModel.globalY(group),
             x = extents.x - parentX, y = extents.y - parentY;
-        viewModel.setItemBounds(group, extents.x + extents.w - group.x,
-                                       extents.y + extents.h - group.y);
+        viewModel.setItemBounds(group, extents.x + extents.w - groupX,
+                                       extents.y + extents.h - groupY);
       }, isGroup);
     }
   }
@@ -2057,12 +2067,12 @@ Editor.prototype.onBeginDrag = function(p0) {
       newItem, drag;
   if (mouseHitInfo.input !== undefined) {
     // Wire from input pin.
-    let circuitId = model.dataModel.getId(dragItem),
+    let elementId = model.dataModel.getId(dragItem),
         cp0 = canvasController.viewToCanvas(p0);
     // Start the new wire as connecting the dst element to itself.
     newItem = {
       type: 'wire',
-      dstId: circuitId,
+      dstId: elementId,
       dstPin: mouseHitInfo.input,
       [_p2]: cp0,
     };
@@ -2073,12 +2083,12 @@ Editor.prototype.onBeginDrag = function(p0) {
     };
   } else if (mouseHitInfo.output !== undefined) {
     // Wire from output pin.
-    let circuitId = model.dataModel.getId(dragItem),
+    let elementId = model.dataModel.getId(dragItem),
         cp0 = canvasController.viewToCanvas(p0);
     // Start the new wire as connecting the src element to itself.
     newItem = {
       type: 'wire',
-      srcId: circuitId,
+      srcId: elementId,
       srcPin: mouseHitInfo.output,
       [_p2]: cp0,
     };
@@ -2219,7 +2229,8 @@ Editor.prototype.onEndDrag = function(p) {
     transactionModel.cancelTransaction();
     transactionModel.beginTransaction(drag.name);
   }
-  if (drag.type == 'moveSelection' || newItem) {
+  if (drag.type == 'moveSelection' ||
+      drag.type == 'moveCopySelection' || newItem) {
     // Find element beneath mouse.
     var hitList = this.hitTest(p),
         hitInfo = this.getFirstHit(hitList, isContainerTarget),
@@ -2230,10 +2241,8 @@ Editor.prototype.onEndDrag = function(p) {
       selectionModel.set([newItem]);
     } else {
       // Reparent existing items.
-      selectionModel.forEach(function(item) {
-        if (isElementOrGroup(item)) {
-          editingModel.addItem(item, parent);
-        }
+      selectionModel.contents().forEach(function(item) {
+        editingModel.addItem(item, parent);
       });
     }
   }
