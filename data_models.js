@@ -362,6 +362,9 @@ let transactionModel = (function () {
       for (let i = length - 1; i >= 0; i--) {
         ops[i].undo();
       }
+      this.onEvent('didUndo', function(handler) {
+        handler(transaction);
+      });
     },
 
     // Redoes the changes in the transaction.
@@ -371,6 +374,9 @@ let transactionModel = (function () {
       for (let i = 0; i < length; i++) {
         ops[i].redo();
       }
+      this.onEvent('didRedo', function(handler) {
+        handler(transaction);
+      });
     },
 
     getSnapshot: function(item) {

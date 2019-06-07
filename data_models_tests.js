@@ -2,24 +2,24 @@
 // Data model unit tests
 
 test("dataModel extend", function() {
-  var model = { root: {} };
-  var test = dataModels.dataModel.extend(model);
+  let model = { root: {} };
+  let test = dataModels.dataModel.extend(model);
   deepEqual(test, model.dataModel);
 });
 
 test("dataModel ids", function() {
-  var testData = {
+  let testData = {
     id: 1,
     items: [
       { id: 20, },
       { id: 2, },
     ],
   }
-  var model = { root: testData };
-  var test = dataModels.dataModel.extend(model);
+  let model = { root: testData };
+  let test = dataModels.dataModel.extend(model);
   deepEqual(test, model.dataModel);
   deepEqual(21, test.nextId);
-  var item = {};
+  let item = {};
   let id = test.assignId(item);
   deepEqual(21, id);
   deepEqual(21, item.id);
@@ -27,30 +27,30 @@ test("dataModel ids", function() {
 });
 
 test("dataModel properties", function() {
-  var testData = {
+  let testData = {
     id: 1,
     prop: 'foo',
     arrayProp: [ 1, 2, 3 ],
     _anotherProp: 'bar',
     someId: 42,
   }
-  var model = { root: testData };
-  var test = dataModels.dataModel.extend(model);
+  let model = { root: testData };
+  let test = dataModels.dataModel.extend(model);
   ok(!test.isProperty(testData, 'id'));
   ok(test.isProperty(testData, 'prop'));
   ok(test.isProperty(testData, 'arrayProp'));
   ok(test.isProperty(testData, '_anotherProp'));
   ok(test.isReference(testData, 'someId'));
-  var nameValues = [];
+  let nameValues = [];
   test.visitProperties(testData, function(item, attr) { nameValues.push(attr); });
   deepEqual(nameValues, [ 'prop', 'arrayProp', '_anotherProp', 'someId' ]);
-  var refValues = [];
+  let refValues = [];
   test.visitReferences(testData, function(item, attr) { refValues.push(attr); });
   deepEqual(refValues, [ 'someId' ]);
 });
 
 test("dataModel children", function() {
-  var testData = {
+  let testData = {
     id: 1,
     item: { id: 2, },
     arrayItems: [
@@ -64,15 +64,15 @@ test("dataModel children", function() {
       { id: 6 },
     ],
   }
-  var model = { root: testData };
-  var test = dataModels.dataModel.extend(model);
-  var childIds = [];
+  let model = { root: testData };
+  let test = dataModels.dataModel.extend(model);
+  let childIds = [];
   test.visitChildren(testData, function(item) { childIds.push(item.id); });
   deepEqual(childIds, [ 2, 3, 6 ]);
 });
 
 test("dataModel subtrees", function() {
-  var testData = {
+  let testData = {
     id: 1,
     item: { id: 2, },
     items: [
@@ -86,9 +86,9 @@ test("dataModel subtrees", function() {
       { id: 6 },
     ],
   }
-  var model = { root: testData };
-  var test = dataModels.dataModel.extend(model);
-  var itemIds = [];
+  let model = { root: testData };
+  let test = dataModels.dataModel.extend(model);
+  let itemIds = [];
   test.visitSubtree(testData, function(item) { itemIds.push(item.id); });
   deepEqual(itemIds, [ 1, 2, 3, 4, 5, 6 ]);
 });
@@ -96,18 +96,18 @@ test("dataModel subtrees", function() {
 // Data event mixin unit tests.
 
 test("eventMixin", function() {
-  var model = {
+  let model = {
     onTestEvent: function() {
       this.onEvent('testEvent', function(handler) {
         handler();
       });
     },
   };
-  var test = dataModels.eventMixin.extend(model);
+  let test = dataModels.eventMixin.extend(model);
   deepEqual(test, model);
 
-  var count = 0;
-  var handler = function() { count++; };
+  let count = 0;
+  let handler = function() { count++; };
   model.onTestEvent();
   model.addHandler('testEvent', handler);
   deepEqual(0, count);
@@ -125,22 +125,21 @@ test("eventMixin", function() {
 // Observable model unit tests.
 
 test("observableModel extend", function() {
-  var model = {
+  let model = {
     root: {},
   };
-  var test = dataModels.observableModel.extend(model);
+  let test = dataModels.observableModel.extend(model);
   deepEqual(test, model.observableModel);
 });
 
 test("observableModel", function() {
-  var model = {
+  let model = {
     root: {
       array: [],
     },
   };
-  var test = dataModels.observableModel.extend(model);
-
-  var change;
+  let test = dataModels.observableModel.extend(model);
+  let change;
   test.addHandler('changed', function(change_) {
     change = change_;
   });
@@ -168,18 +167,18 @@ test("observableModel", function() {
 // Transaction model unit tests.
 
 test("transactionModel extend", function() {
-  var model = { root: {} };
-  var test = dataModels.transactionModel.extend(model);
+  let model = { root: {} };
+  let test = dataModels.transactionModel.extend(model);
   deepEqual(test, model.transactionModel);
   ok(model.observableModel);
 });
 
 test("transactionModel events", function() {
-  var model = {
+  let model = {
     root: {},
   };
-  var test = dataModels.transactionModel.extend(model);
-  var started, ending, ended;
+  let test = dataModels.transactionModel.extend(model);
+  let started, ending, ended;
   test.addHandler('transactionBegan', function(transaction) {
     ok(!started);
     ok(test.transaction);
@@ -206,17 +205,33 @@ test("transactionModel events", function() {
   ok(!test.transaction);
   ok(ending);
   ok(ended);
+
+  let didUndo;
+  test.addHandler('didUndo', function(transaction) {
+    ok(!didUndo);
+    didUndo = transaction;
+  });
+  test.undo(ended);
+  deepEqual(didUndo, ended);
+
+  let didRedo;
+  test.addHandler('didRedo', function(transaction) {
+    ok(!didRedo);
+    didRedo = transaction;
+  });
+  test.redo(ended);
+  deepEqual(didRedo, ended);
 });
 
 test("transactionModel transaction", function() {
-  var model = {
+  let model = {
     root: {
       prop1: 'foo',
       array: [],
     },
   };
-  var test = dataModels.transactionModel.extend(model);
-  var ended;
+  let test = dataModels.transactionModel.extend(model);
+  let ended;
   test.addHandler('transactionEnded', function(transaction) {
     ended = transaction;
   });
@@ -244,12 +259,12 @@ test("transactionModel transaction", function() {
 });
 
 test("transactionModel cancel", function() {
-  var model = {
+  let model = {
     root: {},
   };
   model.prop1 = 'foo';
-  var test = dataModels.transactionModel.extend(model);
-  var ending, canceled;
+  let test = dataModels.transactionModel.extend(model);
+  let ending, canceled;
   test.addHandler('transactionEnding', function(transaction) {
     ok(!ending);
     ending = transaction;
@@ -272,29 +287,29 @@ test("transactionModel cancel", function() {
 // Referencing model unit tests.
 
 test("referencingModel extend", function() {
-  var model = {
+  let model = {
     root: {},
   };
-  var test = dataModels.referencingModel.extend(model);
+  let test = dataModels.referencingModel.extend(model);
   deepEqual(test, model.referencingModel);
 });
 
 test("referencingModel", function() {
   // Default data model references end with 'Id'.
-  var child1 = { id: 2, refId: 1 },
+  let child1 = { id: 2, refId: 1 },
       child2 = { id: 3, refId: 1 },
       child3 = { id: 4, firstId: 1, secondId: 3 };
-  var root = {
+  let root = {
     id: 1,
     child: null,
     items: [
       child1,
     ],
   };
-  var model = { root: root };
+  let model = { root: root };
   dataModels.observableModel.extend(model);
 
-  var test = dataModels.referencingModel.extend(model);
+  let test = dataModels.referencingModel.extend(model);
   deepEqual(test.getReference(child1, 'refId'), root);
   deepEqual(test.getReferenceFn('refId')(child1), root);
   deepEqual(test.getReference(child1, 'refId'), model.referencingModel.resolveId(child1.refId));
@@ -320,8 +335,8 @@ test("referencingModel", function() {
 // Hierarchical model unit tests.
 
 test("hierarchicalModel extend", function() {
-  var model = { root: {} };
-  var test = dataModels.hierarchicalModel.extend(model);
+  let model = { root: {} };
+  let test = dataModels.hierarchicalModel.extend(model);
   deepEqual(test, model.hierarchicalModel);
   ok(model.observableModel);
 });
@@ -366,16 +381,16 @@ test("hierarchicalModel", function() {
 // Selection model unit tests.
 
 test("selectionModel extend", function() {
-  var model = { root: {} };
-  var test = dataModels.selectionModel.extend(model);
+  let model = { root: {} };
+  let test = dataModels.selectionModel.extend(model);
   deepEqual(test, model.selectionModel);
   ok(test.isEmpty());
   ok(!test.lastSelected());
 });
 
 test("selectionModel add", function() {
-  var model = { root: {} };
-  var test = dataModels.selectionModel.extend(model);
+  let model = { root: {} };
+  let test = dataModels.selectionModel.extend(model);
   test.add('a');
   ok(!test.isEmpty());
   ok(test.contains('a'));
@@ -387,8 +402,8 @@ test("selectionModel add", function() {
 });
 
 test("selectionModel remove", function() {
-  var model = { root: {} };
-  var test = dataModels.selectionModel.extend(model);
+  let model = { root: {} };
+  let test = dataModels.selectionModel.extend(model);
   test.add(['b', 'a', 'c']);
   test.remove('c');
   deepEqual(test.contents(), ['a', 'b']);
@@ -399,8 +414,8 @@ test("selectionModel remove", function() {
 });
 
 test("selectionModel toggle", function() {
-  var model = { root: {} };
-  var test = dataModels.selectionModel.extend(model);
+  let model = { root: {} };
+  let test = dataModels.selectionModel.extend(model);
   test.add(['a', 'b', 'c']);
   test.toggle('c');
   deepEqual(test.contents(), ['b', 'a']);
@@ -411,8 +426,8 @@ test("selectionModel toggle", function() {
 });
 
 test("selectionModel set", function() {
-  var model = { root: {} };
-  var test = dataModels.selectionModel.extend(model);
+  let model = { root: {} };
+  let test = dataModels.selectionModel.extend(model);
   test.set('a');
   deepEqual(test.contents(), ['a']);
   deepEqual(test.lastSelected(), 'a');
@@ -422,8 +437,8 @@ test("selectionModel set", function() {
 });
 
 test("selectionModel select", function() {
-  var model = { root: {} };
-  var test = dataModels.selectionModel.extend(model);
+  let model = { root: {} };
+  let test = dataModels.selectionModel.extend(model);
   test.set(['a', 'b', 'c']);
   test.select('d', true);
   deepEqual(test.contents(), ['d', 'c', 'b', 'a']);

@@ -77,6 +77,19 @@ function isFunctionType(type) {
   return type[0] == '[';
 }
 
+function visitItems(items, fn, filter) {
+  function visit(item) {
+    // Pre-order traversal.
+    if (isGroup(item)) {
+      item.items.forEach(item => visit(item));
+    }
+    if (!filter || filter(item)) {
+      fn(item);
+    }
+  }
+  items.forEach(item => visit(item));
+}
+
 let inputElementType = '[,*]',
     outputElementType = '[*,]',
     lambdaElementType = '[*(λ),]';
@@ -273,54 +286,48 @@ let editingModel = (function() {
       // Get elements and initialize input/output maps.
       let elementSet = new Set();
       let inputMap = new Map(), outputMap = new Map();
-      items.forEach(function(item) {
-        if (isElement(item)) {
-          let master = getMaster(item);
-          elementSet.add(item);
-          // inputMap takes element to array of incoming wires.
-          inputMap.set(item, new Array(master.inputs.length).fill(null));
-          // outputMap takes element to array of array of outgoing wires.
-          let arrays = new Array(master.outputs.length);
-          for (let i = 0; i < arrays.length; i++)
-            arrays[i] = new Array();
-          outputMap.set(item, arrays);
-        } else if (isGroup(item)) {
-          self.collectGraphInfo(item.items);
-        }
-      });
+      visitItems(items, function(element) {
+        let master = getMaster(element);
+        elementSet.add(element);
+        // inputMap takes element to array of incoming wires.
+        inputMap.set(element, new Array(master.inputs.length).fill(null));
+        // outputMap takes element to array of array of outgoing wires.
+        let arrays = new Array(master.outputs.length);
+        for (let i = 0; i < arrays.length; i++)
+          arrays[i] = new Array();
+        outputMap.set(element, arrays);
+      }, isElement);
       // Separate wires into incoming, outgoing, and interior. Populate
       // input/output maps, and incoming and outgoing pins.
       let wires = [], incomingWires = [], outgoingWires = [], interiorWires = [],
           inputWires = [], outputWires = [];
-      this.diagram.items.forEach(function(item) {
-        if (isWire(item)) {
-          wires.push(item);
-          let src = self.getWireSrc(item),
-              dst = self.getWireDst(item),
-              srcInside = elementSet.has(src),
-              dstInside = elementSet.has(dst);
-          if (srcInside) {
-            outputMap.get(src)[item.srcPin].push(item);
-            if (dstInside) {
-              interiorWires.push(item);
-              if (isInput(src))
-                inputWires.push(item);
-              if (isOutput(dst))
-                outputWires.push(item);
-            } else {
-              outgoingWires.push(item);
-              outputWires.push(item);
-            }
-          }
+      visitItems(this.diagram.items, function(wire) {
+        wires.push(wire);
+        let src = self.getWireSrc(wire),
+            dst = self.getWireDst(wire),
+            srcInside = elementSet.has(src),
+            dstInside = elementSet.has(dst);
+        if (srcInside) {
+          outputMap.get(src)[wire.srcPin].push(wire);
           if (dstInside) {
-            inputMap.get(dst)[item.dstPin] = item;
-            if (!srcInside) {
-              incomingWires.push(item);
-              inputWires.push(item);
-            }
+            interiorWires.push(wire);
+            if (isInput(src))
+              inputWires.push(wire);
+            if (isOutput(dst))
+              outputWires.push(wire);
+          } else {
+            outgoingWires.push(wire);
+            outputWires.push(wire);
           }
         }
-      });
+        if (dstInside) {
+          inputMap.get(dst)[wire.dstPin] = wire;
+          if (!srcInside) {
+            incomingWires.push(wire);
+            inputWires.push(wire);
+          }
+        }
+      }, isWire);
 
       return {
         elementSet: elementSet,
@@ -1114,7 +1121,6 @@ let editingModel = (function() {
     makeConsistent: function () {
       let self = this, model = this.model,
           dataModel = model.dataModel,
-          viewModel = model.viewModel,
           masteringModel = model.masteringModel,
           selectionModel = model.selectionModel,
           observableModel = model.observableModel,
@@ -1148,26 +1154,6 @@ let editingModel = (function() {
         }
       });
 
-      // Make sure groups are layed out.
-      function layoutGroup(item) {
-        if (!isGroup(item))
-          return;
-        let groupItems = item.items;
-        groupItems.forEach(function(groupItem) {
-          layoutGroup(groupItem);
-        });
-        let extents = viewModel.getItemRects(groupItems),
-            x = extents.x, y = extents.y;
-        if (item.x != x) {
-          observableModel.changeValue(item, 'x', x);
-        }
-        if (item.y != y) {
-          observableModel.changeValue(item, 'y', y);
-        }
-        viewModel.setItemBounds(item, extents.w, extents.h);
-      }
-      this.diagram.items.forEach(layoutGroup);
-
       // Eliminate dangling wires.
       wires.forEach(function(wire) {
         let src = self.getWireSrc(wire), dst = self.getWireDst(wire);
@@ -1176,6 +1162,23 @@ let editingModel = (function() {
         }
       });
     },
+
+    layoutGroups: function () {
+      let model = this.model,
+          viewModel = model.viewModel,
+          hierarchicalModel = model.hierarchicalModel,
+          translatableModel = model.translatableModel;
+      // Make sure groups are layed out.
+      visitItems(this.diagram.items, function(group) {
+        let extents = viewModel.getItemRects(group.items),
+            parent = hierarchicalModel.getParent(group),
+            parentX = translatableModel.globalX(parent),
+            parentY = translatableModel.globalY(parent),
+            x = extents.x - parentX, y = extents.y - parentY;
+        viewModel.setItemBounds(group, extents.x + extents.w - group.x,
+                                       extents.y + extents.h - group.y);
+      }, isGroup);
+    }
   }
 
   function extend(model) {
@@ -1202,7 +1205,14 @@ let editingModel = (function() {
     model.transactionModel.addHandler('transactionEnding', function (transaction) {
       // ignore transaction argument.
       instance.makeConsistent();
+      instance.layoutGroups();
     });
+    function layout(transaction) {
+      // ignore transaction argument.
+      instance.layoutGroups();
+    }
+    model.transactionModel.addHandler('didUndo', layout);
+    model.transactionModel.addHandler('didRedo', layout);
 
     model.editingModel = instance;
     return instance;
