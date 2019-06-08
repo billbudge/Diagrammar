@@ -2,7 +2,7 @@
 
 'use strict';
 
-let circuits = (function() {
+const circuits = (function() {
 
 function isCircuit(item) {
   return item.type == 'circuit';
@@ -107,12 +107,12 @@ function reverseVisitItems(items, fn, filter) {
   }
 }
 
-let inputElementType = '[,*]',
+const inputElementType = '[,*]',
     outputElementType = '[*,]',
     lambdaElementType = '[*(λ),]';
 
-let _master = Symbol('master'),
-    _closure = Symbol('closure');
+const _master = Symbol('master'),
+      _closure = Symbol('closure');
 
 function getMaster(item) {
   return item[_master];
@@ -124,8 +124,8 @@ function getClosure(item) {
 
 //------------------------------------------------------------------------------
 
-let masteringModel = (function() {
-  let proto = {
+const masteringModel = (function() {
+  const proto = {
     getMaster: function(item) {
       return item[_master];
     },
@@ -297,8 +297,8 @@ let masteringModel = (function() {
 
 //------------------------------------------------------------------------------
 
-let editingModel = (function() {
-  let proto = {
+const editingModel = (function() {
+  const proto = {
     reduceSelection: function () {
       let model = this.model;
       model.selectionModel.set(model.hierarchicalModel.reduceSelection());
@@ -1309,18 +1309,18 @@ let editingModel = (function() {
 
 //------------------------------------------------------------------------------
 
-let _x = Symbol('x'),
-    _y = Symbol('y'),
-    _baseline = Symbol('baseline'),
-    _width = Symbol('width'),
-    _height = Symbol('height'),
-    _p1 = Symbol('p1'),
-    _p2 = Symbol('p2'),
-    _bezier = Symbol('bezier'),
-    _background = Symbol('background');
+const _x = Symbol('x'),
+      _y = Symbol('y'),
+      _baseline = Symbol('baseline'),
+      _width = Symbol('width'),
+      _height = Symbol('height'),
+      _p1 = Symbol('p1'),
+      _p2 = Symbol('p2'),
+      _bezier = Symbol('bezier'),
+      _background = Symbol('background');
 
-let viewModel = (function() {
-  let proto = {
+const viewModel = (function() {
+  const proto = {
     getItemRect: function (item) {
       if (isWire(item))
         return;
@@ -1397,7 +1397,7 @@ let viewModel = (function() {
 
 //------------------------------------------------------------------------------
 
-let normalMode = 1,
+const normalMode = 1,
     highlightMode = 2,
     hotTrackMode = 3;
 
@@ -1623,9 +1623,8 @@ Renderer.prototype.drawGroup = function(group, mode) {
       ctx.strokeStyle = theme.strokeColor;
       ctx.lineWidth = 0.5;
       ctx.stroke();
-      for (let i = 0; i < group.items.length; i++) {
-        this.draw(group.items[i], mode);
-      }
+      this.drawItems(group.items, mode);
+
       let elementY = y;
       if (group.master) {
         let master = getMaster(group);
@@ -1766,6 +1765,12 @@ Renderer.prototype.draw = function(item, mode) {
       this.drawWire(item, mode);
       break;
   }
+}
+
+Renderer.prototype.drawItems = function(items, mode) {
+  let self = this;
+  visitItems(items, item => self.draw(item, mode), isElementOrGroup);
+  visitItems(items, item => self.drawWire(item, mode), isWire);
 }
 
 Renderer.prototype.hitTest = function(item, p, tol, mode) {
@@ -2001,7 +2006,7 @@ Editor.prototype.getTemporaryItem = function() {
 }
 
 Editor.prototype.draw = function() {
-  var renderer = this.renderer, diagram = this.diagram,
+  let renderer = this.renderer, diagram = this.diagram,
       model = this.model, ctx = this.ctx,
       canvasController = this.canvasController;
   renderer.beginDraw(model, ctx);
@@ -2012,6 +2017,7 @@ Editor.prototype.draw = function() {
   ctx.lineWidth = 0.5;
   ctx.strokeRect(300, 10, 700, 300);
 
+  // TODO decide if renderer should draw and hitTest entire circuits.
   diagram.items.forEach(function(item) {
     if (isElementOrGroup(item)) {
       renderer.layout(item);
@@ -2032,7 +2038,7 @@ Editor.prototype.draw = function() {
     renderer.draw(this.hotTrackInfo.item, hotTrackMode);
   renderer.endDraw();
 
-  var temporary = this.getTemporaryItem();
+  let temporary = this.getTemporaryItem();
   if (temporary) {
     renderer.beginDraw(model, ctx);
     canvasController.applyTransform();
@@ -2041,7 +2047,7 @@ Editor.prototype.draw = function() {
     renderer.endDraw();
   }
 
-  var hoverHitInfo = this.hoverHitInfo;
+  let hoverHitInfo = this.hoverHitInfo;
   if (hoverHitInfo) {
     renderer.beginDraw(model, ctx);
     renderer.drawHoverInfo(hoverHitInfo.item, hoverHitInfo.p);
@@ -2373,7 +2379,7 @@ Editor.prototype.onEndDrag = function(p) {
 }
 
 Editor.prototype.onBeginHover = function(p) {
-  var model = this.model,
+  let model = this.model,
       hitList = this.hitTest(p),
       hoverHitInfo = this.getFirstHit(hitList, isDraggable);
   if (!hoverHitInfo)
@@ -2389,7 +2395,7 @@ Editor.prototype.onEndHover = function(p) {
 }
 
 Editor.prototype.onKeyDown = function(e) {
-  var model = this.model,
+  let model = this.model,
       diagram = this.diagram,
       selectionModel = model.selectionModel,
       editingModel = model.editingModel,
@@ -2457,7 +2463,7 @@ Editor.prototype.onKeyDown = function(e) {
         editingModel.doGroup(shiftKey);
         return true;
       case 83:  // 's'
-        var text = JSON.stringify(
+        let text = JSON.stringify(
           diagram,
           function(key, value) {
             if (key.toString().charAt(0) === '_')
@@ -2490,7 +2496,7 @@ return {
 })();
 
 
-var circuit_data =
+const circuit_data =
 {
   "type": "circuit",
   "id": 1,
