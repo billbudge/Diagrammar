@@ -1,13 +1,13 @@
 // Data models and related objects.
 
 
-let dataModels = (function () {
+const dataModels = (function () {
   'use strict';
 
 //------------------------------------------------------------------------------
 
-let dataModel = (function () {
-  let proto = {
+const dataModel = (function () {
+  const proto = {
     getRoot: function() {
       return this.model.root;
     },
@@ -137,7 +137,7 @@ let dataModel = (function () {
 
 //------------------------------------------------------------------------------
 
-let eventMixin = (function () {
+const eventMixin = (function () {
   function addHandler(event, handler) {
     let list = this[event];
     if (!list)
@@ -178,8 +178,8 @@ let eventMixin = (function () {
 
 //------------------------------------------------------------------------------
 
-let observableModel = (function () {
-  let proto = {
+const observableModel = (function () {
+  const proto = {
     // Notifies observers that the value of a property has changed.
     // Standard formats:
     // 'change': item, attr, oldValue.
@@ -262,8 +262,8 @@ let observableModel = (function () {
 
 //------------------------------------------------------------------------------
 
-let transactionModel = (function () {
-  let opProto = {
+const transactionModel = (function () {
+  const opProto = {
     undo: function () {
       let change = this.change,
           item = change.item, attr = change.attr,
@@ -300,7 +300,7 @@ let transactionModel = (function () {
     }
   }
 
-  let selectionOpProto = {
+  const selectionOpProto = {
     undo: function() {
       this.selectionModel.set(this.startingSelection);
     },
@@ -309,7 +309,7 @@ let transactionModel = (function () {
     }
   }
 
-  let proto = {
+  const proto = {
     // Notifies observers that a transaction has started.
     beginTransaction: function (name) {
       let transaction = {
@@ -488,8 +488,8 @@ let transactionModel = (function () {
 
 //------------------------------------------------------------------------------
 
-let transactionHistory = (function () {
-  let proto = {
+const transactionHistory = (function () {
+  const proto = {
     getRedo: function () {
       let length = this.undone.length;
       return length > 0 ? this.undone[length - 1] : null;
@@ -550,8 +550,8 @@ let transactionHistory = (function () {
 
 // Referencing model. It tracks reference targets in the data and resolves
 // reference properties from ids to actual references.
-let referencingModel = (function () {
-  let proto = {
+const referencingModel = (function () {
+  const proto = {
     // Gets the object that is referenced by item[attr]. Default is to return
     // item[_attr].
     getReference: function (item, attr) {
@@ -666,8 +666,8 @@ let referencingModel = (function () {
 
 //------------------------------------------------------------------------------
 
-let referenceValidator = (function () {
-  let proto = {
+const referenceValidator = (function () {
+  const proto = {
     onDanglingReference: function (item, attr) {
       this.onEvent('danglingReference', function (handler) {
         handler(item, attr);
@@ -712,10 +712,10 @@ let referenceValidator = (function () {
 
 //------------------------------------------------------------------------------
 
-let selectionModel = (function () {
+const selectionModel = (function () {
   function iterable(item) { return typeof item[Symbol.iterator] == 'function'; }
 
-  let proto = {
+  const proto = {
     isEmpty: function () {
       return this.selection.length == 0;
     },
@@ -812,8 +812,8 @@ let selectionModel = (function () {
 
 //------------------------------------------------------------------------------
 
-let instancingModel = (function () {
-  let proto = {
+const instancingModel = (function () {
+  const proto = {
     canClone: function (item) {
       return true;
     },
@@ -885,8 +885,8 @@ let instancingModel = (function () {
 
 //------------------------------------------------------------------------------
 
-let editingModel = (function () {
-  let proto = {
+const editingModel = (function () {
+  const proto = {
     addItems: function (items) {
       // Implement.
     },
@@ -972,9 +972,9 @@ let editingModel = (function () {
 
 //------------------------------------------------------------------------------
 
-let hierarchicalModel = (function () {
-  let _parent = Symbol('parent');
-  let proto = {
+const hierarchicalModel = (function () {
+  const _parent = Symbol('parent');
+  const proto = {
     getRoot: function () {
       return this.model.dataModel.getRoot();
     },
@@ -1093,9 +1093,9 @@ let hierarchicalModel = (function () {
 //------------------------------------------------------------------------------
 
 // translatableModel maintains absolute positions on a hierarchy of items.
-let translatableModel = (function () {
-  let _x = Symbol('x'), _y = Symbol('y');
-  let proto = {
+const translatableModel = (function () {
+  const _x = Symbol('x'), _y = Symbol('y');
+  const proto = {
     // Getter functions which determine translation parameters. Override to
     // fit the model.
     getX: function(item) {
@@ -1222,14 +1222,14 @@ let translatableModel = (function () {
 // transformableModel maintains transform matrices on a hierarchy of items. It
 // handles 2d transforms with rotation, uniform scaling, and translations. Non-
 // uniform scale transforms don't work well with canvas drawing in general.
-let transformableModel = (function () {
-  let _x = Symbol('x'), _y = Symbol('y'), _scale = Symbol('scale'),
-      _ooScale = Symbol('ooScale'), _rotation = Symbol('rotation'),
-      _transform = Symbol('transform'),
-      _iTransform = Symbol('inverse transform'),
-      _aTransform = Symbol('absolute transform'),
-      _iaTransform = Symbol('inverse absolute transform');
-  let proto = {
+const transformableModel = (function () {
+  const _x = Symbol('x'), _y = Symbol('y'), _scale = Symbol('scale'),
+        _ooScale = Symbol('ooScale'), _rotation = Symbol('rotation'),
+        _transform = Symbol('transform'),
+        _iTransform = Symbol('inverse transform'),
+        _aTransform = Symbol('absolute transform'),
+        _iaTransform = Symbol('inverse absolute transform');
+  const proto = {
     // Getter functions which determine transform parameters. Override if these
     // don't fit your model.
     hasTransform: function (item) {
@@ -1387,8 +1387,8 @@ let transformableModel = (function () {
 //------------------------------------------------------------------------------
 
 // A model for maintaining a single 'open' item.
-let openingModel = (function () {
-  let proto = {
+const openingModel = (function () {
+  const proto = {
     open: function(item) {
       this.openItem_ = item;
     },
@@ -1437,8 +1437,8 @@ let openingModel = (function () {
 
 //------------------------------------------------------------------------------
 
-// let myModel = (function () {
-//   let proto = {
+// const myModel = (function () {
+//   const proto = {
 //     foo: function (item) {
 //       return item;
 //     },
