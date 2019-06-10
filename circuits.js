@@ -81,29 +81,33 @@ function isFunctionType(type) {
   return type[0] == '[';
 }
 
-function visitItems(items, fn, filter) {
-  function visit(item) {
-    if (!filter || filter(item)) {
-      fn(item);
-    }
-    if (isGroup(item)) {
-      visitItems(item.items, fn, filter);
-    }
+// Visits in pre-order, useful for rendering using Painter's algorithm.
+function visitItem(item, fn, filter) {
+  if (!filter || filter(item)) {
+    fn(item);
   }
-  items.forEach(item => visit(item));
+  if (isContainer(item)) {
+    visitItems(item.items, fn, filter);
+  }
+}
+
+function visitItems(items, fn, filter) {
+  items.forEach(item => visitItem(item, fn, filter));
+}
+
+// Visits in post-order, the reverse of visitItems, for hit testing.
+function reverseVisitItem(item, fn, filter) {
+  if (isContainer(item)) {
+    reverseVisitItems(item.items, fn, filter);
+  }
+  if (!filter || filter(item)) {
+    fn(item);
+  }
 }
 
 function reverseVisitItems(items, fn, filter) {
-  function visit(item) {
-    if (isGroup(item)) {
-      reverseVisitItems(item.items, fn, filter);
-    }
-    if (!filter || filter(item)) {
-      fn(item);
-    }
-  }
   for (let i = items.length - 1; i >= 0; i--) {
-    visit(items[i], fn, filter);
+    reverseVisitItem(items[i], fn, filter);
   }
 }
 
@@ -547,6 +551,7 @@ const editingModel = (function() {
 
     connectInput: function(element, pin) {
       let viewModel = this.model.viewModel,
+          parent = this.model.hierarchicalModel.getParent(element),
           dstPin = getMaster(element).inputs[pin],
           pinPoint = viewModel.pinToPoint(element, pin, true);
       let junction = {
@@ -558,7 +563,7 @@ const editingModel = (function() {
         master: inputElementType,
       };
       this.newItem(junction);
-      this.addItem(junction);
+      this.addItem(junction, parent);  // same parent as element
       let wire = {
         type: 'wire',
         srcId: junction.id,
@@ -567,7 +572,7 @@ const editingModel = (function() {
         dstPin: pin,
       };
       this.newItem(wire);
-      this.addItem(wire);
+      this.addItem(wire);  // circuit owns all wires
       return { junction: junction, wire: wire };
     },
 
@@ -1236,6 +1241,8 @@ const editingModel = (function() {
         }
       });
 
+      // Update group element types.
+
       // Eliminate dangling wires.
       wires.forEach(function(wire) {
         let src = self.getWireSrc(wire), dst = self.getWireDst(wire);
@@ -1614,16 +1621,16 @@ Renderer.prototype.drawGroup = function(group, mode) {
       x = rect.x - spacing, y = rect.y - spacing,
       w = rect.w + 2 * spacing, h = rect.h + 2 * spacing,
       right = x + w, bottom = y + h;
-  ctx.beginPath();
-  ctx.rect(x, y, w, h);
+  diagrams.roundRectPath(x, y, w, h, spacing, ctx);
   switch (mode) {
     case normalMode:
       ctx.fillStyle = theme.bgColor;
       ctx.fill();
       ctx.strokeStyle = theme.strokeColor;
       ctx.lineWidth = 0.5;
+      ctx.setLineDash([6,3]);
       ctx.stroke();
-      this.drawItems(group.items, mode);
+      ctx.setLineDash([]);
 
       let elementY = y;
       if (group.master) {
@@ -1765,12 +1772,6 @@ Renderer.prototype.draw = function(item, mode) {
       this.drawWire(item, mode);
       break;
   }
-}
-
-Renderer.prototype.drawItems = function(items, mode) {
-  let self = this;
-  visitItems(items, item => self.draw(item, mode), isElementOrGroup);
-  visitItems(items, item => self.drawWire(item, mode), isWire);
 }
 
 Renderer.prototype.hitTest = function(item, p, tol, mode) {
@@ -2017,46 +2018,40 @@ Editor.prototype.draw = function() {
   ctx.lineWidth = 0.5;
   ctx.strokeRect(300, 10, 700, 300);
 
-  // TODO decide if renderer should draw and hitTest entire circuits.
-  diagram.items.forEach(function(item) {
-    if (isElementOrGroup(item)) {
-      renderer.layout(item);
+  visitItems(diagram.items,
+    function(item) {
       renderer.draw(item, normalMode);
-    }
-  });
-  diagram.items.forEach(function(item) {
-    if (isWire(item)) {
-      renderer.layout(item);
-      renderer.draw(item, normalMode);
-    }
-  });
+    }, isElementOrGroup);
+  visitItems(diagram.items,
+    function(wire) {
+      renderer.layout(wire),
+      renderer.draw(wire, normalMode);
+    }, isWire);
 
   model.selectionModel.forEach(function(item) {
     renderer.draw(item, highlightMode);
   });
+
   if (this.hotTrackInfo)
     renderer.draw(this.hotTrackInfo.item, hotTrackMode);
-  renderer.endDraw();
 
   let temporary = this.getTemporaryItem();
   if (temporary) {
-    renderer.beginDraw(model, ctx);
     canvasController.applyTransform();
     renderer.layout(temporary);
     renderer.draw(temporary, normalMode);
-    renderer.endDraw();
   }
 
   let hoverHitInfo = this.hoverHitInfo;
   if (hoverHitInfo) {
-    renderer.beginDraw(model, ctx);
     renderer.drawHoverInfo(hoverHitInfo.item, hoverHitInfo.p);
-    renderer.endDraw();
   }
+  renderer.endDraw();
 }
 
 Editor.prototype.hitTest = function(p) {
   let renderer = this.renderer,
+      model = this.model,
       canvasController = this.canvasController,
       cp = canvasController.viewToCanvas(p),
       scale = canvasController.scale,
@@ -2069,7 +2064,9 @@ Editor.prototype.hitTest = function(p) {
     if (info)
       hitList.push(info);
   }
-  // TODO hit test selection first.
+  model.selectionModel.forEach(function(item) {
+    item => pushHit(renderer.hitTest(item, cp, cTol, normalMode));
+  });
   reverseVisitItems(diagram.items,
     item => pushHit(renderer.hitTest(item, cp, cTol, normalMode)), isWire);
   reverseVisitItems(diagram.items,
@@ -2354,7 +2351,7 @@ Editor.prototype.onEndDrag = function(p) {
         parent = hitInfo ? hitInfo.item : diagram;
     if (newWire) {
       // Add new wire.
-      editingModel.addItem(newWire, parent);
+      editingModel.addItem(newWire);
       selectionModel.set(newWire);
     } else {
       let selection = selectionModel.contents();
