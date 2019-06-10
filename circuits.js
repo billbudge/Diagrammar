@@ -259,12 +259,15 @@ const masteringModel = (function() {
     },
 
     initialize: function(item) {
-      if (isElementOrGroup(item) && item.master) {
-        item[_master] = this.masterMap_.get(item.master) ||
-                        this.decodeType(item.master);
-        if (isGroup(item) && item.closure) {
-          item[_closure] = this.masterMap_.get(item.closure) ||
-                           this.decodeType(item.closure);
+      if (isElementOrGroup(item)) {
+        const master = item.master, closure = item.closure;
+        if (master) {
+          item[_master] = this.masterMap_.get(master) ||
+                          this.decodeType(master);
+        }
+        if (isGroup(item) && closure) {
+          item[_closure] = this.masterMap_.get(closure) ||
+                           this.decodeType(closure);
         }
       }
     },
@@ -286,8 +289,12 @@ const masteringModel = (function() {
     });
     // Make sure elements are remastered if their master type changes.
     model.observableModel.addHandler('changed', function (change) {
-      if (isElement(change.item) && change.attr == 'master')
-      instance.initialize(change.item);
+      if (isElementOrGroup(change.item)) {
+        if (change.attr == 'master' ||
+            (isGroup(change.item) && change.attr == 'closure')) {
+          instance.initialize(change.item);
+        }
+      }
     });
 
     model.masteringModel = instance;
@@ -811,12 +818,106 @@ const editingModel = (function() {
       });
     },
 
-    getGroupType: function(elements) {
+    getGroupInfo: function(elements, entireGraphInfo) {
+      let self = this, model = this.model,
+          dataModel = model.dataModel,
+          masteringModel = model.masteringModel,
+          viewModel = model.viewModel;
 
-    },
+      let graphInfo = this.collectGraphInfo(elements),
+          extents = viewModel.getItemRects(graphInfo.elementSet),
+          inputs = [], outputs = [];
 
-    getClosureType: function(elements) {
+      // Sort wire arrays so we encounter pins in increasing y-order. This lets
+      // us lay out the group in an intuitively consistent way.
+      function compareIncomingWires(wire1, wire2) {
+        let src1 = self.getWireSrc(wire1), src2 = self.getWireSrc(wire2);
+        return viewModel.pinToPoint(src1, wire1.srcPin, false).y -
+               viewModel.pinToPoint(src2, wire2.srcPin, false).y;
+      }
+      function compareOutgoingWires(wire1, wire2) {
+        let dst1 = self.getWireDst(wire1), dst2 = self.getWireDst(wire2);
+        return viewModel.pinToPoint(dst1, wire1.dstPin, true).y -
+               viewModel.pinToPoint(dst2, wire2.dstPin, true).y;
+      }
+      graphInfo.inputWires.sort(compareIncomingWires);
+      graphInfo.outputWires.sort(compareOutgoingWires);
 
+      let master = '[';
+      let closure = '[';
+      let pinIndex = 0;
+
+      // Use srcMap to ensure that an internal or external source is only
+      // represented once in inputs and outputs.
+      function addUniqueSource(wire, srcMap) {
+        const src = self.getWireSrc(wire),
+              srcPins = getMaster(src).outputs;
+        let srcIndices = srcMap.get(src);
+        if (srcIndices === undefined) {
+          srcIndices = new Array(srcPins.length);
+          srcMap.set(src, srcIndices);
+        }
+        const index = wire.srcPin;
+        if (srcIndices[index] === undefined) {
+          srcIndices[index] = pinIndex++;
+        }
+        return srcIndices[index];
+      }
+
+      function getSrcType(wire) {
+        const src = self.getWireSrc(wire),
+              srcPin = getMaster(src).outputs[wire.srcPin];
+        let srcType = self.getPinType(srcPin);
+          if (srcType.startsWith('*')) {
+            const label = srcType.substring(1);
+            if (isInput(src))
+              srcType = self.findDstType(wire, entireGraphInfo) + label;
+            else if (isOutput(src))
+              srcType = self.findSrcType(wire, entireGraphInfo) + label;
+          }
+          return srcType;
+      }
+
+      let incomingSrcMap = new Map(), outgoingSrcMap = new Map();
+      // Add inputs for inputWires.
+      graphInfo.inputWires.forEach(function(wire) {
+        const index = addUniqueSource(wire, incomingSrcMap),
+              src = self.getWireSrc(wire);
+        if (index == pinIndex - 1) {
+          // First instance of the source, add an input.
+          let srcType = getSrcType(wire);
+          master += srcType;
+          if (graphInfo.elementSet.has(src)) {
+            closure += srcType;
+          }
+        }
+      });
+      master += ',';
+      closure += ',';
+      pinIndex = 0;
+      // Add outputs for outputWires.
+      graphInfo.outputWires.forEach(function(wire) {
+        const index = addUniqueSource(wire, outgoingSrcMap),
+              dst = self.getWireDst(wire);
+        if (index == pinIndex - 1) {
+          // First instance of the source, add an output.
+          let srcType = getSrcType(wire);
+          master += srcType;
+          closure += srcType;
+        }
+      });
+      master += ']';
+      closure += ']';
+      if (!masteringModel.hasOutput(master)) {
+        master = closure = undefined;
+      }
+      if (master == closure) {
+        closure = undefined;
+      }
+
+      return { master: master,
+               closure: closure
+             };
     },
 
     makeGroup: function(elements, new_grouping) {
@@ -1202,14 +1303,15 @@ const editingModel = (function() {
     },
 
     makeConsistent: function () {
-      let self = this, model = this.model,
-          dataModel = model.dataModel,
-          masteringModel = model.masteringModel,
-          selectionModel = model.selectionModel,
-          observableModel = model.observableModel,
-          graphInfo = this.collectGraphInfo(this.diagram.items),
-          elementSet = graphInfo.elementSet,
-          wires = graphInfo.wires;
+      const self = this, model = this.model,
+            diagram = this.diagram,
+            dataModel = model.dataModel,
+            masteringModel = model.masteringModel,
+            selectionModel = model.selectionModel,
+            observableModel = model.observableModel,
+            graphInfo = this.collectGraphInfo(diagram.items),
+            elementSet = graphInfo.elementSet,
+            wires = graphInfo.wires;
       elementSet.forEach(function(element) {
         if (isLambda(element)) {
           // Make sure lambdas are consistent.
@@ -1241,7 +1343,16 @@ const editingModel = (function() {
         }
       });
 
-      // Update group element types.
+      // Update group types.
+      visitItems(diagram.items, function(group) {
+        const types = self.getGroupInfo(group.items, graphInfo);
+        if (group.master != types.master) {
+          observableModel.changeValue(group, 'master', types.master);
+        }
+        if (group.closure != types.closure) {
+          observableModel.changeValue(group, 'closure', types.closure);
+        }
+      }, isGroup);
 
       // Eliminate dangling wires.
       wires.forEach(function(wire) {
