@@ -426,16 +426,14 @@ const editingModel = (function() {
     },
 
     deleteItem: function(item) {
-      let model = this.model,
-          hierarchicalModel = model.hierarchicalModel,
-          selectionModel = model.selectionModel,
-          parent = hierarchicalModel.getParent(item);
+      const model = this.model,
+          parent = model.hierarchicalModel.getParent(item);
       if (parent) {
-        let items = parent.items,
+        const items = parent.items,
             index = items.indexOf(item);
         if (index >= 0) {
           model.observableModel.removeElement(parent, 'items', index);
-          selectionModel.remove(item);
+          model.selectionModel.remove(item);
         }
       }
     },
@@ -498,9 +496,11 @@ const editingModel = (function() {
           model.observableModel.changeValue(parent, 'items', []);
       }
       if (oldParent !== parent) {
-        let translation = translatableModel.getToParent(item, parent);
-        model.observableModel.changeValue(item, 'x', item.x + translation.x);
-        model.observableModel.changeValue(item, 'y', item.y + translation.y);
+        if (isElementOrGroup(item)) {
+          let translation = translatableModel.getToParent(item, parent);
+          model.observableModel.changeValue(item, 'x', item.x + translation.x);
+          model.observableModel.changeValue(item, 'y', item.y + translation.y);
+        }
 
         if (oldParent)
           this.deleteItem(item);
@@ -528,32 +528,32 @@ const editingModel = (function() {
       this.prototype.doPaste.call(this);
     },
 
-    replaceItem: function(item, newItem) {
+    replaceElement: function(element, newElement) {
       let self = this, model = this.model,
           hierarchicalModel = model.hierarchicalModel,
           observableModel = model.observableModel,
-          graphInfo = this.collectGraphInfo([item]),
-          itemInputs = graphInfo.inputMap.get(item),
-          itemOutputs = graphInfo.outputMap.get(item),
-          newId = model.dataModel.getId(newItem),
-          newMaster = getMaster(newItem);
-      itemInputs.forEach(function(wire, pin) {
+          graphInfo = this.collectGraphInfo([element]),
+          elementInputs = graphInfo.inputMap.get(element),
+          elementOutputs = graphInfo.outputMap.get(element),
+          newId = model.dataModel.getId(newElement),
+          newMaster = getMaster(newElement);
+      elementInputs.forEach(function(wire, pin) {
         if (wire) {
           observableModel.changeValue(wire, 'dstId', newId);
         }
       });
-      itemOutputs.forEach(function(wires, pin) {
+      elementOutputs.forEach(function(wires, pin) {
         wires.forEach(function(wire) {
           observableModel.changeValue(wire, 'srcId', newId);
         });
       });
-      let parent = hierarchicalModel.getParent(newItem),
-          newParent = hierarchicalModel.getParent(item);
+      let parent = hierarchicalModel.getParent(newElement),
+          newParent = hierarchicalModel.getParent(element);
       if (parent != newParent)
-        self.addItem(newItem, newParent);
-      observableModel.changeValue(newItem, 'x', item.x);
-      observableModel.changeValue(newItem, 'y', item.y);
-      self.deleteItem(item);
+        self.addItem(newElement, newParent);
+      observableModel.changeValue(newElement, 'x', element.x);
+      observableModel.changeValue(newElement, 'y', element.y);
+      self.deleteItem(element);
     },
 
     connectInput: function(element, pin) {
@@ -564,7 +564,6 @@ const editingModel = (function() {
       let junction = {
         type: 'element',
         elementType: 'input',
-        // Let user name pin.
         x: pinPoint.x - 32,
         y: pinPoint.y,
         master: inputElementType,
@@ -579,24 +578,24 @@ const editingModel = (function() {
         dstPin: pin,
       };
       this.newItem(wire);
-      this.addItem(wire);  // circuit owns all wires
+      this.addItem(wire, parent);  // same parent as element
       return { junction: junction, wire: wire };
     },
 
     connectOutput: function(element, pin) {
       let viewModel = this.model.viewModel,
+          parent = this.model.hierarchicalModel.getParent(element),
           srcPin = getMaster(element).outputs[pin],
           pinPoint = viewModel.pinToPoint(element, pin, false);
       let junction = {
         type: 'element',
         elementType: 'output',
-        // Let user name pin.
         x: pinPoint.x + 32,
         y: pinPoint.y,
         master: outputElementType,
       };
       this.newItem(junction);
-      this.addItem(junction);
+      this.addItem(junction, parent);  // same parent as element
       let wire = {
         type: 'wire',
         srcId: element.id,
@@ -605,7 +604,7 @@ const editingModel = (function() {
         dstPin: 0,
       };
       this.newItem(wire);
-      this.addItem(wire);
+      this.addItem(wire, parent);  // same parent as element
       return { junction: junction, wire: wire };
     },
 
@@ -696,7 +695,6 @@ const editingModel = (function() {
 
       let newElement = {
         type: 'element',
-        element: element,
         elementType: 'closed',
         x: element.x,
         y: element.y,
@@ -754,7 +752,6 @@ const editingModel = (function() {
 
       let newElement = {
         type: 'element',
-        element: element,
         elementType: 'abstract',
         x: element.x,
         y: element.y,
@@ -808,13 +805,13 @@ const editingModel = (function() {
 
         let newElement = closing ?
           self.closeFunction(element, incomingWires, outgoingWireArrays) :
-          self.openFunction(element, incomingWires, outgoingWireArrays);
+          self.openFunction(element, incomingWires, outgoingWireArrays),
+            parent = self.model.hierarchicalModel.getParent(element);
 
         selectionModel.remove(element);
         selectionModel.add(newElement);
 
-        self.deleteItem(element);
-        self.addItem(newElement);
+        self.replaceElement(element, newElement);
       });
     },
 
@@ -860,22 +857,22 @@ const editingModel = (function() {
         const index = wire.srcPin;
         if (srcIndices[index] === undefined) {
           srcIndices[index] = pinIndex++;
+          return srcIndices[index];
         }
-        return srcIndices[index];
       }
 
       function getSrcType(wire) {
         const src = self.getWireSrc(wire),
               srcPin = getMaster(src).outputs[wire.srcPin];
         let srcType = self.getPinType(srcPin);
-          if (srcType.startsWith('*')) {
-            const label = srcType.substring(1);
-            if (isInput(src))
-              srcType = self.findDstType(wire, entireGraphInfo) + label;
-            else if (isOutput(src))
-              srcType = self.findSrcType(wire, entireGraphInfo) + label;
-          }
-          return srcType;
+        if (srcType.startsWith('*')) {
+          const label = srcType.substring(1);
+          if (isInput(src))
+            srcType = self.findDstType(wire, entireGraphInfo) + label;
+          else if (isOutput(src))
+            srcType = self.findSrcType(wire, entireGraphInfo) + label;
+        }
+        return srcType;
       }
 
       let incomingSrcMap = new Map(), outgoingSrcMap = new Map();
@@ -883,7 +880,7 @@ const editingModel = (function() {
       graphInfo.inputWires.forEach(function(wire) {
         const index = addUniqueSource(wire, incomingSrcMap),
               src = self.getWireSrc(wire);
-        if (index == pinIndex - 1) {
+        if (index !== undefined) {
           // First instance of the source, add an input.
           let srcType = getSrcType(wire);
           master += srcType;
@@ -899,7 +896,7 @@ const editingModel = (function() {
       graphInfo.outputWires.forEach(function(wire) {
         const index = addUniqueSource(wire, outgoingSrcMap),
               dst = self.getWireDst(wire);
-        if (index == pinIndex - 1) {
+        if (index !== undefined) {
           // First instance of the source, add an output.
           let srcType = getSrcType(wire);
           master += srcType;
@@ -1277,9 +1274,8 @@ const editingModel = (function() {
         'group' + (protoGroup ? '(proto)' : ''));
       let groupElement = protoGroup ?
         this.makeProtoGroup(elements) : this.makeGroup(elements, new_grouping);
-      // console.log(groupElement.master);
       model.dataModel.initialize(groupElement);
-      this.addItem(groupElement);
+      this.addItem(groupElement);  // add at top level.
       model.selectionModel.set(groupElement);
       model.transactionModel.endTransaction();
     },
@@ -1307,11 +1303,38 @@ const editingModel = (function() {
             diagram = this.diagram,
             dataModel = model.dataModel,
             masteringModel = model.masteringModel,
+            hierarchicalModel = model.hierarchicalModel,
             selectionModel = model.selectionModel,
             observableModel = model.observableModel,
             graphInfo = this.collectGraphInfo(diagram.items),
             elementSet = graphInfo.elementSet,
             wires = graphInfo.wires;
+      // Eliminate dangling wires.
+      wires.forEach(function(wire) {
+        const src = self.getWireSrc(wire), dst = self.getWireDst(wire);
+        if (!src || !elementSet.has(src) || !dst || !elementSet.has(dst)) {
+          self.deleteItem(wire);
+          return;
+        }
+        // Make sure wires belong to lowest common container (circuit or group).
+        const lca = hierarchicalModel.getLowestCommonAncestor(src, dst);
+        if (hierarchicalModel.getParent(wire) !== lca) {
+          self.deleteItem(wire);
+          self.addItem(wire, lca);
+        }
+      });
+
+      // Update group types.
+      visitItems(diagram.items, function(group) {
+        const types = self.getGroupInfo(group.items, graphInfo);
+        if (group.master != types.master) {
+          observableModel.changeValue(group, 'master', types.master);
+        }
+        if (group.closure != types.closure) {
+          observableModel.changeValue(group, 'closure', types.closure);
+        }
+      }, isGroup);
+
       elementSet.forEach(function(element) {
         if (isLambda(element)) {
           // Make sure lambdas are consistent.
@@ -1340,25 +1363,6 @@ const editingModel = (function() {
           // Delete empty groups.
           if (element.items.length == 0)
             self.deleteItem(element);
-        }
-      });
-
-      // Update group types.
-      visitItems(diagram.items, function(group) {
-        const types = self.getGroupInfo(group.items, graphInfo);
-        if (group.master != types.master) {
-          observableModel.changeValue(group, 'master', types.master);
-        }
-        if (group.closure != types.closure) {
-          observableModel.changeValue(group, 'closure', types.closure);
-        }
-      }, isGroup);
-
-      // Eliminate dangling wires.
-      wires.forEach(function(wire) {
-        let src = self.getWireSrc(wire), dst = self.getWireDst(wire);
-        if (!src || !elementSet.has(src) || !dst || !elementSet.has(dst)) {
-          self.deleteItem(wire);
         }
       });
     },
@@ -1909,9 +1913,6 @@ Renderer.prototype.drawHoverInfo = function(item, p) {
   ctx.fillStyle = theme.hoverColor;
   if (isHoverable(item)) {
     let viewModel = this.viewModel;
-    // item.items.forEach(function(item) {
-    //   self.layout(item);
-    // });
     let r = viewModel.getItemRects(item.items);
     ctx.translate(x - r.x, y - r.y);
     let border = 4;
@@ -2148,16 +2149,17 @@ Editor.prototype.draw = function() {
 
   let temporary = this.getTemporaryItem();
   if (temporary) {
-    canvasController.applyTransform();
     renderer.layout(temporary);
     renderer.draw(temporary, normalMode);
   }
+  renderer.endDraw();
 
   let hoverHitInfo = this.hoverHitInfo;
   if (hoverHitInfo) {
+    renderer.beginDraw(model, ctx);
     renderer.drawHoverInfo(hoverHitInfo.item, hoverHitInfo.p);
+    renderer.endDraw();
   }
-  renderer.endDraw();
 }
 
 Editor.prototype.hitTest = function(p) {
@@ -2340,6 +2342,7 @@ Editor.prototype.onBeginDrag = function(p0) {
   this.drag = drag;
   if (drag) {
     if (drag.type === moveSelection || drag.type == moveCopySelection) {
+      editingModel.selectInteriorWires();
       editingModel.reduceSelection();
       let items = selectionModel.contents();
       drag.isSingleElement = items.length == 1 && isElement(items[0]);
@@ -2352,19 +2355,10 @@ Editor.prototype.onBeginDrag = function(p0) {
     } else {
       drag.item = dragItem;
       if (mouseHitInfo.moveCopy) {
-        editingModel.selectInteriorWires();
         let map = new Map(),
             copies = editingModel.copyItems(selectionModel.contents(), map);
         editingModel.addItems(copies);
         selectionModel.set(copies);
-        // TODO clean up.
-        // Any cloned items may need layout.
-        let renderer = this.renderer;
-        renderer.beginDraw(model, this.ctx);
-        copies.forEach(function(copy) {
-          renderer.layout(copy);
-        });
-        renderer.endDraw();
       }
     }
   }
@@ -2394,11 +2388,13 @@ Editor.prototype.onDrag = function(p0, p) {
                      isContainerTargetOrElementSlot : isContainerTarget;
         hitInfo = this.getFirstHit(hitList, filter);
         selectionModel.forEach(function(item) {
-          let snapshot = transactionModel.getSnapshot(item);
-          if (snapshot) {
-            let dx = cp.x - cp0.x, dy = cp.y - cp0.y;
-            observableModel.changeValue(item, 'x', snapshot.x + dx);
-            observableModel.changeValue(item, 'y', snapshot.y + dy);
+          if (isElementOrGroup(item)) {
+            let snapshot = transactionModel.getSnapshot(item);
+            if (snapshot) {
+              let dx = cp.x - cp0.x, dy = cp.y - cp0.y;
+              observableModel.changeValue(item, 'x', snapshot.x + dx);
+              observableModel.changeValue(item, 'y', snapshot.y + dy);
+            }
           }
         });
       }
@@ -2442,6 +2438,7 @@ Editor.prototype.onEndDrag = function(p) {
       editingModel = model.editingModel,
       newWire = this.removeTemporaryItem();
   if (newWire) {
+    console.log(newWire);
     // Clone the new item, since we're about to roll back the transaction. We
     // do this to collapse all of the changes into a single insert transaction.
     newWire = dragItem = model.instancingModel.clone(newWire);
@@ -2461,14 +2458,14 @@ Editor.prototype.onEndDrag = function(p) {
         hitInfo = this.getFirstHit(hitList, filter),
         parent = hitInfo ? hitInfo.item : diagram;
     if (newWire) {
-      // Add new wire.
+      // Add new wire at top level.
       editingModel.addItem(newWire);
       selectionModel.set(newWire);
     } else {
       let selection = selectionModel.contents();
       if (drag.isSingleElement && parent && !isContainer(parent)) {
         // Replace parent item.
-        editingModel.replaceItem(parent, selection[0]);
+        editingModel.replaceElement(parent, selection[0]);
       } else {
         // Reparent existing items.
         selection.forEach(function(item) {

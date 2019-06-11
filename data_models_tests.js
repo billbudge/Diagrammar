@@ -358,7 +358,7 @@ test("hierarchicalModel", function() {
   deepEqual(test.getParent(root), null);
   deepEqual(test.getParent(child1), root);
 
-  // Append child2 and subtree to root items.
+  // Append child2 and subtree to root.
   model.observableModel.insertElement(root, 'items', root.items.length, child2);
   deepEqual(test.getParent(child2), root);
   deepEqual(test.getParent(child3), child2);
@@ -369,6 +369,13 @@ test("hierarchicalModel", function() {
   let contents = selection.contents();
   deepEqual(contents.length, 1);
   deepEqual(contents[0], root);
+
+  // Test LCA.
+  deepEqual(test.getLineage(child3), [child3, child2, root]);
+  deepEqual(test.getLowestCommonAncestor(root, child1), root);
+  deepEqual(test.getLowestCommonAncestor(child3, child1), root);
+  deepEqual(test.getLineage(child2), [child2, root]);
+  deepEqual(test.getLowestCommonAncestor(child1, child2), root);
 
   // Remove child3 from child2.
   model.observableModel.removeElement(child2, 'items', child2.items.indexOf(child3));

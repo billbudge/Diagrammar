@@ -1025,6 +1025,28 @@ const hierarchicalModel = (function () {
       return roots;
     },
 
+    getLineage: function(item) {
+      let lineage = [];
+      while (item) {
+        lineage.push(item);
+        item = this.getParent(item);
+      }
+      return lineage;
+    },
+
+    getLowestCommonAncestor: function(item1, item2) {
+      const lineage1 = this.getLineage(item1),
+            lineage2 = this.getLineage(item2);
+      let i1 = lineage1.length - 1, i2 = lineage2.length - 1,
+          lca;
+      while (i1 >= 0 && i2 >= 0 && lineage1[i1] == lineage2[i2]) {
+        lca = lineage1[i1];
+        i1--;
+        i2--;
+      }
+      return lca;
+    },
+
     init: function (item, parent) {
       this.setParent(item, parent);
       let self = this;
