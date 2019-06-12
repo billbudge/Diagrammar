@@ -1326,6 +1326,10 @@ const editingModel = (function() {
 
       // Update group types.
       visitItems(diagram.items, function(group) {
+        if (group.items.length == 0) {
+          self.deleteItem(group);
+          return;
+        }
         const types = self.getGroupInfo(group.items, graphInfo);
         if (group.master != types.master) {
           observableModel.changeValue(group, 'master', types.master);
@@ -1867,11 +1871,6 @@ Renderer.prototype.hitTestWire = function(wire, p, tol, mode) {
 Renderer.prototype.layout = function(item) {
   if (isWire(item)) {
     this.layoutWire(item);
-  } else if (isGroup(item)) {
-    let self = this;
-    item.items.forEach(function(subItem) {
-      self.layout(subItem);
-    });
   }
 }
 
@@ -2038,17 +2037,6 @@ function Editor(model, textInputController) {
 
   editingModel.extend(model);
 
-  // model.dataModel.addInitializer(function(item) {
-  //   if (!isGroup(item))
-  //     return;
-  //   let ctx = self.ctx,
-  //       renderer = self.renderer,
-  //       model = self.model;
-  //   renderer.beginDraw(model, ctx);
-  //   renderer.layout(item);
-  //   renderer.endDraw();
-  // });
-
   let masters = masteringModel.extend(model);
   masters.addHandler('masterInserted', function(type, master) {
     let ctx = self.ctx,
@@ -2106,16 +2094,13 @@ Editor.prototype.initialize = function(canvasController) {
   });
 }
 
-Editor.prototype.addTemporaryItem = function(item) {
-  this.model.observableModel.changeValue(this.diagram, 'temporary', item);
-}
-
-Editor.prototype.removeTemporaryItem = function(item) {
-  return this.model.observableModel.changeValue(this.diagram, 'temporary', null);
-}
-
-Editor.prototype.getTemporaryItem = function() {
-  return this.diagram.temporary;
+Editor.prototype.layoutItem = function(item) {
+  const renderer = this.renderer,
+        model = this.model,
+        ctx = this.ctx;
+  renderer.beginDraw(model, ctx);
+  renderer.layout(item);
+  renderer.endDraw();
 }
 
 Editor.prototype.draw = function() {
@@ -2147,11 +2132,6 @@ Editor.prototype.draw = function() {
   if (this.hotTrackInfo)
     renderer.draw(this.hotTrackInfo.item, hotTrackMode);
 
-  let temporary = this.getTemporaryItem();
-  if (temporary) {
-    renderer.layout(temporary);
-    renderer.draw(temporary, normalMode);
-  }
   renderer.endDraw();
 
   let hoverHitInfo = this.hoverHitInfo;
@@ -2223,7 +2203,7 @@ function isContainerTargetOrElementSlot(hitInfo, model) {
     return true;
   // TODO drop element on function inputs.
   let item = hitInfo.item;
-  return isElement(item) && !isPaletted(item) &&
+  return isElement(item) && !isPaletted(item) && !isJunction(item) && !isLiteral(item) &&
          !model.hierarchicalModel.isItemInSelection(item);
 }
 
@@ -2283,7 +2263,8 @@ Editor.prototype.onBeginDrag = function(p0) {
   let mouseHitInfo = this.mouseHitInfo;
   if (!mouseHitInfo)
     return false;
-  let canvasController = this.canvasController,
+  let self = this,
+      canvasController = this.canvasController,
       dragItem = mouseHitInfo.item,
       model = this.model,
       selectionModel = model.selectionModel,
@@ -2293,12 +2274,12 @@ Editor.prototype.onBeginDrag = function(p0) {
     // Wire from input pin.
     let elementId = model.dataModel.getId(dragItem),
         cp0 = canvasController.viewToCanvas(p0);
-    // Start the new wire as connecting the dst element to itself.
+    // Start the new wire as connecting the dst element to nothing.
     newWire = {
       type: 'wire',
       dstId: elementId,
       dstPin: mouseHitInfo.input,
-      [_p2]: cp0,
+      [_p1]: cp0,
     };
     drag = {
       type: connectWireSrc,
@@ -2309,7 +2290,7 @@ Editor.prototype.onBeginDrag = function(p0) {
     // Wire from output pin.
     let elementId = model.dataModel.getId(dragItem),
         cp0 = canvasController.viewToCanvas(p0);
-    // Start the new wire as connecting the src element to itself.
+    // Start the new wire as connecting the src element to nothing.
     newWire = {
       type: 'wire',
       srcId: elementId,
@@ -2351,14 +2332,22 @@ Editor.prototype.onBeginDrag = function(p0) {
     if (newWire) {
       drag.item = newWire;
       model.dataModel.initialize(newWire);
-      this.addTemporaryItem(newWire);
+      editingModel.addItem(newWire);
+      self.layoutItem(newWire);
+      selectionModel.set(newWire);
     } else {
       drag.item = dragItem;
       if (mouseHitInfo.moveCopy) {
-        let map = new Map(),
+        let model = this.model,
+            renderer = this.renderer,
+            ctx = this.ctx,
+            map = new Map(),
             copies = editingModel.copyItems(selectionModel.contents(), map);
         editingModel.addItems(copies);
         selectionModel.set(copies);
+        visitItems(copies, function(item) {
+          self.layoutItem(item);
+        }, isWire);
       }
     }
   }
@@ -2431,37 +2420,32 @@ Editor.prototype.onEndDrag = function(p) {
   let dragItem = drag.item,
       model = this.model,
       diagram = this.diagram,
-      observableModel = model.observableModel,
-      hierarchicalModel = model.hierarchicalModel,
       selectionModel = model.selectionModel,
       transactionModel = model.transactionModel,
-      editingModel = model.editingModel,
-      newWire = this.removeTemporaryItem();
-  if (newWire) {
-    console.log(newWire);
-    // Clone the new item, since we're about to roll back the transaction. We
-    // do this to collapse all of the changes into a single insert transaction.
-    newWire = dragItem = model.instancingModel.clone(newWire);
+      editingModel = model.editingModel;
 
-    transactionModel.cancelTransaction();
-    // If wire wasn't connected, do nothing.
-    if (!newWire.srcId || !newWire.dstId)
-      return;
-    transactionModel.beginTransaction(drag.name);
-  }
-  if (drag.type == moveSelection ||
-      drag.type == moveCopySelection || newWire) {
-    // Find element beneath mouse.
-    let hitList = this.hitTest(p),
-        filter = drag.isSingleElement ?
-                 isContainerTargetOrElementSlot : isContainerTarget,
-        hitInfo = this.getFirstHit(hitList, filter),
-        parent = hitInfo ? hitInfo.item : diagram;
-    if (newWire) {
-      // Add new wire at top level.
-      editingModel.addItem(newWire);
-      selectionModel.set(newWire);
-    } else {
+  switch (drag.type) {
+    case connectWireSrc:
+    case connectWireDst:
+      if (drag.isNewWire) {
+        // If wire wasn't connected, cancel the transaction. For existing wires,
+        // the wire will be deleted in the make-consistent phase.
+        if (!dragItem.srcId || !dragItem.dstId) {
+          transactionModel.cancelTransaction();
+          selectionModel.clear();
+          break;
+        }
+      }
+      transactionModel.endTransaction();
+      break;
+    case moveSelection:
+    case moveCopySelection:
+      // Find element beneath items.
+      let hitList = this.hitTest(p),
+          filter = drag.isSingleElement ?
+                   isContainerTargetOrElementSlot : isContainerTarget,
+          hitInfo = this.getFirstHit(hitList, filter),
+          parent = hitInfo ? hitInfo.item : diagram;
       let selection = selectionModel.contents();
       if (drag.isSingleElement && parent && !isContainer(parent)) {
         // Replace parent item.
@@ -2472,15 +2456,16 @@ Editor.prototype.onEndDrag = function(p) {
           editingModel.addItem(item, parent);
         });
       }
-    }
+      transactionModel.endTransaction();
+      break;
   }
-
-  transactionModel.endTransaction();
 
   this.drag = null;
   this.mouseHitInfo = null;
   this.hotTrackInfo = null;
   this.mouseHitInfo = null;
+
+  this.canvasController.draw();
 }
 
 Editor.prototype.onBeginHover = function(p) {
