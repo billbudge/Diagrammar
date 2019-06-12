@@ -115,15 +115,10 @@ const inputElementType = '[,*]',
     outputElementType = '[*,]',
     lambdaElementType = '[*(λ),]';
 
-const _master = Symbol('master'),
-      _closure = Symbol('closure');
+const _master = Symbol('master');
 
 function getMaster(item) {
   return item[_master];
-}
-
-function getClosure(item) {
-  return item[_closure];
 }
 
 //------------------------------------------------------------------------------
@@ -260,14 +255,10 @@ const masteringModel = (function() {
 
     initialize: function(item) {
       if (isElementOrGroup(item)) {
-        const master = item.master, closure = item.closure;
+        const master = item.master;
         if (master) {
           item[_master] = this.masterMap_.get(master) ||
                           this.decodeType(master);
-        }
-        if (isGroup(item) && closure) {
-          item[_closure] = this.masterMap_.get(closure) ||
-                           this.decodeType(closure);
         }
       }
     },
@@ -290,8 +281,7 @@ const masteringModel = (function() {
     // Make sure elements are remastered if their master type changes.
     model.observableModel.addHandler('changed', function (change) {
       if (isElementOrGroup(change.item)) {
-        if (change.attr == 'master' ||
-            (isGroup(change.item) && change.attr == 'closure')) {
+        if (change.attr == 'master') {
           instance.initialize(change.item);
         }
       }
@@ -841,7 +831,6 @@ const editingModel = (function() {
       graphInfo.outputWires.sort(compareOutgoingWires);
 
       let master = '[';
-      let closure = '[';
       let pinIndex = 0;
 
       // Use srcMap to ensure that an internal or external source is only
@@ -883,14 +872,12 @@ const editingModel = (function() {
         if (index !== undefined) {
           // First instance of the source, add an input.
           let srcType = getSrcType(wire);
-          master += srcType;
           if (graphInfo.elementSet.has(src)) {
-            closure += srcType;
+            master += srcType;
           }
         }
       });
       master += ',';
-      closure += ',';
       pinIndex = 0;
       // Add outputs for outputWires.
       graphInfo.outputWires.forEach(function(wire) {
@@ -900,24 +887,58 @@ const editingModel = (function() {
           // First instance of the source, add an output.
           let srcType = getSrcType(wire);
           master += srcType;
-          closure += srcType;
         }
       });
       master += ']';
-      closure += ']';
       if (!masteringModel.hasOutput(master)) {
-        master = closure = undefined;
-      }
-      if (master == closure) {
-        closure = undefined;
+        master = undefined;
       }
 
-      return { master: master,
-               closure: closure
-             };
+      return {
+        master: master,
+      };
     },
 
-    makeGroup: function(elements, new_grouping) {
+    makeNewGroup: function(elements) {
+      let self = this, model = this.model,
+          dataModel = model.dataModel,
+          masteringModel = model.masteringModel,
+          observableModel = model.observableModel,
+          viewModel = model.viewModel;
+
+      let graphInfo = this.collectGraphInfo(elements),
+          entireGraphInfo = this.collectGraphInfo(this.diagram.items),
+          groupItems = elements.concat(graphInfo.interiorWires),
+          extents = viewModel.getItemRects(graphInfo.elementSet),
+          inputs = [], outputs = [];
+      // Create the new group element.
+      let groupElement = {
+        type: 'element',
+      };
+
+      let groupId = dataModel.assignId(groupElement),
+          groupInfo = self.getGroupInfo(elements, entireGraphInfo),
+          master = groupInfo.master;
+
+      groupElement.items = groupItems;
+      groupItems.forEach(function(item) {
+        if (!isWire(item)) {
+          observableModel.changeValue(item, 'x', item.x - extents.x);
+          observableModel.changeValue(item, 'y', item.y - extents.y);
+        }
+        self.deleteItem(item);
+      });
+
+      groupElement.type = 'group';
+      groupElement.master = master != '[,]' ? master : null;
+      groupElement.x = extents.x;
+      groupElement.y = extents.y;
+
+      return groupElement;
+    },
+
+
+    makeGroup: function(elements) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           masteringModel = model.masteringModel,
@@ -951,7 +972,6 @@ const editingModel = (function() {
       graphInfo.outputWires.sort(compareOutgoingWires);
 
       let master = '[';
-      let closure = '[';
       let pinIndex = 0;
 
       // Use srcMap to ensure that an internal or external source is only
@@ -988,7 +1008,6 @@ const editingModel = (function() {
         if (graphInfo.elementSet.has(src)) {
           observableModel.changeValue(src, 'pinIndex', index);
           let srcType = self.findDstType(wire, entireGraphInfo);
-          closure += srcType;
         } else {
           // If this is the first instance of the source...
           if (index == pinIndex - 1) {
@@ -1005,7 +1024,6 @@ const editingModel = (function() {
         }
       });
       master += ',';
-      closure += ',';
       pinIndex = 0;
       // Add output pins for outputWires.
       graphInfo.outputWires.forEach(function(wire) {
@@ -1019,7 +1037,6 @@ const editingModel = (function() {
             if (name)
               master =  masteringModel.unlabelType(master) + '(' + name + ')';
           }
-          closure += self.findSrcType(wire);
         } else {
           // If this is the first instance of the source...
           if (index == pinIndex - 1) {
@@ -1036,7 +1053,6 @@ const editingModel = (function() {
         }
       });
       master += ']';
-      closure += ']';
       if (!masteringModel.hasOutput(master)) {
         // Add a 'use' pin so group can be evaluated. Like 'return void'.
         master = masteringModel.addOutputToType(master, '*');
@@ -1081,17 +1097,9 @@ const editingModel = (function() {
         self.deleteItem(item);
       });
 
-      if (new_grouping) {
-        groupElement.type = 'group';
-        groupElement.master = master != '[,]' ? master : null;
-        groupElement.closure = closure != '[,]' && closure != master ? closure : null;
-        groupElement.x = extents.x;
-        groupElement.y = extents.y;
-      } else {
-        groupElement.master = master;
-        groupElement.x = extents.x + extents.w / 2;
-        groupElement.y = extents.y + extents.h / 2;
-      }
+      groupElement.master = master;
+      groupElement.x = extents.x + extents.w / 2;
+      groupElement.y = extents.y + extents.h / 2;
 
       return groupElement;
     },
@@ -1273,7 +1281,8 @@ const editingModel = (function() {
       model.transactionModel.beginTransaction(
         'group' + (protoGroup ? '(proto)' : ''));
       let groupElement = protoGroup ?
-        this.makeProtoGroup(elements) : this.makeGroup(elements, new_grouping);
+        this.makeProtoGroup(elements) :
+        (new_grouping ? this.makeNewGroup(elements) : this.makeGroup(elements));
       model.dataModel.initialize(groupElement);
       this.addItem(groupElement);  // add at top level.
       model.selectionModel.set(groupElement);
@@ -1333,9 +1342,6 @@ const editingModel = (function() {
         const types = self.getGroupInfo(group.items, graphInfo);
         if (group.master != types.master) {
           observableModel.changeValue(group, 'master', types.master);
-        }
-        if (group.closure != types.closure) {
-          observableModel.changeValue(group, 'closure', types.closure);
         }
       }, isGroup);
 
@@ -1762,17 +1768,6 @@ Renderer.prototype.drawGroup = function(group, mode) {
         ctx.stroke();
         this.drawMaster(master, right + spacing, elementY);
         elementY += master[_height] + spacing;
-      }
-      if (group.closure) {
-        let closure = getClosure(group);
-        strokePath('', right + spacing, elementY, closure[_width], closure[_height], ctx);
-        ctx.fillStyle = theme.bgColor;
-        ctx.fill();
-        ctx.strokeStyle = theme.strokeColor;
-        ctx.lineWidth = 0.5;
-        ctx.stroke();
-        this.drawMaster(closure, right + spacing, elementY);
-        elementY += closure[_height] + spacing;
       }
       break;
     case highlightMode:
