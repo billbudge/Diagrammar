@@ -1390,9 +1390,11 @@ const editingModel = (function() {
             parentY = translatableModel.globalY(parent),
             groupX = translatableModel.globalX(group),
             groupY = translatableModel.globalY(group),
-            x = extents.x - parentX, y = extents.y - parentY;
-        viewModel.setItemBounds(group, extents.x + extents.w - groupX,
-                                       extents.y + extents.h - groupY);
+            master = getMaster(group),
+            masterWidth = master[_width], masterHeight = master[_height],
+            width = Math.max(extents.x + extents.w - groupX, masterWidth),
+            height = Math.max(extents.y + extents.h - groupY, masterHeight);
+        viewModel.setItemBounds(group, width, height);
       }, isGroup);
     }
   }
@@ -1740,6 +1742,12 @@ Renderer.prototype.drawElement = function(element, mode) {
   }
 }
 
+Renderer.prototype.getGroupMasterBounds = function(master, groupRight, groupY) {
+  let width = master[_width], height = master[_height],
+      x = groupRight - width - spacing, y = groupY + spacing;
+  return { x: x, y: y, w: width, h: height };
+}
+
 Renderer.prototype.drawGroup = function(group, mode) {
   let ctx = this.ctx, theme = this.theme,
       rect = this.viewModel.getItemRect(group),
@@ -1757,17 +1765,16 @@ Renderer.prototype.drawGroup = function(group, mode) {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      let elementY = y;
       if (group.master) {
-        let master = getMaster(group);
-        strokePath('', right + spacing, elementY, master[_width], master[_height], ctx);
-        ctx.fillStyle = theme.bgColor;
+        let master = getMaster(group),
+            masterRect = this.getGroupMasterBounds(master, right, y);
+        strokePath('', masterRect.x, masterRect.y, masterRect.w, masterRect.h, ctx);
+        ctx.fillStyle = theme.altBgColor;
         ctx.fill();
         ctx.strokeStyle = theme.strokeColor;
         ctx.lineWidth = 0.5;
         ctx.stroke();
-        this.drawMaster(master, right + spacing, elementY);
-        elementY += master[_height] + spacing;
+        this.drawMaster(master, masterRect.x, masterRect.y);
       }
       break;
     case highlightMode:
@@ -1810,7 +1817,18 @@ Renderer.prototype.hitTestGroup = function(group, p, tol, mode) {
       width = rect.w + 2 * spacing, height = rect.h + 2 * spacing,
       hitInfo = diagrams.hitTestRect(x, y, width, height, p, tol);
   if (hitInfo) {
-    // TODO edge hits?
+    let master = getMaster(group),
+        masterRect = this.getGroupMasterBounds(master, x + width, y);
+    if (diagrams.hitTestRect(masterRect.x, masterRect.y, masterRect.w, masterRect.h, p, tol)) {
+      hitInfo.item = {
+        type: 'element',
+        x: masterRect.x,
+        y: masterRect.y,
+        master: group.master,
+        [_master]: master,
+        state: 'palette',
+      };
+    }
   }
   return hitInfo;
 }
