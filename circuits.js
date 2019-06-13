@@ -308,6 +308,8 @@ const editingModel = (function() {
     // Collects subgraph information such as elements, interior wires, incoming
     // wires, outgoing wires, for each element, an array of input wires
     // and an array of arrays of output wires.
+
+    //TODO make 'items' be the complete list so new grouping does the right thing.
     collectGraphInfo: function(items) {
       let self = this;
       // Get elements and initialize input/output maps.
@@ -805,98 +807,82 @@ const editingModel = (function() {
       });
     },
 
-    getGroupInfo: function(elements, entireGraphInfo) {
+    getGroupMaster: function(elements, entireGraphInfo) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           masteringModel = model.masteringModel,
           viewModel = model.viewModel;
 
       let graphInfo = this.collectGraphInfo(elements),
-          extents = viewModel.getItemRects(graphInfo.elementSet),
           inputs = [], outputs = [];
 
-      // Sort wire arrays so we encounter pins in increasing y-order. This lets
-      // us lay out the group in an intuitively consistent way.
-      function compareIncomingWires(wire1, wire2) {
-        let src1 = self.getWireSrc(wire1), src2 = self.getWireSrc(wire2);
-        return viewModel.pinToPoint(src1, wire1.srcPin, false).y -
-               viewModel.pinToPoint(src2, wire2.srcPin, false).y;
+      function makePin(element, pin, type, isInput) {
+        let y = viewModel.pinToPoint(element, pin, isInput);
+        return {
+          type: type,
+          y: y,
+        }
       }
-      function compareOutgoingWires(wire1, wire2) {
-        let dst1 = self.getWireDst(wire1), dst2 = self.getWireDst(wire2);
-        return viewModel.pinToPoint(dst1, wire1.dstPin, true).y -
-               viewModel.pinToPoint(dst2, wire2.dstPin, true).y;
+      function getInputType(input) {
+        const srcPin = getMaster(input).outputs[0],
+              srcType = self.getPinType(srcPin),
+              label = srcType.substring(1),
+              wires = graphInfo.outputMap.get(input)[0];
+        if (!wires.length)
+          return srcType;
+        return self.findDstType(wires[0], entireGraphInfo) + label;
       }
-      graphInfo.inputWires.sort(compareIncomingWires);
-      graphInfo.outputWires.sort(compareOutgoingWires);
+
+      function getOutputType(output) {
+        const dstPin = getMaster(output).inputs[0],
+              dstType = self.getPinType(dstPin),
+              label = dstType.substring(1),
+              wire = graphInfo.inputMap.get(output)[0];
+        if (!wire)
+          return dstType;
+        return self.findSrcType(wire, entireGraphInfo) + label;
+      }
+      elements.forEach(function(element) {
+        if (!isElement(element))
+          return;  // skip groups
+        if (isInput(element)) {
+          inputs.push(makePin(element, 0, getInputType(element), false));
+        } else if (isOutput(element)) {
+          outputs.push(makePin(element, 0, getOutputType(element), true));
+        } else {
+          const master = getMaster(element),
+                inputWires = graphInfo.inputMap.get(element),
+                outputWires = graphInfo.outputMap.get(element);
+          inputWires.forEach(function(wire, pin) {
+            if (!wire) {
+              inputs.push(
+                makePin(element, pin, self.getPinType(master.inputs[pin]), true));
+            }
+          });
+          outputWires.forEach(function(wires, pin) {
+            if (!wires.length) {
+              outputs.push(
+                makePin(element, pin, self.getPinType(master.outputs[pin]), false));
+            }
+          });
+        }
+      });
+
+      // Sort pins so we encounter them in increasing y-order. This lets us lay
+      // out the group in an intuitively consistent way.
+      function comparePins(pin1, pin2) {
+        return pin1.y - pin2.y;
+      }
+      inputs.sort(comparePins);
+      outputs.sort(comparePins);
 
       let master = '[';
-      let pinIndex = 0;
-
-      // Use srcMap to ensure that an internal or external source is only
-      // represented once in inputs and outputs.
-      function addUniqueSource(wire, srcMap) {
-        const src = self.getWireSrc(wire),
-              srcPins = getMaster(src).outputs;
-        let srcIndices = srcMap.get(src);
-        if (srcIndices === undefined) {
-          srcIndices = new Array(srcPins.length);
-          srcMap.set(src, srcIndices);
-        }
-        const index = wire.srcPin;
-        if (srcIndices[index] === undefined) {
-          srcIndices[index] = pinIndex++;
-          return srcIndices[index];
-        }
-      }
-
-      function getSrcType(wire) {
-        const src = self.getWireSrc(wire),
-              srcPin = getMaster(src).outputs[wire.srcPin];
-        let srcType = self.getPinType(srcPin);
-        if (srcType.startsWith('*')) {
-          const label = srcType.substring(1);
-          if (isInput(src))
-            srcType = self.findDstType(wire, entireGraphInfo) + label;
-          else if (isOutput(src))
-            srcType = self.findSrcType(wire, entireGraphInfo) + label;
-        }
-        return srcType;
-      }
-
-      let incomingSrcMap = new Map(), outgoingSrcMap = new Map();
-      // Add inputs for inputWires.
-      graphInfo.inputWires.forEach(function(wire) {
-        const index = addUniqueSource(wire, incomingSrcMap),
-              src = self.getWireSrc(wire);
-        if (index !== undefined) {
-          // First instance of the source, add an input.
-          let srcType = getSrcType(wire);
-          if (graphInfo.elementSet.has(src)) {
-            master += srcType;
-          }
-        }
-      });
+      inputs.forEach(pin => master += pin.type);
       master += ',';
-      pinIndex = 0;
-      // Add outputs for outputWires.
-      graphInfo.outputWires.forEach(function(wire) {
-        const index = addUniqueSource(wire, outgoingSrcMap),
-              dst = self.getWireDst(wire);
-        if (index !== undefined) {
-          // First instance of the source, add an output.
-          let srcType = getSrcType(wire);
-          master += srcType;
-        }
-      });
+      outputs.forEach(pin => master += pin.type);
       master += ']';
-      if (!masteringModel.hasOutput(master)) {
-        master = undefined;
-      }
 
-      return {
-        master: master,
-      };
+      return master;
     },
 
     build: function(elements) {
@@ -917,8 +903,7 @@ const editingModel = (function() {
       };
 
       let groupId = dataModel.assignId(groupElement),
-          groupInfo = self.getGroupInfo(elements, entireGraphInfo),
-          master = groupInfo.master;
+          master = self.getGroupMaster(elements, entireGraphInfo);
 
       groupElement.items = groupItems;
       groupItems.forEach(function(item) {
@@ -1035,7 +1020,7 @@ const editingModel = (function() {
             // Let output override source name.
             let name = getMaster(dst).inputs[0].name;
             if (name)
-              master =  masteringModel.unlabelType(master) + '(' + name + ')';
+              master += masteringModel.unlabelType(master) + '(' + name + ')';
           }
         } else {
           // If this is the first instance of the source...
@@ -1292,9 +1277,9 @@ const editingModel = (function() {
           self.deleteItem(group);
           return;
         }
-        const types = self.getGroupInfo(group.items, graphInfo);
-        if (group.master != types.master) {
-          observableModel.changeValue(group, 'master', types.master);
+        const master = self.getGroupMaster(group.items, graphInfo);
+        if (group.master != master) {
+          observableModel.changeValue(group, 'master', master);
         }
       }, isGroup);
 
