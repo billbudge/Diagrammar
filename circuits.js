@@ -376,7 +376,7 @@ const editingModel = (function() {
           result = new Set();
       while (items.length > 0) {
         let item = items.pop();
-        if (!isElementOrGroup(item)) continue;
+        if (!isElement(item)) continue;
         result.add(item);
         if (upstream) {
           graphInfo.inputMap.get(item).forEach(function(wire) {
@@ -899,7 +899,7 @@ const editingModel = (function() {
       };
     },
 
-    makeNewGroup: function(elements) {
+    build: function(elements) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           masteringModel = model.masteringModel,
@@ -1104,62 +1104,6 @@ const editingModel = (function() {
       return groupElement;
     },
 
-    makeProtoGroup: function(elements) {
-      let self = this, model = this.model,
-          dataModel = model.dataModel,
-          masteringModel = model.masteringModel,
-          viewModel = model.viewModel;
-
-      let graphInfo = this.collectGraphInfo(elements),
-          entireGraphInfo = this.collectGraphInfo(this.diagram.items),
-          extents = viewModel.getItemRects(graphInfo.elementSet),
-          inputs = [], outputs = [];
-      // Create the new group element.
-      let groupElement = {
-        type: 'element',
-        elementType: 'proto',
-        x: extents.x + extents.w / 2,
-        y: extents.y + extents.h / 2,
-      };
-
-      dataModel.assignId(groupElement);
-
-      elements.forEach(function(element) {
-        if (isInput(element))
-          inputs.push(element);
-        else if (isOutput(element))
-          outputs.push(element);
-      });
-
-      // Sort pins so we encounter them in increasing y-order.
-      function compareElements(elem1, elem2) {
-        return elem1.y - elem2.y;
-      }
-      inputs.sort(compareElements);
-      outputs.sort(compareElements);
-
-      let master = '[';
-      inputs.forEach(function(element) {
-        let wire = graphInfo.outputMap.get(element)[0][0],
-            type = self.getPinType(getMaster(element).outputs[0]);
-        if (wire)
-          type = type.replace('*', self.findDstType(wire, entireGraphInfo));
-        master += type;
-      });
-      master += ',';
-      outputs.forEach(function(element) {
-        let wire = graphInfo.inputMap.get(element)[0],
-            type = self.getPinType(getMaster(element).inputs[0]);
-        if (wire)
-          type = type.replace('*', self.findSrcType(wire, entireGraphInfo));
-        master += type;
-      });
-      master += ']';
-
-      groupElement.master = master;
-      return groupElement;
-    },
-
     setLambda: function(wire, graphInfo) {
       let self = this, model = this.model,
           observableModel = model.observableModel,
@@ -1274,15 +1218,24 @@ const editingModel = (function() {
       model.transactionModel.endTransaction();
     },
 
-    doGroup: function(protoGroup, new_grouping) {
+    doBuild: function() {
       let model = this.model;
       this.reduceSelection();
       let elements = model.selectionModel.contents().filter(isElementOrGroup);
-      model.transactionModel.beginTransaction(
-        'group' + (protoGroup ? '(proto)' : ''));
-      let groupElement = protoGroup ?
-        this.makeProtoGroup(elements) :
-        (new_grouping ? this.makeNewGroup(elements) : this.makeGroup(elements));
+      model.transactionModel.beginTransaction('build');
+      let groupElement = this.build(elements);
+      model.dataModel.initialize(groupElement);
+      this.addItem(groupElement);  // add at top level.
+      model.selectionModel.set(groupElement);
+      model.transactionModel.endTransaction();
+    },
+
+    doGroup: function() {
+      let model = this.model;
+      this.reduceSelection();
+      let elements = model.selectionModel.contents().filter(isElementOrGroup);
+      model.transactionModel.beginTransaction('group');
+      let groupElement = this.makeGroup(elements);
       model.dataModel.initialize(groupElement);
       this.addItem(groupElement);  // add at top level.
       model.selectionModel.set(groupElement);
@@ -1742,9 +1695,9 @@ Renderer.prototype.drawElement = function(element, mode) {
   }
 }
 
-Renderer.prototype.getGroupMasterBounds = function(master, groupRight, groupY) {
+Renderer.prototype.getGroupMasterBounds = function(master, groupRight, groupBottom) {
   let width = master[_width], height = master[_height],
-      x = groupRight - width - spacing, y = groupY + spacing;
+      x = groupRight - width - spacing, y = groupBottom - height - spacing;
   return { x: x, y: y, w: width, h: height };
 }
 
@@ -1767,7 +1720,7 @@ Renderer.prototype.drawGroup = function(group, mode) {
 
       if (group.master) {
         let master = getMaster(group),
-            masterRect = this.getGroupMasterBounds(master, right, y);
+            masterRect = this.getGroupMasterBounds(master, right, bottom);
         strokePath('', masterRect.x, masterRect.y, masterRect.w, masterRect.h, ctx);
         ctx.fillStyle = theme.altBgColor;
         ctx.fill();
@@ -1818,7 +1771,7 @@ Renderer.prototype.hitTestGroup = function(group, p, tol, mode) {
       hitInfo = diagrams.hitTestRect(x, y, width, height, p, tol);
   if (hitInfo) {
     let master = getMaster(group),
-        masterRect = this.getGroupMasterBounds(master, x + width, y);
+        masterRect = this.getGroupMasterBounds(master, x + width, y + height);
     if (diagrams.hitTestRect(masterRect.x, masterRect.y, masterRect.w, masterRect.h, p, tol)) {
       hitInfo.item = {
         type: 'element',
@@ -2560,10 +2513,10 @@ Editor.prototype.onKeyDown = function(e) {
         editingModel.doAbstract();
         return true;
       case 66:  // 'b'
-        editingModel.doGroup(false, true);
+        editingModel.doBuild();
         return true;
       case 71:  // 'g'
-        editingModel.doGroup(shiftKey);
+        editingModel.doGroup();
         return true;
       case 83:  // 's'
         let text = JSON.stringify(
