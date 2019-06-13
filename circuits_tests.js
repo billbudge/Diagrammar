@@ -456,22 +456,6 @@ test("circuits.editingModel.makeVoidGroup", function() {
   ok(items.length === 4);
 });
 
-test("circuits.editingModel.makeProtoGroup", function() {
-  let test = newTestEditingModel(),
-      circuit = test.model,
-      items = circuit.root.items,
-      elem = addElement(test, newTypedElement('[vv,v]')),
-      input1 = addElement(test, newInputJunction('[*,v]')),
-      input2 = addElement(test, newInputJunction('[*,v(f)]')),
-      output = addElement(test, newOutputJunction('[v,*]')),
-      wire1 = addWire(test, input1, 0, elem, 0),
-      wire2 = addWire(test, input2, 0, elem, 1),
-      wire3 = addWire(test, elem, 0, output, 0);
-  let groupElement = test.makeProtoGroup([input2, elem, output]);
-  deepEqual(groupElement.master, '[v(f),v]');
-  ok(items.length === 7);
-});
-
 test("circuits.editingModel.wireConsistency", function() {
   let test = newTestEditingModel(),
       circuit = test.model,
