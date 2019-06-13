@@ -1331,23 +1331,9 @@ const editingModel = (function() {
     },
 
     layoutGroups: function () {
-      let model = this.model,
-          viewModel = model.viewModel,
-          hierarchicalModel = model.hierarchicalModel,
-          translatableModel = model.translatableModel;
-      // Make sure groups are big enough to enclose contents.
+      let viewModel = this.model.viewModel;
       visitItems(this.diagram.items, function(group) {
-        let extents = viewModel.getItemRects(group.items),
-            parent = hierarchicalModel.getParent(group),
-            parentX = translatableModel.globalX(parent),
-            parentY = translatableModel.globalY(parent),
-            groupX = translatableModel.globalX(group),
-            groupY = translatableModel.globalY(group),
-            master = getMaster(group),
-            masterWidth = master[_width], masterHeight = master[_height],
-            width = Math.max(extents.x + extents.w - groupX, masterWidth),
-            height = Math.max(extents.y + extents.h - groupY, masterHeight);
-        viewModel.setItemBounds(group, width, height);
+        viewModel.updateGroupBounds(group);
       }, isGroup);
     }
   }
@@ -1464,6 +1450,19 @@ const viewModel = (function() {
         nx: isInput ? -1 : 1,
         ny: 0,
       }
+    },
+
+    // Make sure a group is big enough to enclose its contents.
+    updateGroupBounds: function(group) {
+      let extents = this.getItemRects(group.items),
+          translatableModel = this.model.translatableModel,
+          groupX = translatableModel.globalX(group),
+          groupY = translatableModel.globalY(group),
+          master = getMaster(group),
+          masterWidth = master[_width], masterHeight = master[_height],
+          width = extents.x + extents.w - groupX + 2 * spacing + masterWidth,
+          height = Math.max(extents.y + extents.h - groupY, masterHeight);
+      this.setItemBounds(group, width, height);
     },
   }
 
