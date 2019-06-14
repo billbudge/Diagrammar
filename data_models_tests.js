@@ -372,10 +372,10 @@ test("hierarchicalModel", function() {
 
   // Test LCA.
   deepEqual(test.getLineage(child3), [child3, child2, root]);
-  deepEqual(test.getLowestCommonAncestor(root, child1), root);
-  deepEqual(test.getLowestCommonAncestor(child3, child1), root);
+  deepEqual(test.getLowestCommonAncestor([root, child1]), root);
+  deepEqual(test.getLowestCommonAncestor([child3, child1]), root);
   deepEqual(test.getLineage(child2), [child2, root]);
-  deepEqual(test.getLowestCommonAncestor(child1, child2), root);
+  deepEqual(test.getLowestCommonAncestor([child1, child2]), root);
 
   // Remove child3 from child2.
   model.observableModel.removeElement(child2, 'items', child2.items.indexOf(child3));

@@ -1034,15 +1034,18 @@ const hierarchicalModel = (function () {
       return lineage;
     },
 
-    getLowestCommonAncestor: function(item1, item2) {
-      const lineage1 = this.getLineage(item1),
-            lineage2 = this.getLineage(item2);
-      let i1 = lineage1.length - 1, i2 = lineage2.length - 1,
-          lca;
-      while (i1 >= 0 && i2 >= 0 && lineage1[i1] == lineage2[i2]) {
-        lca = lineage1[i1];
-        i1--;
-        i2--;
+    getLowestCommonAncestor: function(items) {
+      // LCA is associative, so perform the search pair-wise.
+      let lca = items[0];
+      for (let i = 1; i < items.length; i++) {
+        const lineage1 = this.getLineage(lca),
+              lineage2 = this.getLineage(items[i]);
+        let i1 = lineage1.length - 1, i2 = lineage2.length - 1;
+        while (i1 >= 0 && i2 >= 0 && lineage1[i1] == lineage2[i2]) {
+          lca = lineage1[i1];
+          i1--;
+          i2--;
+        }
       }
       return lca;
     },

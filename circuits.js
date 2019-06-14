@@ -817,7 +817,7 @@ const editingModel = (function() {
           inputs = [], outputs = [];
 
       function makePin(element, pin, type, isInput) {
-        let y = viewModel.pinToPoint(element, pin, isInput);
+        let y = viewModel.pinToPoint(element, pin, isInput).y;
         return {
           type: type,
           y: y,
@@ -907,9 +907,10 @@ const editingModel = (function() {
 
       groupElement.items = groupItems;
       groupItems.forEach(function(item) {
-        if (!isWire(item)) {
-          observableModel.changeValue(item, 'x', item.x - extents.x);
-          observableModel.changeValue(item, 'y', item.y - extents.y);
+        let r = viewModel.getItemRect(item);
+        if (r) {
+          observableModel.changeValue(item, 'x', r.x - extents.x);
+          observableModel.changeValue(item, 'y', r.y - extents.y);
         }
         self.deleteItem(item);
       });
@@ -1206,11 +1207,13 @@ const editingModel = (function() {
     doBuild: function() {
       let model = this.model;
       this.reduceSelection();
-      let elements = model.selectionModel.contents().filter(isElementOrGroup);
       model.transactionModel.beginTransaction('build');
-      let groupElement = this.build(elements);
+      let elements = model.selectionModel.contents().filter(isElementOrGroup),
+          parent = elements.length == 1 ?
+              null : model.hierarchicalModel.getLowestCommonAncestor(elements),
+          groupElement = this.build(elements);
       model.dataModel.initialize(groupElement);
-      this.addItem(groupElement);  // add at top level.
+      this.addItem(groupElement, parent);
       model.selectionModel.set(groupElement);
       model.transactionModel.endTransaction();
     },
@@ -1264,7 +1267,7 @@ const editingModel = (function() {
           return;
         }
         // Make sure wires belong to lowest common container (circuit or group).
-        const lca = hierarchicalModel.getLowestCommonAncestor(src, dst);
+        const lca = hierarchicalModel.getLowestCommonAncestor([src, dst]);
         if (hierarchicalModel.getParent(wire) !== lca) {
           self.deleteItem(wire);
           self.addItem(wire, lca);
@@ -1317,7 +1320,8 @@ const editingModel = (function() {
 
     layoutGroups: function () {
       let viewModel = this.model.viewModel;
-      visitItems(this.diagram.items, function(group) {
+      // visit groups in pre-order to handle nested groups correctly.
+      reverseVisitItems(this.diagram.items, function(group) {
         viewModel.updateGroupBounds(group);
       }, isGroup);
     }
