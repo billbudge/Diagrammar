@@ -140,6 +140,13 @@ test("circuits.masteringModel.unlabelType", function() {
   deepEqual(test.unlabelType('[vvv(foo)'), '[vvv');
 });
 
+test("circuits.masteringModel.getSignature", function() {
+  let test = newTestMasteringModel();
+  deepEqual(test.getSignature('[v,vv](foo)'), '[v,vv]');
+  deepEqual(test.getSignature('[v(a),v(b)v](foo)'), '[v,vv]');
+  deepEqual(test.getSignature('[[v,v](a),vv](foo)'), '[[v,v],vv]');
+});
+
 test("circuits.masteringModel.splitType", function() {
   let test = newTestMasteringModel();
   let tuples = [
@@ -384,42 +391,23 @@ test("circuits.editingModel.getConnectedElements", function() {
   ok(downstream.includes(elem3));
 });
 
-test("circuits.editingModel.closeFunction", function() {
+test("circuits.editingModel.openElements", function() {
   let test = newTestEditingModel(),
       circuit = test.model,
       items = circuit.root.items,
       elem1 = addElement(test, newTypedElement('[vv,v]')),
-      elem2 = addElement(test, newTypedElement('[vv,v]')),
+      elem2 = addElement(test, newTypedElement('[v(a)v(b),v(c)]')),
       wire = addWire(test, elem1, 0, elem2, 1);
-  // Close element #2.
-  test.closeOrOpenFunctions([elem2], true);
+  // Open element #2.
+  test.openElements([elem2], false);
   deepEqual(items.length, 3);
   deepEqual(items[0], elem1);
   deepEqual(test.getWireSrc(wire), elem1);
   deepEqual(wire.srcPin, 0);
   deepEqual(test.getWireDst(wire), items[2]);
-  deepEqual(wire.dstPin, 0);
-  let closedElement = items[2];
-  deepEqual(closedElement.master, '[v,[v,v]]');
-});
-
-test("circuits.editingModel.openFunction", function() {
-  let test = newTestEditingModel(),
-      circuit = test.model,
-      items = circuit.root.items,
-      elem1 = addElement(test, newTypedElement('[vv,v]')),
-      elem2 = addElement(test, newTypedElement('[vv,v]')),
-      wire = addWire(test, elem1, 0, elem2, 1);
-  // Open element #1.
-  test.closeOrOpenFunctions([elem2], false);
-  deepEqual(items.length, 3);
-  deepEqual(items[0], elem1);
-  deepEqual(test.getWireSrc(wire), elem1);
-  deepEqual(wire.srcPin, 0);
-  deepEqual(test.getWireDst(wire), items[2]);
-  deepEqual(wire.dstPin, 0);
-  let closedElement = items[2];
-  deepEqual(closedElement.master, '[vv[vv,v],v]');
+  deepEqual(wire.dstPin, 1);
+  let openElement = items[2];
+  deepEqual(openElement.master, '[v(a)v(b)[vv,v],v(c)]');
 });
 
 test("circuits.editingModel.makeGroup", function() {

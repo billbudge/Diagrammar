@@ -225,6 +225,22 @@ const masteringModel = (function() {
       return type;
     },
 
+    // Removes all labels from type.
+    getSignature: function(type) {
+      let result = '', label = 0;
+      while (true) {
+        label = type.indexOf('(');
+        if (label <= 0)
+          break;
+        result += type.substring(0, label);
+        label = type.indexOf(')', label);
+        if (label <= 0)
+          break;
+        type = type.substring(label + 1, type.length);
+      }
+      return result + type;
+    },
+
     splitType: function(s) {
       let self = this;
       let j = 0, level = 0;
@@ -256,10 +272,9 @@ const masteringModel = (function() {
     initialize: function(item) {
       if (isElementOrGroup(item)) {
         const master = item.master;
-        if (master) {
-          item[_master] = this.masterMap_.get(master) ||
-                          this.decodeType(master);
-        }
+        item[_master] = master ?
+                        this.masterMap_.get(master) || this.decodeType(master) :
+                        null;
       }
     },
   }
@@ -693,7 +708,8 @@ const editingModel = (function() {
       };
       const id = dataModel.assignId(newElement),
             type = masteringModel.unlabelType(element.master),
-            abstractType = masteringModel.addInputToType(type, type);
+            inputType = masteringModel.getSignature(type),
+            abstractType = masteringModel.addInputToType(type, inputType);
       newElement.master = abstractType;
       dataModel.initialize(newElement);
       return newElement;
@@ -791,6 +807,9 @@ const editingModel = (function() {
       outputs.forEach(pin => master += pin.type);
       master += ']';
 
+      if (!masteringModel.hasOutput(master))
+        master = null;
+
       return master;
     },
 
@@ -825,7 +844,7 @@ const editingModel = (function() {
       });
 
       groupElement.type = 'group';
-      groupElement.master = master != '[,]' ? master : null;
+      groupElement.master = master;
       groupElement.x = extents.x;
       groupElement.y = extents.y;
 
@@ -1182,7 +1201,7 @@ const editingModel = (function() {
           return;
         }
         const master = self.getGroupMaster(group.items, graphInfo);
-        if (group.master != master) {
+        if (group.master !== master) {
           observableModel.changeValue(group, 'master', master);
         }
       }, isGroup);
@@ -1348,10 +1367,13 @@ const viewModel = (function() {
           translatableModel = this.model.translatableModel,
           groupX = translatableModel.globalX(group),
           groupY = translatableModel.globalY(group),
-          master = getMaster(group),
-          masterWidth = master[_width], masterHeight = master[_height],
-          width = extents.x + extents.w - groupX + 2 * spacing + masterWidth,
-          height = Math.max(extents.y + extents.h - groupY, masterHeight);
+          width = extents.x + extents.w - groupX,
+          height = extents.y + extents.h - groupY,
+          master = getMaster(group);
+      if (master) {
+        width += 2 * spacing + master[_width];
+        height = Math.max(extents.y + extents.h - groupY, master[_height]);
+      }
       this.setItemBounds(group, width, height);
     },
   }
@@ -1659,17 +1681,19 @@ Renderer.prototype.hitTestGroup = function(group, p, tol, mode) {
       width = rect.w + 2 * spacing, height = rect.h + 2 * spacing,
       hitInfo = diagrams.hitTestRect(x, y, width, height, p, tol);
   if (hitInfo) {
-    let master = getMaster(group),
-        masterRect = this.getGroupMasterBounds(master, x + width, y + height);
-    if (diagrams.hitTestRect(masterRect.x, masterRect.y, masterRect.w, masterRect.h, p, tol)) {
-      hitInfo.item = {
-        type: 'element',
-        x: masterRect.x,
-        y: masterRect.y,
-        master: group.master,
-        [_master]: master,
-        state: 'palette',
-      };
+    let master = getMaster(group);
+    if (master) {
+      const rect = this.getGroupMasterBounds(master, x + width, y + height);
+      if (diagrams.hitTestRect(rect.x, rect.y, rect.w, rect.h, p, tol)) {
+        hitInfo.item = {
+          type: 'element',
+          x: rect.x,
+          y: rect.y,
+          master: group.master,
+          [_master]: master,
+          state: 'palette',
+        };
+      }
     }
   }
   return hitInfo;
