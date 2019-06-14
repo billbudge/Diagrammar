@@ -678,64 +678,7 @@ const editingModel = (function() {
       return newMaster;
     },
 
-    closeFunction: function(element, incomingWires, outgoingWireArrays) {
-      let self = this, model = this.model,
-          dataModel = model.dataModel,
-          masteringModel = model.masteringModel,
-          observableModel = model.observableModel,
-          master = getMaster(element);
-
-      let newElement = {
-        type: 'element',
-        elementType: 'closed',
-        x: element.x,
-        y: element.y,
-      };
-      let id = dataModel.assignId(newElement);
-
-      let type = '[',
-          closedType = '[',
-          pinIndex = 0;
-      // Add only connected input pins to inputs.
-      master.inputs.forEach(function(pin, i) {
-        let incomingWire = incomingWires[i];
-        if (incomingWire) {
-          type += self.getPinType(pin);
-          // remap wire to new element and pin.
-          observableModel.changeValue(incomingWire, 'dstId', id);
-          observableModel.changeValue(incomingWire, 'dstPin', pinIndex);
-          pinIndex++;
-        } else {
-          closedType += pin.type;
-        }
-      });
-      // Add only connected output pins to outputs.
-      type += ',';
-      closedType += ',';
-      pinIndex = 0;
-      master.outputs.forEach(function(pin, i) {
-        let outgoingWires = outgoingWireArrays[i];
-        if (outgoingWires.length > 0) {
-          type += self.getPinType(pin);
-          outgoingWires.forEach(function(outgoingWire, j) {
-            // remap wire to new element and pin.
-            observableModel.changeValue(outgoingWire, 'srcId', id);
-            observableModel.changeValue(outgoingWire, 'srcPin', pinIndex);
-          });
-          pinIndex++;
-        }
-        closedType += pin.type;
-      });
-      type += ']';
-      closedType += ']';
-      type = masteringModel.addOutputToType(type, closedType);
-
-      newElement.master = type;
-      dataModel.initialize(newElement);
-      return newElement;
-    },
-
-    openFunction: function(element, incomingWires, outgoingWireArrays) {
+    openElement: function(element) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           masteringModel = model.masteringModel,
@@ -748,62 +691,28 @@ const editingModel = (function() {
         x: element.x,
         y: element.y,
       };
-      let id = dataModel.assignId(newElement);
-
-      // Add all input pins to inputs.
-      let pinIndex = 0;
-      master.inputs.forEach(function(pin, i) {
-        let incomingWire = incomingWires[i];
-        // remap wire to new element and pin.
-        if (incomingWire) {
-          observableModel.changeValue(incomingWire, 'dstId', id);
-          observableModel.changeValue(incomingWire, 'dstPin', pinIndex);
-          pinIndex++;
-        }
-      });
-      // Add all output pins to outputs.
-      pinIndex = 0;
-      master.outputs.forEach(function(pin, i) {
-        let outgoingWires = outgoingWireArrays[i];
-        outgoingWires.forEach(function(outgoingWire, j) {
-          // remap wires to new element and pin.
-          observableModel.changeValue(outgoingWire, 'srcId', id);
-          observableModel.changeValue(outgoingWire, 'srcPin', pinIndex);
-        });
-        pinIndex++;
-      });
-
-      let innerType = masteringModel.unlabelType(element.master),
-          type = masteringModel.addInputToType(innerType, innerType);
-      newElement.master = type;
+      const id = dataModel.assignId(newElement),
+            type = masteringModel.unlabelType(element.master),
+            abstractType = masteringModel.addInputToType(type, type);
+      newElement.master = abstractType;
       dataModel.initialize(newElement);
       return newElement;
     },
 
-    closeOrOpenFunctions: function(elements, closing) {
-      let self = this, model = this.model,
-          selectionModel = model.selectionModel;
+    openElements: function(elements) {
+      let self = this,
+          selectionModel = this.model.selectionModel;
 
-      let graphInfo = this.collectGraphInfo(elements);
-      // Adjust selection to contain just the elements.
-      graphInfo.wires.forEach(function(wire) {
-        selectionModel.remove(wire);
-      });
       // Open or close each non-input/output element.
-      graphInfo.elementSet.forEach(function(element) {
-        if (isInput(element) || isOutput(element) || isLiteral(element)) return;
-        let incomingWires = graphInfo.inputMap.get(element),
-            outgoingWireArrays = graphInfo.outputMap.get(element);
-
-        let newElement = closing ?
-          self.closeFunction(element, incomingWires, outgoingWireArrays) :
-          self.openFunction(element, incomingWires, outgoingWireArrays),
-            parent = self.model.hierarchicalModel.getParent(element);
-
+      elements.forEach(function(element) {
         selectionModel.remove(element);
-        selectionModel.add(newElement);
-
+        if (isInput(element) || isOutput(element) ||
+            isLiteral(element) || isWire(element)) {
+          return;
+        }
+        const newElement = self.openElement(element);
         self.replaceElement(element, newElement);
+        selectionModel.add(newElement);
       });
     },
 
@@ -1188,20 +1097,12 @@ const editingModel = (function() {
       model.transactionModel.endTransaction();
     },
 
-    doClosure: function() {
-      let model = this.model;
-      this.reduceSelection();
-      model.transactionModel.beginTransaction('closure');
-      this.closeOrOpenFunctions(model.selectionModel.contents(), true);
-      model.transactionModel.endTransaction();
-    },
-
     doAbstract: function() {
-      let model = this.model;
+      let transactionModel = this.model.transactionModel;
       this.reduceSelection();
-      model.transactionModel.beginTransaction('abstract');
-      this.closeOrOpenFunctions(model.selectionModel.contents(), false);
-      model.transactionModel.endTransaction();
+      transactionModel.beginTransaction('abstract');
+      this.openElements(this.model.selectionModel.contents());
+      transactionModel.endTransaction();
     },
 
     doBuild: function() {
@@ -2495,7 +2396,7 @@ Editor.prototype.onKeyDown = function(e) {
         editingModel.doComplete();
         return true;
       case 75:  // 'k'
-        editingModel.doClosure();
+        // Available!
         return true;
       case 76:  // 'l'
         editingModel.doAbstract();
