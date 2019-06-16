@@ -1200,11 +1200,11 @@ const editingModel = (function() {
           self.deleteItem(group);
           return;
         }
-        const master = self.getGroupMaster(group.items, graphInfo),
-              unlabeled = masteringModel.unlabelType(group.master);
-        if (unlabeled !== master) {
-          let label = master.substring(unlabeled.length);
-          observableModel.changeValue(group, 'master', master + label);
+        const newSig = self.getGroupMaster(group.items, graphInfo),
+              oldSig = masteringModel.unlabelType(group.master);
+        if (oldSig !== newSig) {
+          let label = group.master.substring(oldSig.length);
+          observableModel.changeValue(group, 'master', newSig + label);
         }
       }, isGroup);
 
