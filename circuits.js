@@ -1200,9 +1200,11 @@ const editingModel = (function() {
           self.deleteItem(group);
           return;
         }
-        const master = self.getGroupMaster(group.items, graphInfo);
-        if (group.master !== master) {
-          observableModel.changeValue(group, 'master', master);
+        const master = self.getGroupMaster(group.items, graphInfo),
+              unlabeled = masteringModel.unlabelType(group.master);
+        if (unlabeled !== master) {
+          let label = master.substring(unlabeled.length);
+          observableModel.changeValue(group, 'master', master + label);
         }
       }, isGroup);
 
@@ -1298,8 +1300,7 @@ const _x = Symbol('x'),
       _height = Symbol('height'),
       _p1 = Symbol('p1'),
       _p2 = Symbol('p2'),
-      _bezier = Symbol('bezier'),
-      _background = Symbol('background');
+      _bezier = Symbol('bezier');
 
 const viewModel = (function() {
   const proto = {
@@ -1705,21 +1706,16 @@ Renderer.prototype.layoutWire = function(wire) {
       src = referencingModel.getReference(wire, 'srcId'),
       dst = referencingModel.getReference(wire, 'dstId'),
       p1 = wire[_p1], p2 = wire[_p2];
-  let srcDim, dstDim;
   if (src) {
     p1 = viewModel.pinToPoint(src, wire.srcPin, false);
     let master = getMaster(src),
         pin = master.outputs[wire.srcPin];
-    srcDim = isFunctionType(pin.type);
   }
   if (dst) {
     p2 = viewModel.pinToPoint(dst, wire.dstPin, true);
     let master = getMaster(dst),
         pin = master.inputs[wire.dstPin];
-    dstDim = isFunctionType(pin.type) ||
-             (isLambda(dst) && wire.dstPin == master.inputs.length - 1);
   }
-  wire[_background] = srcDim || dstDim;
   wire[_bezier] = diagrams.getEdgeBezier(p1, p2);
 }
 
@@ -1728,7 +1724,7 @@ Renderer.prototype.drawWire = function(wire, mode) {
   diagrams.bezierEdgePath(wire[_bezier], ctx, 0);
   switch (mode) {
     case normalMode:
-      ctx.strokeStyle = wire[_background] ? theme.dimColor : theme.strokeColor;
+      ctx.strokeStyle = theme.strokeColor;
       ctx.lineWidth = 1;
       break;
     case highlightMode:
@@ -2093,7 +2089,7 @@ Editor.prototype.setEditableText = function() {
       textInputController = this.textInputController,
       item = model.selectionModel.lastSelected(),
       editingModel = model.editingModel;
-  if (item && isElement(item)) {
+  if (item && isElementOrGroup(item)) {
     let master = getMaster(item),
         oldText = editingModel.getLabel(item);
     textInputController.start(oldText, function(newText) {
