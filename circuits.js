@@ -1550,7 +1550,7 @@ Renderer.prototype.drawPin = function(pin, x, y) {
   }
 }
 
-function strokePath(elementType, x, y, w, h, ctx) {
+function makePath(elementType, x, y, w, h, ctx) {
   switch (elementType) {
     case 'input':
       diagrams.inFlagPath(x, y, w, h, spacing, ctx);
@@ -1575,7 +1575,7 @@ Renderer.prototype.drawElement = function(element, mode) {
       x = rect.x, y = rect.y, w = rect.w, h = rect.h,
       right = x + w, bottom = y + h;
 
-  strokePath(element.elementType, x, y, w, h, ctx);
+  makePath(element.elementType, x, y, w, h, ctx);
 
   switch (mode) {
     case normalMode:
@@ -1605,6 +1605,40 @@ Renderer.prototype.drawElement = function(element, mode) {
       ctx.stroke();
       break;
   }
+}
+
+Renderer.prototype.drawElementPin = function(element, input, output, mode) {
+  let ctx = this.ctx,
+      rect = this.viewModel.getItemRect(element),
+      x = rect.x, y = rect.y, w = rect.w, h = rect.h,
+      right = x + w,
+      master = getMaster(element),
+      pin;
+
+  if (input !== undefined) {
+    pin = master.inputs[input];
+  } else if (output != undefined) {
+    pin = master.outputs[output];
+    x = right - pin[_width];
+  }
+  ctx.beginPath();
+  ctx.rect(x, y + pin[_y], pin[_width], pin[_height]);
+
+  switch (mode) {
+    case normalMode:
+      ctx.strokeStyle = theme.strokeColor;
+      ctx.lineWidth = 1;
+      break;
+    case highlightMode:
+      ctx.strokeStyle = theme.highlightColor;
+      ctx.lineWidth = 2;
+      break;
+    case hotTrackMode:
+      ctx.strokeStyle = theme.hotTrackColor;
+      ctx.lineWidth = 2;
+      break;
+  }
+  ctx.stroke();
 }
 
 Renderer.prototype.getGroupMasterBounds = function(master, groupRight, groupBottom) {
@@ -2004,8 +2038,17 @@ Editor.prototype.draw = function() {
     renderer.draw(item, highlightMode);
   });
 
-  if (this.hotTrackInfo)
-    renderer.draw(this.hotTrackInfo.item, hotTrackMode);
+  if (this.hotTrackInfo) {
+    let hitInfo = this.hotTrackInfo,
+        item = hitInfo.item,
+        input = hitInfo.input,
+        output = hitInfo.output;
+    if (input !== undefined || output !== undefined) {
+      renderer.drawElementPin(item, input, output, hotTrackMode);
+    } else {
+      renderer.draw(item, hotTrackMode);
+    }
+  }
 
   renderer.endDraw();
 
