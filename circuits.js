@@ -1667,7 +1667,8 @@ Renderer.prototype.drawGroup = function(group, mode) {
       if (group.master) {
         let master = getMaster(group),
             masterRect = this.getGroupMasterBounds(master, right, bottom);
-        strokePath('', masterRect.x, masterRect.y, masterRect.w, masterRect.h, ctx);
+        ctx.beginPath();
+        ctx.rect(masterRect.x, masterRect.y, masterRect.w, masterRect.h);
         ctx.fillStyle = theme.altBgColor;
         ctx.fill();
         ctx.strokeStyle = theme.strokeColor;
@@ -1720,7 +1721,7 @@ Renderer.prototype.hitTestGroup = function(group, p, tol, mode) {
     if (master) {
       const rect = this.getGroupMasterBounds(master, x + width, y + height);
       if (diagrams.hitTestRect(rect.x, rect.y, rect.w, rect.h, p, tol)) {
-        hitInfo.item = {
+        hitInfo.groupElement = {
           type: 'element',
           x: rect.x,
           y: rect.y,
@@ -2158,7 +2159,10 @@ Editor.prototype.onClick = function(p) {
       mouseHitInfo = this.mouseHitInfo = this.getFirstHit(hitList, isDraggable);
   if (mouseHitInfo) {
     let item = mouseHitInfo.item;
-    if (cmdKeyDown || item.state == 'palette') {
+    if (isGroup(item) && mouseHitInfo.groupElement) {
+      item = mouseHitInfo.item = mouseHitInfo.groupElement;
+    }
+    if (cmdKeyDown || isPaletted(item)) {
       mouseHitInfo.moveCopy = true;
       // No wire dragging in this mode.
       mouseHitInfo.input = mouseHitInfo.output = undefined;
