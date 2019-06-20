@@ -410,6 +410,30 @@ test("circuits.editingModel.openElements", function() {
   deepEqual(openElement.master, '[v(a)v(b)[vv,v],v(c)]');
 });
 
+test("circuits.editingModel.replaceElement", function() {
+  let test = newTestEditingModel(),
+      circuit = test.model,
+      items = circuit.root.items,
+      elem1 = addElement(test, newTypedElement('[vv,v]')),
+      elem2 = addElement(test, newTypedElement('[v(a)v(b),v(c)]')),
+      wire = addWire(test, elem1, 0, elem2, 1),
+      replacement1 = addElement(test, newTypedElement('[vv,v]')),
+      replacement2 = addElement(test, newTypedElement('[,v]'));
+  // Replace elem1 with replacement1. The wire should still be connected.
+  test.replaceElement(elem1, replacement1);
+  deepEqual(items.length, 4);
+  ok (!items.includes(elem1));
+  ok(items.includes(replacement1));
+  ok(items.includes(wire));
+  deepEqual(test.getWireSrc(wire), replacement1);
+  deepEqual(wire.srcPin, 0);
+  test.replaceElement(elem2, replacement2);
+  deepEqual(items.length, 2);
+  ok(!items.includes(elem2));
+  ok(items.includes(replacement2));
+  ok(!items.includes(wire));
+});
+
 test("circuits.editingModel.makeGroup", function() {
   let test = newTestEditingModel(),
       circuit = test.model,

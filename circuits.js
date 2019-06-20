@@ -539,19 +539,36 @@ const editingModel = (function() {
       let self = this, model = this.model,
           hierarchicalModel = model.hierarchicalModel,
           observableModel = model.observableModel,
+          masteringModel = model.masteringModel,
           graphInfo = this.collectGraphInfo([element]),
           elementInputs = graphInfo.inputMap.get(element),
           elementOutputs = graphInfo.outputMap.get(element),
+          master = getMaster(element),
           newId = model.dataModel.getId(newElement),
           newMaster = getMaster(newElement);
+      function canRewire(index, pins, newPins) {
+        if (index >= newPins.length)
+          return false;
+        let type = masteringModel.getSignature(pins[index].type),
+            newType = masteringModel.getSignature(newPins[index].type);
+        return type == newType;
+      }
       elementInputs.forEach(function(wire, pin) {
-        if (wire) {
+        if (!wire)
+          return;
+        if (canRewire(wire.dstPin, master.inputs, newMaster.inputs)) {
           observableModel.changeValue(wire, 'dstId', newId);
+        } else {
+          self.deleteItem(wire);
         }
       });
       elementOutputs.forEach(function(wires, pin) {
         wires.forEach(function(wire) {
-          observableModel.changeValue(wire, 'srcId', newId);
+          if (canRewire(wire.srcPin, master.outputs, newMaster.outputs)) {
+            observableModel.changeValue(wire, 'srcId', newId);
+          } else {
+            self.deleteItem(wire);
+          }
         });
       });
       let parent = hierarchicalModel.getParent(newElement),
@@ -808,7 +825,7 @@ const editingModel = (function() {
       master += ']';
 
       if (!masteringModel.hasOutput(master))
-        master = null;
+        master = '';
 
       return master;
     },
@@ -2122,7 +2139,7 @@ function isContainerTargetOrElementSlot(hitInfo, model) {
     return true;
   // TODO drop element on function inputs.
   let item = hitInfo.item;
-  return isElement(item) && !isPaletted(item) && !isJunction(item) && !isLiteral(item) &&
+  return isElement(item) && !isPaletted(item) && !isJunction(item) &&
          !model.hierarchicalModel.isItemInSelection(item);
 }
 
@@ -2133,7 +2150,7 @@ Editor.prototype.setEditableText = function() {
       textInputController = this.textInputController,
       item = model.selectionModel.lastSelected(),
       editingModel = model.editingModel;
-  if (item && isElementOrGroup(item)) {
+  if (item && isElementOrGroup(item) && item.master) {
     let master = getMaster(item),
         oldText = editingModel.getLabel(item);
     textInputController.start(oldText, function(newText) {
