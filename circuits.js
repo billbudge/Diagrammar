@@ -328,11 +328,13 @@ const editingModel = (function() {
     collectGraphInfo: function(items) {
       let self = this;
       // Get elements and initialize input/output maps.
-      let elementSet = new Set();
+      let elementsAndGroups = new Set();
       let inputMap = new Map(), outputMap = new Map();
       visitItems(items, function(element) {
+        elementsAndGroups.add(element);
+        if (!isElement(element))
+          return;
         let master = getMaster(element);
-        elementSet.add(element);
         // inputMap takes element to array of incoming wires.
         inputMap.set(element, new Array(master.inputs.length).fill(null));
         // outputMap takes element to array of array of outgoing wires.
@@ -340,7 +342,7 @@ const editingModel = (function() {
         for (let i = 0; i < arrays.length; i++)
           arrays[i] = new Array();
         outputMap.set(element, arrays);
-      }, isElement);
+      }, isElementOrGroup);
       // Separate wires into incoming, outgoing, and interior. Populate
       // input/output maps, and incoming and outgoing pins.
       let wires = [], incomingWires = [], outgoingWires = [], interiorWires = [],
@@ -349,8 +351,8 @@ const editingModel = (function() {
         wires.push(wire);
         let src = self.getWireSrc(wire),
             dst = self.getWireDst(wire),
-            srcInside = elementSet.has(src),
-            dstInside = elementSet.has(dst);
+            srcInside = elementsAndGroups.has(src),
+            dstInside = elementsAndGroups.has(dst);
         if (srcInside) {
           outputMap.get(src)[wire.srcPin].push(wire);
           if (dstInside) {
@@ -374,7 +376,7 @@ const editingModel = (function() {
       }, isWire);
 
       return {
-        elementSet: elementSet,
+        elementsAndGroups: elementsAndGroups,
         inputMap: inputMap,
         outputMap: outputMap,
         wires: wires,
@@ -840,11 +842,13 @@ const editingModel = (function() {
       let graphInfo = this.collectGraphInfo(elements),
           entireGraphInfo = this.collectGraphInfo(this.diagram.items),
           groupItems = elements.concat(graphInfo.interiorWires),
-          extents = viewModel.getItemRects(graphInfo.elementSet),
-          inputs = [], outputs = [];
+          extents = viewModel.getItemRects(graphInfo.elementsAndGroups),
+          x = extents.x - spacing, y = extents.y - spacing;
       // Create the new group element.
       let groupElement = {
         type: 'element',
+        x: x,
+        y: y,
       };
 
       let groupId = dataModel.assignId(groupElement),
@@ -854,16 +858,16 @@ const editingModel = (function() {
       groupItems.forEach(function(item) {
         let r = viewModel.getItemRect(item);
         if (r) {
-          observableModel.changeValue(item, 'x', r.x - extents.x);
-          observableModel.changeValue(item, 'y', r.y - extents.y);
+          observableModel.changeValue(item, 'x', r.x - x);
+          observableModel.changeValue(item, 'y', r.y - y);
         }
         self.deleteItem(item);
       });
 
       groupElement.type = 'group';
       groupElement.master = master;
-      groupElement.x = extents.x;
-      groupElement.y = extents.y;
+      groupElement.x = x;
+      groupElement.y = y;
 
       return groupElement;
     },
@@ -879,7 +883,7 @@ const editingModel = (function() {
       let graphInfo = this.collectGraphInfo(elements),
           entireGraphInfo = this.collectGraphInfo(this.diagram.items),
           groupItems = elements.concat(graphInfo.interiorWires),
-          extents = viewModel.getItemRects(graphInfo.elementSet),
+          extents = viewModel.getItemRects(graphInfo.elementsAndGroups),
           inputs = [], outputs = [];
       // Create the new group element.
       let groupElement = {
@@ -936,7 +940,7 @@ const editingModel = (function() {
       graphInfo.inputWires.forEach(function(wire) {
         let index = addUniqueSource(wire, incomingSrcMap);
         let src = self.getWireSrc(wire);
-        if (graphInfo.elementSet.has(src)) {
+        if (graphInfo.elementsAndGroups.has(src)) {
           observableModel.changeValue(src, 'pinIndex', index);
           let srcType = self.findDstType(wire, entireGraphInfo);
         } else {
@@ -960,7 +964,7 @@ const editingModel = (function() {
       graphInfo.outputWires.forEach(function(wire) {
         let index = addUniqueSource(wire, outgoingSrcMap);
         let dst = self.getWireDst(wire);
-        if (graphInfo.elementSet.has(dst)) {
+        if (graphInfo.elementsAndGroups.has(dst)) {
           observableModel.changeValue(dst, 'pinIndex', index);
           if (index == pinIndex - 1 && isOutput(dst)) {
             // Let output override source name.
@@ -1172,6 +1176,8 @@ const editingModel = (function() {
       this.reduceSelection();
       model.transactionModel.beginTransaction('toggle master state');
       model.selectionModel.contents().forEach(function(element) {
+        if (!isElement(element))
+          return;
         model.observableModel.changeValue(element, 'state',
           (element.state == 'palette') ? 'normal' : 'palette');
       })
@@ -1194,12 +1200,12 @@ const editingModel = (function() {
             selectionModel = model.selectionModel,
             observableModel = model.observableModel,
             graphInfo = this.collectGraphInfo(diagram.items),
-            elementSet = graphInfo.elementSet,
+            elementsAndGroups = graphInfo.elementsAndGroups,
             wires = graphInfo.wires;
       // Eliminate dangling wires.
       wires.forEach(function(wire) {
         const src = self.getWireSrc(wire), dst = self.getWireDst(wire);
-        if (!src || !elementSet.has(src) || !dst || !elementSet.has(dst)) {
+        if (!src || !elementsAndGroups.has(src) || !dst || !elementsAndGroups.has(dst)) {
           self.deleteItem(wire);
           return;
         }
@@ -1211,8 +1217,8 @@ const editingModel = (function() {
         }
       });
 
-      // Update group types.
-      visitItems(diagram.items, function(group) {
+      // Update group types. Reverse visit so nested groups work correctly.
+      reverseVisitItems(diagram.items, function(group) {
         if (group.items.length == 0) {
           self.deleteItem(group);
           return;
@@ -1225,7 +1231,7 @@ const editingModel = (function() {
         }
       }, isGroup);
 
-      elementSet.forEach(function(element) {
+      elementsAndGroups.forEach(function(element) {
         if (isLambda(element)) {
           // Make sure lambdas are consistent.
           let master = getMaster(element),
@@ -1385,12 +1391,12 @@ const viewModel = (function() {
           translatableModel = this.model.translatableModel,
           groupX = translatableModel.globalX(group),
           groupY = translatableModel.globalY(group),
-          width = extents.x + extents.w - groupX,
-          height = extents.y + extents.h - groupY,
+          width = extents.x + extents.w - groupX + spacing,
+          height = extents.y + extents.h - groupY + spacing,
           master = getMaster(group);
       if (master) {
-        width += 2 * spacing + master[_width];
-        height = Math.max(extents.y + extents.h - groupY, master[_height]);
+        width += master[_width] + spacing;
+        height = Math.max(extents.y + extents.h - groupY, master[_height] + spacing);
       }
       this.setItemBounds(group, width, height);
     },
@@ -1667,8 +1673,7 @@ Renderer.prototype.getGroupMasterBounds = function(master, groupRight, groupBott
 Renderer.prototype.drawGroup = function(group, mode) {
   let ctx = this.ctx, theme = this.theme,
       rect = this.viewModel.getItemRect(group),
-      x = rect.x - spacing, y = rect.y - spacing,
-      w = rect.w + 2 * spacing, h = rect.h + 2 * spacing,
+      x = rect.x, y = rect.y, w = rect.w , h = rect.h,
       right = x + w, bottom = y + h;
   diagrams.roundRectPath(x, y, w, h, spacing, ctx);
   switch (mode) {
@@ -1730,13 +1735,12 @@ Renderer.prototype.hitTestElement = function(element, p, tol, mode) {
 
 Renderer.prototype.hitTestGroup = function(group, p, tol, mode) {
   let rect = this.viewModel.getItemRect(group),
-      x = rect.x - spacing, y = rect.y - spacing,
-      width = rect.w + 2 * spacing, height = rect.h + 2 * spacing,
-      hitInfo = diagrams.hitTestRect(x, y, width, height, p, tol);
+      x = rect.x, y = rect.y, w = rect.w , h = rect.h,
+      hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol);
   if (hitInfo) {
     let master = getMaster(group);
     if (master) {
-      const rect = this.getGroupMasterBounds(master, x + width, y + height);
+      const rect = this.getGroupMasterBounds(master, x + w, y + h);
       if (diagrams.hitTestRect(rect.x, rect.y, rect.w, rect.h, p, tol)) {
         hitInfo.groupElement = {
           type: 'element',

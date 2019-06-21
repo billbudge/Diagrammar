@@ -1,29 +1,35 @@
 ﻿# Diagrammar: A Graphical Programming Language
 
-tl;dr Diagrammar is an experimental graphical programming environment. It follows the Data Flow model, with the ability to pass values and functions along graph edges. Since functions can be created and instantiated, more complex programs can be built. This introduction shows how Quicksort and some other classic algorithms can be built, and hopefully demonstrates the advantages of this approach.
+Diagrammar is an experimental graphical programming environment. It is a Dataflow language, with values flowing along graph edges, and functions represented as graph nodes. Since functions can be created and instantiated, more complex programs can be built. This introduction shows how Quicksort and some other classic algorithms can be built, and hopefully demonstrates the advantages of this approach.
 
 ## Data Flow programming review
 
-Data flow diagrams are a graphical programming method where data processing elements, represented by graph nodes, are connected by edges that represent data transfer. The graph is like an electrical circuit, and the advantage is that data flow can more easily be visualized as a graph.
+Dataflow diagrams are a graphical programming method where data processing elements, represented by graph nodes, are connected by edges that represent data transfer. The graph is like an electrical circuit, and the advantage is that data flow can more easily be visualized as a graph.
 
-Most data flow systems model restricted domains, and have limited ability to represent abstractions. Diagrammar extends the data flow idea, allowing data and functions to flow along the graph edges.
+Most data flow systems model restricted domains, and have limited ability to represent abstractions. Diagrammar adds a way to easily define and use new functions, built out of simpler ones, and to create abstractions that make the diagrams more widely useful.
 
 ## Building expressions and grouping
 
-For now, let's imagine a language with one value type, which can represent numbers, strings, arrays, or other types of objects. Then our circuits can be simpler, with only one primitive wire and pin type. Circuit elements for built-in operations can be provided by the language, and combined to form useful expressions. Input and Output pin elements can be used to specify imports and exports, assign labels, and connect common imports.
+For now, let's imagine a language with one value type, which can represent numbers, strings, arrays, or other types of objects. This makes our circuits simpler, with only one primitive wire and pin type. Circuit elements for built-in operations can be provided by the language, and combined to form useful expressions.
 
 <figure>
-  <img src="/resources/palette.png"  alt="" title="Primitive elements (palette)">
+  <img src="/resources/palette.png"  alt="" title="Primitive elements (literals and functions)">
 </figure>
 
-On the top row are some "junction" elements, which specify imports and exports, and a literal element, which can represent numbers or other value types. On the second row are the unary functions, and on the third row are binary functions, and the only 3-ary function, which is the conditional operator.
+On the top row is the literal element, with no inputs and a single output. Literals can represent numbers, strings and other value types. Next are the unary and binary functions, and the only 3-ary function, which is the conditional operator.
 
-We can combine these primitives to define new functions. In the diagram below, we are creating:
+In addition there are "junction" elements, which are used to describe imports and exports.
 
-1. An increment-by-1 function.
-2. A 2-ary minimum out of the less-than relational operator and the 3-ary conditional operator.
-4. A 3-ary addition operator by cascading binary addition operators
-5. A function to evaluate a general quadratic polynomial at a given x.
+<figure>
+  <img src="/resources/palette2.png"  alt="" title="Primitive elements (junctions)">
+</figure>
+
+We can combine these primitive elements to define new expressions. In the diagrams below, we are creating:
+
+1. An increment by 1 function.
+1. A decrement by 1 function.
+1. A binary minimum and maximum using a relational operator and the conditional operator (note how input junctions are used to tie inputs together.)
+1. A 3-ary and 4-ary addition operator by cascading binary addition operators.
 
 <figure>
   <img src="/resources/basic_grouping.png"  alt="" title="Basic Grouping">
@@ -31,10 +37,10 @@ We can combine these primitives to define new functions. In the diagram below, w
 
 Note that there is fan-out but no fan-in in our circuit graphs. There are no cycles, so the circuit is a DAG (directed acyclic graph). Each circuit element is conceptually a function and wires connect outputs of one function to inputs of another. Evaluation proceeds left-to-right, since inputs must be evaluated before producing outputs. The evaluation order of the graph is only partially ordered (by topologically sorting) so we have to take extra care when a specific sequential evaluation order is required.
 
-After grouping, the new expressions can be used just like built-in functions.
+Expressions can be used to build more complex diagrams, but this quickly leads to large, unreadable graphs. A better way is to turn expressions into new elements, that allow a higher level of abstraction in our diagrams. Grouping is how we create new elements. In this diagram, we take the expressions above and group them to form new elements that we can use just like the primitive ones.
 
 <figure>
-  <img src="/resources/basic_grouping2.png"  alt="" title="Basic Grouping (continued)">
+  <img src="/resources/basic_grouping.png"  alt="" title="Basic Grouping">
 </figure>
 
 ## Function Abstraction
