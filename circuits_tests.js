@@ -356,9 +356,9 @@ test("circuits.editingModel.collectGraphInfo", function() {
   // Complete the two element group, then collect graph info.
   test.completeGroup([elem1, elem2]);
   let graphInfo = test.collectGraphInfo([elem1, elem2]);
-  ok(graphInfo.elementSet.has(elem1));
-  ok(graphInfo.elementSet.has(elem2));
-  deepEqual(graphInfo.elementSet.size, 2);
+  ok(graphInfo.elementsAndGroups.has(elem1));
+  ok(graphInfo.elementsAndGroups.has(elem2));
+  deepEqual(graphInfo.elementsAndGroups.size, 2);
   ok(graphInfo.interiorWires.includes(wire));
   deepEqual(graphInfo.wires.length, 5);
   deepEqual(graphInfo.interiorWires.length, 1);
@@ -480,22 +480,6 @@ test("circuits.editingModel.wireConsistency", function() {
   test.deleteItem(elem1);
   test.makeConsistent();
   ok(!items.includes(wire));
-});
-
-test("circuits.editingModel.lambdas", function() {
-  let test = newTestEditingModel(),
-      circuit = test.model,
-      items = circuit.root.items,
-      elem = addElement(test, newTypedElement('[,[v,v]]')),
-      apply = addElement(test, newApplyJunction()),
-      wire = addWire(test, elem, 0, apply, 0),
-      graphInfo = test.collectGraphInfo(items);
-
-  test.setLambda(wire, graphInfo);
-  deepEqual(apply.master, '[v*,v]');
-
-  test.resetLambda(apply, graphInfo);
-  deepEqual(apply.master, '[*(λ),]');
 });
 
 test("circuits.editingModel.findSrcType", function() {

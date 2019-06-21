@@ -33,8 +33,7 @@ function isLiteral(item) {
 }
 
 function isJunction(item) {
-  return item.elementType == 'input' || item.elementType == 'output' ||
-         item.elementType == 'lambda';
+  return item.elementType == 'input' || item.elementType == 'output';
 }
 
 function isClosed(item) {
@@ -53,20 +52,12 @@ function isOutput(item) {
   return item.elementType == 'output';
 }
 
-function isLambda(item) {
-  return item.elementType == 'lambda';
-}
-
-function isProto(item) {
-  return item.elementType == 'proto';
-}
-
 function isHoverable(item) {
   return isElement(item) && item.items;
 }
 
 function isInputPinLabeled(item) {
-  return isOutput(item) || isAbstract(item) || isLambda(item);
+  return isOutput(item) || isAbstract(item);
 }
 
 function isOutputPinLabeled(item) {
@@ -112,8 +103,7 @@ function reverseVisitItems(items, fn, filter) {
 }
 
 const inputElementType = '[,*]',
-    outputElementType = '[*,]',
-    lambdaElementType = '[*(λ),]';
+      outputElementType = '[*,]';
 
 const _master = Symbol('master');
 
@@ -704,9 +694,6 @@ const editingModel = (function() {
           let label = master.inputs[0].name;
           label = label ? '(' + label + ')' : '';
           newMaster = '[' + newType + label + ',]';
-        } else if (isLambda(item)) {
-          // let label = master.inputs[0].name;
-          // newMaster = '[,' + master.outputs[0].type + label + ']';
         }
       }
       return newMaster;
@@ -1039,48 +1026,6 @@ const editingModel = (function() {
       return groupElement;
     },
 
-    setLambda: function(wire, graphInfo) {
-      let self = this, model = this.model,
-          observableModel = model.observableModel,
-          srcItem = this.getWireSrc(wire),
-          srcPin = getMaster(srcItem).outputs[wire.srcPin],
-          fnType = self.findSrcType(wire, graphInfo),
-          lambda = this.getWireDst(wire),
-          lambaPin = getMaster(lambda).inputs[wire.dstPin];
-      // If type is a function, set the lambda to the function type,
-      // plus the untyped fn input.
-      if (isFunctionType(fnType)) {
-        let newMaster = self.model.masteringModel.addInputToType(fnType, '*');
-        observableModel.changeValue(lambda, 'master', newMaster);
-        observableModel.changeValue(wire, 'dstPin', getMaster(lambda).inputs.length - 1);
-      }
-    },
-
-    resetLambda: function(element, graphInfo) {
-      let self = this, model = this.model,
-          observableModel = model.observableModel,
-          inputWires = graphInfo.inputMap.get(element),
-          outputWires = graphInfo.outputMap.get(element);
-      // Delete all wires except the incoming function input.
-      for (let i = 0; i < inputWires.length - 1; i++) {
-        let wire = inputWires[i];
-        if (wire) {
-          self.deleteItem(wire);
-        }
-      }
-      for (let i = 0; i < outputWires.length; i++) {
-        let wires = outputWires[i];
-        for (let j = 0; j < wires.length; j++) {
-          self.deleteItem(wires[j]);
-        }
-      }
-      let wire = inputWires[inputWires.length - 1];
-      if (wire) {
-        observableModel.changeValue(wire, 'dstPin', 0);
-      }
-      observableModel.changeValue(element, 'master', lambdaElementType);
-    },
-
     findSrcType: function(wire, graphInfo) {
       let self = this, model = this.model, activeWires = [wire];
       // TODO get rid of array and while, there can be only one pass through.
@@ -1232,30 +1177,7 @@ const editingModel = (function() {
       }, isGroup);
 
       elementsAndGroups.forEach(function(element) {
-        if (isLambda(element)) {
-          // Make sure lambdas are consistent.
-          let master = getMaster(element),
-              inputPins = master.inputs,
-              lastIndex = inputPins.length - 1,
-              wire = graphInfo.inputMap.get(element)[lastIndex];
-          if (wire) {
-            let srcType = self.findSrcType(wire, graphInfo);
-            if (!isFunctionType(srcType)) {
-              self.deleteItem(wire);
-              self.resetLambda(element, graphInfo);
-            } else {
-              let type = masteringModel.addInputToType(srcType, '*');
-              if (element.master != type) {
-                self.resetLambda(element, graphInfo);
-                self.setLambda(wire, graphInfo);
-              }
-            }
-          } else {
-            if (element.master != lambdaElementType) {
-              self.resetLambda(element, graphInfo);
-            }
-          }
-        } else if (isGroup(element)) {
+        if (isGroup(element)) {
           // Delete empty groups.
           if (element.items.length == 0)
             self.deleteItem(element);
@@ -1581,10 +1503,6 @@ function makePath(elementType, x, y, w, h, ctx) {
     case 'output':
       diagrams.outFlagPath(x, y, w, h, spacing, ctx);
       break;
-    case 'proto':
-    case 'lambda':
-      diagrams.roundRectPath(x, y, w, h, spacing, ctx);
-      break;
     default:
       ctx.beginPath();
       ctx.rect(x, y, w, h);
@@ -1606,14 +1524,7 @@ Renderer.prototype.drawElement = function(element, mode) {
       ctx.fill();
       ctx.strokeStyle = theme.strokeColor;
       ctx.lineWidth = 0.5;
-      let dashed = isProto(element);
-      if (dashed) {
-        ctx.setLineDash([6,3]);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      } else {
-        ctx.stroke();
-      }
+      ctx.stroke();
       let master = getMaster(element);
       this.drawMaster(master, x, y);
       break;
@@ -1894,10 +1805,6 @@ function Editor(model, textInputController) {
     { type: 'element',
       elementType: 'output',
       master: outputElementType,
-    },
-    { type: 'element',
-      elementType: 'lambda',
-      master: lambdaElementType,
     },
     { type: 'element',
       elementType: 'use',
