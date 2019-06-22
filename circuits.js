@@ -699,7 +699,7 @@ const editingModel = (function() {
       return newMaster;
     },
 
-    openElement: function(element) {
+    openElement: function(element, input) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           masteringModel = model.masteringModel,
@@ -708,20 +708,30 @@ const editingModel = (function() {
 
       let newElement = {
         type: 'element',
-        elementType: 'abstract',
         x: element.x,
         y: element.y,
       };
       const id = dataModel.assignId(newElement),
-            type = masteringModel.unlabelType(element.master),
-            inputType = masteringModel.getSignature(type),
-            abstractType = masteringModel.addInputToType(type, inputType);
-      newElement.master = abstractType;
+            type = masteringModel.unlabelType(element.master);
+      let innerType = masteringModel.getSignature(type),
+          newType;
+      if (input) {
+        newElement.elementType = 'abstract';
+        newType = masteringModel.addInputToType(type, innerType);
+      } else {
+        newElement.elementType = 'closed';
+        if (master.name) {
+          innerType += '(' + master.name + ')';
+        }
+        newType = masteringModel.addOutputToType('[,]', innerType);
+      }
+
+      newElement.master = newType;
       dataModel.initialize(newElement);
       return newElement;
     },
 
-    openElements: function(elements) {
+    openElements: function(elements, input) {
       let self = this,
           selectionModel = this.model.selectionModel;
 
@@ -732,23 +742,23 @@ const editingModel = (function() {
             isLiteral(element) || isWire(element)) {
           return;
         }
-        const newElement = self.openElement(element);
+        const newElement = self.openElement(element, input);
         self.replaceElement(element, newElement);
         selectionModel.add(newElement);
       });
     },
 
-    getGroupMaster: function(elements, entireGraphInfo) {
+    getGroupMaster: function(items, entireGraphInfo) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           masteringModel = model.masteringModel,
+          translatableModel = model.translatableModel,
           viewModel = model.viewModel;
 
-      let graphInfo = this.collectGraphInfo(elements),
+      let graphInfo = this.collectGraphInfo(items),
           inputs = [], outputs = [];
 
-      function makePin(element, pin, type, isInput) {
-        let y = viewModel.pinToPoint(element, pin, isInput).y;
+      function makePin(type, y) {
         return {
           type: type,
           y: y,
@@ -773,29 +783,34 @@ const editingModel = (function() {
           return dstType;
         return self.findSrcType(wire, entireGraphInfo) + label;
       }
-      elements.forEach(function(element) {
-        if (!isElement(element))
-          return;  // skip groups
-        if (isInput(element)) {
-          inputs.push(makePin(element, 0, getInputType(element), false));
-        } else if (isOutput(element)) {
-          outputs.push(makePin(element, 0, getOutputType(element), true));
-        } else {
-          const master = getMaster(element),
-                inputWires = graphInfo.inputMap.get(element),
-                outputWires = graphInfo.outputMap.get(element);
-          inputWires.forEach(function(wire, pin) {
-            if (!wire) {
-              inputs.push(
-                makePin(element, pin, self.getPinType(master.inputs[pin]), true));
-            }
-          });
-          outputWires.forEach(function(wires, pin) {
-            if (!wires.length) {
-              outputs.push(
-                makePin(element, pin, self.getPinType(master.outputs[pin]), false));
-            }
-          });
+      items.forEach(function(item) {
+        if (isElement(item)) {
+          if (isInput(item)) {
+            let y = viewModel.pinToPoint(item, 0, false).y;
+            inputs.push(makePin(getInputType(item), y));
+          } else if (isOutput(item)) {
+            let y = viewModel.pinToPoint(item, 0, true).y;
+            outputs.push(makePin(getOutputType(item), y));
+          } else {
+            const master = getMaster(item),
+                  inputWires = graphInfo.inputMap.get(item),
+                  outputWires = graphInfo.outputMap.get(item);
+            inputWires.forEach(function(wire, pin) {
+              if (!wire) {
+                let y = viewModel.pinToPoint(item, pin, true).y;
+                inputs.push(makePin(self.getPinType(master.inputs[pin]), y));
+              }
+            });
+            outputWires.forEach(function(wires, pin) {
+              if (!wires.length) {
+                let y = viewModel.pinToPoint(item, pin, false).y;
+                outputs.push(makePin(self.getPinType(master.outputs[pin]), y));
+              }
+            });
+          }
+        } else if (isGroup(item) && item.master) {
+          let y = translatableModel.globalY(item);
+          outputs.push(makePin(item.master, y));
         }
       });
 
@@ -819,29 +834,29 @@ const editingModel = (function() {
       return master;
     },
 
-    build: function(elements) {
+    build: function(items) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           masteringModel = model.masteringModel,
           observableModel = model.observableModel,
           viewModel = model.viewModel;
 
-      let graphInfo = this.collectGraphInfo(elements),
+      let graphInfo = this.collectGraphInfo(items),
           entireGraphInfo = this.collectGraphInfo(this.diagram.items),
-          groupItems = elements.concat(graphInfo.interiorWires),
+          groupItems = items.concat(graphInfo.interiorWires),
           extents = viewModel.getItemRects(graphInfo.elementsAndGroups),
           x = extents.x - spacing, y = extents.y - spacing;
       // Create the new group element.
-      let groupElement = {
+      let group = {
         type: 'element',
         x: x,
         y: y,
       };
 
-      let groupId = dataModel.assignId(groupElement),
-          master = self.getGroupMaster(elements, entireGraphInfo);
+      let groupId = dataModel.assignId(group),
+          master = self.getGroupMaster(items, entireGraphInfo);
 
-      groupElement.items = groupItems;
+      group.items = groupItems;
       groupItems.forEach(function(item) {
         let r = viewModel.getItemRect(item);
         if (r) {
@@ -851,12 +866,12 @@ const editingModel = (function() {
         self.deleteItem(item);
       });
 
-      groupElement.type = 'group';
-      groupElement.master = master;
-      groupElement.x = x;
-      groupElement.y = y;
+      group.type = 'group';
+      group.master = master;
+      group.x = x;
+      group.y = y;
 
-      return groupElement;
+      return group;
     },
 
 
@@ -1082,11 +1097,11 @@ const editingModel = (function() {
       model.transactionModel.endTransaction();
     },
 
-    doAbstract: function() {
+    doAbstract: function(input) {
       let transactionModel = this.model.transactionModel;
       this.reduceSelection();
       transactionModel.beginTransaction('abstract');
-      this.openElements(this.model.selectionModel.contents());
+      this.openElements(this.model.selectionModel.contents(), input);
       transactionModel.endTransaction();
     },
 
@@ -1094,13 +1109,13 @@ const editingModel = (function() {
       let model = this.model;
       this.reduceSelection();
       model.transactionModel.beginTransaction('build');
-      let elements = model.selectionModel.contents().filter(isElementOrGroup),
-          parent = elements.length == 1 ?
-              null : model.hierarchicalModel.getLowestCommonAncestor(elements),
-          groupElement = this.build(elements);
-      model.dataModel.initialize(groupElement);
-      this.addItem(groupElement, parent);
-      model.selectionModel.set(groupElement);
+      let items = model.selectionModel.contents().filter(isElementOrGroup),
+          parent = items.length == 1 ?
+              null : model.hierarchicalModel.getLowestCommonAncestor(items),
+          group = this.build(items);
+      model.dataModel.initialize(group);
+      this.addItem(group, parent);
+      model.selectionModel.set(group);
       model.transactionModel.endTransaction();
     },
 
@@ -1318,7 +1333,7 @@ const viewModel = (function() {
           master = getMaster(group);
       if (master) {
         width += master[_width] + spacing;
-        height = Math.max(extents.y + extents.h - groupY, master[_height] + spacing);
+        height = Math.max(extents.y + extents.h - groupY, master[_height]) + spacing;
       }
       this.setItemBounds(group, width, height);
     },
@@ -1442,17 +1457,18 @@ Renderer.prototype.layoutPin = function(pin) {
   }
 }
 
-Renderer.prototype.drawMaster = function(master, x, y) {
+Renderer.prototype.drawMaster = function(master, x, y, topLevel) {
   let self = this, ctx = this.ctx, theme = this.theme,
       textSize = theme.fontSize, name = master.name,
       inputs = master.inputs, outputs = master.outputs,
-      width = master[_width], height = master[_height];
+      w = master[_width], h = master[_height],
+      right = x + w;
   ctx.lineWidth = 0.5;
   ctx.fillStyle = theme.textColor;
   ctx.textBaseline = 'bottom';
   if (name) {
     ctx.textAlign = 'center';
-    ctx.fillText(name, x + width / 2, y + textSize + spacing / 2);
+    ctx.fillText(name, x + w / 2, y + textSize + spacing / 2);
   }
   inputs.forEach(function(pin, i) {
     let name = pin.name;
@@ -1463,16 +1479,17 @@ Renderer.prototype.drawMaster = function(master, x, y) {
     }
   });
   outputs.forEach(function(pin) {
-    let name = pin.name, left = x + width - pin[_width];
-    self.drawPin(pin, left, y + pin[_y]);
+    let name = pin.name,
+        pinLeft = right - pin[_width];
+    self.drawPin(pin, pinLeft, y + pin[_y], topLevel);
     if (name) {
       ctx.textAlign = 'right';
-      ctx.fillText(name, left - spacing, y + pin[_baseline]);
+      ctx.fillText(name, pinLeft - spacing, y + pin[_baseline]);
     }
   });
 }
 
-Renderer.prototype.drawPin = function(pin, x, y) {
+Renderer.prototype.drawPin = function(pin, x, y, topLevel) {
   ctx.strokeStyle = theme.strokeColor;
   if (pin.type == 'v' || pin.type == '*') {
     let r = this.knobbyRadius;
@@ -1489,7 +1506,13 @@ Renderer.prototype.drawPin = function(pin, x, y) {
         width = master[_width], height = master[_height];
     this.ctx.scale(shrink, shrink);
     x *= inv_shrink; y *= inv_shrink;
-    ctx.strokeRect(x, y, width, height);
+      ctx.beginPath();
+    ctx.rect(x, y, width, height);
+    if (topLevel) {
+      ctx.fillStyle = theme.altBgColor;
+      ctx.fill();
+    }
+    ctx.stroke();
     this.drawMaster(master, x, y);
     this.ctx.scale(inv_shrink, inv_shrink);
   }
@@ -1526,7 +1549,7 @@ Renderer.prototype.drawElement = function(element, mode) {
       ctx.lineWidth = 0.5;
       ctx.stroke();
       let master = getMaster(element);
-      this.drawMaster(master, x, y);
+      this.drawMaster(master, x, y, true);  // signals top level drawing
       break;
     case highlightMode:
       ctx.strokeStyle = theme.highlightColor;
@@ -2391,10 +2414,10 @@ Editor.prototype.onKeyDown = function(e) {
         editingModel.doComplete();
         return true;
       case 75:  // 'k'
-        // Available!
+        editingModel.doAbstract(false);  // not input
         return true;
       case 76:  // 'l'
-        editingModel.doAbstract();
+        editingModel.doAbstract(true);   // input
         return true;
       case 66:  // 'b'
         editingModel.doBuild();
