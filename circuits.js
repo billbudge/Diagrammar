@@ -543,7 +543,7 @@ const editingModel = (function() {
           return false;
         let type = masteringModel.getSignature(pins[index].type),
             newType = masteringModel.getSignature(newPins[index].type);
-        return type == newType;
+        return type == '*' || type == newType;
       }
       elementInputs.forEach(function(wire, pin) {
         if (!wire)
@@ -699,7 +699,7 @@ const editingModel = (function() {
       return newMaster;
     },
 
-    openElement: function(element, input) {
+    openElement: function(element) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           masteringModel = model.masteringModel,
@@ -708,30 +708,21 @@ const editingModel = (function() {
 
       let newElement = {
         type: 'element',
+        elementType: 'abstract',
         x: element.x,
         y: element.y,
       };
       const id = dataModel.assignId(newElement),
-            type = masteringModel.unlabelType(element.master);
-      let innerType = masteringModel.getSignature(type),
-          newType;
-      if (input) {
-        newElement.elementType = 'abstract';
-        newType = masteringModel.addInputToType(type, innerType);
-      } else {
-        newElement.elementType = 'closed';
-        if (master.name) {
-          innerType += '(' + master.name + ')';
-        }
-        newType = masteringModel.addOutputToType('[,]', innerType);
-      }
+            type = masteringModel.unlabelType(element.master),
+            innerType = masteringModel.getSignature(type),
+            newType = masteringModel.addInputToType(type, innerType);
 
       newElement.master = newType;
       dataModel.initialize(newElement);
       return newElement;
     },
 
-    openElements: function(elements, input) {
+    openElements: function(elements) {
       let self = this,
           selectionModel = this.model.selectionModel;
 
@@ -742,9 +733,89 @@ const editingModel = (function() {
             isLiteral(element) || isWire(element)) {
           return;
         }
-        const newElement = self.openElement(element, input);
+        const newElement = self.openElement(element);
         self.replaceElement(element, newElement);
         selectionModel.add(newElement);
+      });
+    },
+
+    closeElement: function(element, incomingWires, outgoingWireArrays) {
+      let self = this, model = this.model,
+          dataModel = model.dataModel,
+          masteringModel = model.masteringModel,
+          observableModel = model.observableModel,
+          master = getMaster(element);
+
+      let newElement = {
+        type: 'element',
+        elementType: 'closed',
+        x: element.x,
+        y: element.y,
+      };
+      const id = dataModel.assignId(newElement);
+      let type = '[',
+          closedType = '[',
+          pinIndex = 0;
+      // Add only connected input pins to inputs.
+      master.inputs.forEach(function(pin, i) {
+        let incomingWire = incomingWires[i];
+        if (incomingWire) {
+          type += self.getPinType(pin);
+          // remap wire to new element and pin.
+          observableModel.changeValue(incomingWire, 'dstId', id);
+          observableModel.changeValue(incomingWire, 'dstPin', pinIndex);
+          pinIndex++;
+        } else {
+          closedType += pin.type;
+        }
+      });
+      // Add all output pins to outputs.
+      type += ',';
+      closedType += ',';
+      pinIndex = 0;
+      master.outputs.forEach(function(pin, i) {
+        let outgoingWires = outgoingWireArrays[i];
+        if (outgoingWires.length > 0) {
+          type += self.getPinType(pin);
+          outgoingWires.forEach(function(outgoingWire, j) {
+            // remap wire to new element and pin.
+            observableModel.changeValue(outgoingWire, 'srcId', id);
+            observableModel.changeValue(outgoingWire, 'srcPin', pinIndex);
+          });
+          pinIndex++;
+        }
+        closedType += pin.type;
+      });
+      type += ']';
+      closedType += ']';
+      type = masteringModel.addOutputToType(type, closedType);
+
+      newElement.master = type;
+      dataModel.initialize(newElement);
+      return newElement;
+    },
+
+    closeElements: function(elements) {
+      const self = this, model = this.model,
+            selectionModel = model.selectionModel,
+            graphInfo = this.collectGraphInfo(elements);
+      // Adjust selection to contain just the elements and groups.
+      graphInfo.wires.forEach(function(wire) {
+        selectionModel.remove(wire);
+      });
+       // Open or close each non-input/output element.
+      graphInfo.elementsAndGroups.forEach(function(element) {
+        if (isInput(element) || isOutput(element) ||
+            isLiteral(element) || isGroup(element))
+          return;
+        const incomingWires = graphInfo.inputMap.get(element),
+              outgoingWireArrays = graphInfo.outputMap.get(element),
+              newElement = self.closeElement(element, incomingWires, outgoingWireArrays),
+              parent = self.model.hierarchicalModel.getParent(element);
+
+        selectionModel.remove(element);
+        self.deleteItem(element);
+        self.addItem(newElement, parent);
       });
     },
 
@@ -784,33 +855,30 @@ const editingModel = (function() {
         return self.findSrcType(wire, entireGraphInfo) + label;
       }
       items.forEach(function(item) {
-        if (isElement(item)) {
-          if (isInput(item)) {
-            let y = viewModel.pinToPoint(item, 0, false).y;
-            inputs.push(makePin(getInputType(item), y));
-          } else if (isOutput(item)) {
-            let y = viewModel.pinToPoint(item, 0, true).y;
-            outputs.push(makePin(getOutputType(item), y));
-          } else {
-            const master = getMaster(item),
-                  inputWires = graphInfo.inputMap.get(item),
-                  outputWires = graphInfo.outputMap.get(item);
-            inputWires.forEach(function(wire, pin) {
-              if (!wire) {
-                let y = viewModel.pinToPoint(item, pin, true).y;
-                inputs.push(makePin(self.getPinType(master.inputs[pin]), y));
-              }
-            });
-            outputWires.forEach(function(wires, pin) {
-              if (!wires.length) {
-                let y = viewModel.pinToPoint(item, pin, false).y;
-                outputs.push(makePin(self.getPinType(master.outputs[pin]), y));
-              }
-            });
-          }
-        } else if (isGroup(item) && item.master) {
-          let y = translatableModel.globalY(item);
-          outputs.push(makePin(item.master, y));
+        if (!isElement(item))
+          return;
+        if (isInput(item)) {
+          let y = viewModel.pinToPoint(item, 0, false).y;
+          inputs.push(makePin(getInputType(item), y));
+        } else if (isOutput(item)) {
+          let y = viewModel.pinToPoint(item, 0, true).y;
+          outputs.push(makePin(getOutputType(item), y));
+        } else {
+          const master = getMaster(item),
+                inputWires = graphInfo.inputMap.get(item),
+                outputWires = graphInfo.outputMap.get(item);
+          inputWires.forEach(function(wire, pin) {
+            if (!wire) {
+              let y = viewModel.pinToPoint(item, pin, true).y;
+              inputs.push(makePin(self.getPinType(master.inputs[pin]), y));
+            }
+          });
+          outputWires.forEach(function(wires, pin) {
+            if (!wires.length) {
+              let y = viewModel.pinToPoint(item, pin, false).y;
+              outputs.push(makePin(self.getPinType(master.outputs[pin]), y));
+            }
+          });
         }
       });
 
@@ -1097,11 +1165,18 @@ const editingModel = (function() {
       model.transactionModel.endTransaction();
     },
 
-    doAbstract: function(input) {
+    doClose: function() {
+      let transactionModel = this.model.transactionModel;
+      transactionModel.beginTransaction('close');
+      this.closeElements(this.model.selectionModel.contents());
+      transactionModel.endTransaction();
+    },
+
+    doAbstract: function() {
       let transactionModel = this.model.transactionModel;
       this.reduceSelection();
       transactionModel.beginTransaction('abstract');
-      this.openElements(this.model.selectionModel.contents(), input);
+      this.openElements(this.model.selectionModel.contents());
       transactionModel.endTransaction();
     },
 
@@ -2414,10 +2489,10 @@ Editor.prototype.onKeyDown = function(e) {
         editingModel.doComplete();
         return true;
       case 75:  // 'k'
-        editingModel.doAbstract(false);  // not input
+        editingModel.doClose();
         return true;
       case 76:  // 'l'
-        editingModel.doAbstract(true);   // input
+        editingModel.doAbstract();
         return true;
       case 66:  // 'b'
         editingModel.doBuild();
