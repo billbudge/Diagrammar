@@ -716,7 +716,6 @@ const editingModel = (function() {
             type = masteringModel.unlabelType(element.master),
             innerType = masteringModel.getSignature(type),
             newType = masteringModel.addInputToType(type, innerType);
-
       newElement.master = newType;
       dataModel.initialize(newElement);
       return newElement;
@@ -726,13 +725,12 @@ const editingModel = (function() {
       let self = this,
           selectionModel = this.model.selectionModel;
 
-      // Open or close each non-input/output element.
+      // Open each non-input/output element.
       elements.forEach(function(element) {
         selectionModel.remove(element);
         if (isInput(element) || isOutput(element) ||
-            isLiteral(element) || isWire(element)) {
+            isLiteral(element) || isGroup(element) || isWire(element))
           return;
-        }
         const newElement = self.openElement(element);
         self.replaceElement(element, newElement);
         selectionModel.add(newElement);
@@ -799,14 +797,10 @@ const editingModel = (function() {
       const self = this, model = this.model,
             selectionModel = model.selectionModel,
             graphInfo = this.collectGraphInfo(elements);
-      // Adjust selection to contain just the elements and groups.
-      graphInfo.wires.forEach(function(wire) {
-        selectionModel.remove(wire);
-      });
-       // Open or close each non-input/output element.
+      // Close each non-input/output element.
       graphInfo.elementsAndGroups.forEach(function(element) {
         if (isInput(element) || isOutput(element) ||
-            isLiteral(element) || isGroup(element))
+            isLiteral(element) || isGroup(element) || isWire(element))
           return;
         const incomingWires = graphInfo.inputMap.get(element),
               outgoingWireArrays = graphInfo.outputMap.get(element),
