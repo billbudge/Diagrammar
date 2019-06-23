@@ -896,9 +896,6 @@ const editingModel = (function() {
       outputs.forEach(pin => master += pin.type);
       master += ']';
 
-      if (!masteringModel.hasOutput(master))
-        master = '';
-
       return master;
     },
 
@@ -941,7 +938,6 @@ const editingModel = (function() {
 
       return group;
     },
-
 
     makeGroup: function(elements) {
       let self = this, model = this.model,
@@ -1399,16 +1395,17 @@ const viewModel = (function() {
 
     // Make sure a group is big enough to enclose its contents.
     updateGroupBounds: function(group) {
-      let extents = this.getItemRects(group.items),
-          translatableModel = this.model.translatableModel,
-          groupX = translatableModel.globalX(group),
-          groupY = translatableModel.globalY(group),
-          width = extents.x + extents.w - groupX + spacing,
-          height = extents.y + extents.h - groupY + spacing,
-          master = getMaster(group);
+      const extents = this.getItemRects(group.items),
+            translatableModel = this.model.translatableModel,
+            groupX = translatableModel.globalX(group),
+            groupY = translatableModel.globalY(group),
+            margin = 2 * spacing,
+            master = getMaster(group);
+      let width = extents.x + extents.w - groupX + margin,
+          height = extents.y + extents.h - groupY + margin;
       if (master) {
-        width += master[_width] + spacing;
-        height = Math.max(extents.y + extents.h - groupY, master[_height]) + spacing;
+        width += master[_width];
+        height = Math.max(height, master[_height] + margin);
       }
       this.setItemBounds(group, width, height);
     },
@@ -2182,6 +2179,7 @@ Editor.prototype.onClick = function(p) {
   if (mouseHitInfo) {
     let item = mouseHitInfo.item;
     if (isGroup(item) && mouseHitInfo.groupElement) {
+      mouseHitInfo.groupElementOrigin = item;
       item = mouseHitInfo.item = mouseHitInfo.groupElement;
     }
     if (cmdKeyDown || isPaletted(item)) {
