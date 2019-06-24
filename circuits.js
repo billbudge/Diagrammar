@@ -786,6 +786,9 @@ const editingModel = (function() {
       });
       type += ']';
       closedType += ']';
+      if (master.name) {
+        closedType += '(' + master.name + ')';
+      }
       type = masteringModel.addOutputToType(type, closedType);
 
       newElement.master = type;
@@ -1764,13 +1767,9 @@ Renderer.prototype.layoutWire = function(wire) {
       p1 = wire[_p1], p2 = wire[_p2];
   if (src) {
     p1 = viewModel.pinToPoint(src, wire.srcPin, false);
-    let master = getMaster(src),
-        pin = master.outputs[wire.srcPin];
   }
   if (dst) {
     p2 = viewModel.pinToPoint(dst, wire.dstPin, true);
-    let master = getMaster(dst),
-        pin = master.inputs[wire.dstPin];
   }
   wire[_bezier] = diagrams.getEdgeBezier(p1, p2);
 }
