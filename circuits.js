@@ -450,11 +450,11 @@ const editingModel = (function() {
     },
 
     copyItems: function(items, map) {
-      let model = this.model,
-          diagram = this.diagram,
-          dataModel = model.dataModel,
-          translatableModel = model.translatableModel,
-          copies = this.prototype.copyItems(items, map);
+      const model = this.model,
+            diagram = this.diagram,
+            dataModel = model.dataModel,
+            translatableModel = model.translatableModel,
+            copies = this.prototype.copyItems(items, map);
       items.forEach(function(item) {
         let copy = map.get(dataModel.getId(item));
         if (isElementOrGroup(copy)) {
