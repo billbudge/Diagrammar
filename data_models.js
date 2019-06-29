@@ -853,10 +853,12 @@ const instancingModel = (function () {
             return;
           for (let attr in copy) {
             if (dataModel.isReference(copy, attr)) {
-              let originalId = copy[attr],
-                  newCopy = map.get(originalId),
-                  newId = dataModel.getId(newCopy);
-              copy[attr] = newId;
+              const originalId = copy[attr],
+                    newCopy = map.get(originalId);
+              if (newCopy) {
+                const newId = dataModel.getId(newCopy);
+                copy[attr] = newId;
+              }
             }
           }
         });

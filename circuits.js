@@ -816,7 +816,7 @@ const editingModel = (function() {
       });
     },
 
-    getGroupMaster: function(items, entireGraphInfo) {
+    getGroupMaster: function(group, items, entireGraphInfo) {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           masteringModel = model.masteringModel,
@@ -860,7 +860,7 @@ const editingModel = (function() {
         } else if (isOutput(item)) {
           let y = viewModel.pinToPoint(item, 0, true).y;
           outputs.push(makePin(getOutputType(item), y));
-        } else {
+        } else if (group != self.getGroup(item)) {
           const master = getMaster(item),
                 inputWires = graphInfo.inputMap.get(item),
                 outputWires = graphInfo.outputMap.get(item);
@@ -916,7 +916,7 @@ const editingModel = (function() {
       };
 
       let groupId = dataModel.assignId(group),
-          master = self.getGroupMaster(items, entireGraphInfo);
+          master = self.getGroupMaster(group, items, entireGraphInfo);
 
       group.items = groupItems;
       groupItems.forEach(function(item) {
@@ -935,6 +935,24 @@ const editingModel = (function() {
 
       return group;
     },
+
+    // lower: function(items) {
+    //   const self = this,
+    //         model = this.model,
+    //         hierarchicalModel = model.hierarchicalModel,
+    //         referencingModel = model.referencingModel;
+    //   items.forEach(function(item) {
+    //     const group = self.getGroup(item);
+    //     if (!group)
+    //       return;
+    //     const lca = hierarchicalModel.getLowestCommonAncestor(item, group);
+    //     let type = item.master,
+    //         parent = hierarchicalModel.getParent(group);
+    //     // while (group != lca) {
+
+    //     // }
+    //   });
+    // },
 
     makeGroup: function(elements) {
       let self = this, model = this.model,
@@ -1232,8 +1250,14 @@ const editingModel = (function() {
             wires = graphInfo.wires;
       // Eliminate dangling wires.
       wires.forEach(function(wire) {
-        const src = self.getWireSrc(wire), dst = self.getWireDst(wire);
-        if (!src || !elementsAndGroups.has(src) || !dst || !elementsAndGroups.has(dst)) {
+        const src = self.getWireSrc(wire),
+              dst = self.getWireDst(wire);
+        if (!src ||
+            !dst ||
+            !elementsAndGroups.has(src) ||
+            !elementsAndGroups.has(dst) ||
+            wire.srcPin >= getMaster(src).outputs.length ||
+            wire.dstPin >= getMaster(dst).inputs.length) {
           self.deleteItem(wire);
           return;
         }
@@ -1251,7 +1275,7 @@ const editingModel = (function() {
           self.deleteItem(group);
           return;
         }
-        const newSig = self.getGroupMaster(group.items, graphInfo),
+        const newSig = self.getGroupMaster(group, group.items, graphInfo),
               oldSig = masteringModel.unlabelType(group.master);
         if (oldSig !== newSig) {
           let label = group.master.substring(oldSig.length);
@@ -1297,6 +1321,7 @@ const editingModel = (function() {
 
     instance.getWireSrc = model.referencingModel.getReferenceFn('srcId');
     instance.getWireDst = model.referencingModel.getReferenceFn('dstId');
+    instance.getGroup = model.referencingModel.getReferenceFn('groupId');
 
     model.transactionModel.addHandler('transactionEnding', function (transaction) {
       // ignore transaction argument.
@@ -2278,8 +2303,13 @@ Editor.prototype.onBeginDrag = function(p0) {
             ctx = this.ctx,
             map = new Map(),
             copies = editingModel.copyItems(selectionModel.contents(), map);
+        if (drag.isSingleElement && mouseHitInfo.groupElementOrigin) {
+          copies[0].groupId = model.dataModel.getId(mouseHitInfo.groupElementOrigin);
+          console.log(copies[0]);
+        }
         editingModel.addItems(copies);
         selectionModel.set(copies);
+        // TODO layout groups here
         visitItems(copies, function(item) {
           self.layoutItem(item);
         }, isWire);

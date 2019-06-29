@@ -6,17 +6,17 @@ Diagrammar is an experimental graphical programming environment. It is a Dataflo
 
 Dataflow diagrams are a graphical programming method where data processing elements, represented by graph nodes, are connected by edges that represent data transfer. The graph is like an electrical circuit, and the advantage is that data flow can more easily be visualized as a graph.
 
-Most data flow systems model restricted domains, and have limited ability to represent abstractions. Diagrammar adds a way to easily define and use new functions, built out of simpler ones, and to create abstractions that make the diagrams more widely useful.
+Most data flow systems model restricted domains, and have limited ability to represent abstractions. Diagrammar adds a way to easily define and use new families of functions, and to create abstractions that make the diagrams more widely useful.
 
 ## Building expressions and grouping
 
 For now, let's imagine a language with one value type, which can represent numbers, strings, arrays, or other types of objects. This makes our circuits simpler, with only one primitive wire and pin type. Circuit elements for built-in operations can be provided by the language, and combined to form useful expressions.
 
 <figure>
-  <img src="/resources/palette.png"  alt="" title="Primitive elements (literals and functions)">
+  <img src="/resources/palette.png"  alt="" title="Primitive elements (literal and functions)">
 </figure>
 
-On the top row is the literal element, with no inputs and a single output. Literals can represent numbers, strings and other value types. Next are the unary and binary functions, and the only 3-ary function, which is the conditional operator.
+On the top row is the literal element, with no inputs and a single output. Literals can represent numbers, strings and other value types. Next are the unary and binary functions, and the only 3-ary function, the conditional operator.
 
 In addition there are "junction" elements, which are used to describe imports and exports.
 
@@ -24,31 +24,49 @@ In addition there are "junction" elements, which are used to describe imports an
   <img src="/resources/palette2.png"  alt="" title="Primitive elements (junctions)">
 </figure>
 
-We can combine these primitive elements to define new expressions. In the diagrams below, we are creating:
+We can combine these primitive functions to compute simple expressions. In the diagrams below, we are creating:
 
-1. An increment by 1 function.
-1. A decrement by 1 function.
+1. An increment by 1.
+1. A decrement by 1.
 1. A binary minimum and maximum using a relational operator and the conditional operator (note how input junctions are used to tie inputs together.)
-1. A 3-ary and 4-ary addition operator by cascading binary addition operators.
+1. A 3-ary and 4-ary addition operation by cascading binary additions.
 
 <figure>
-  <img src="/resources/basic_grouping.png"  alt="" title="Basic Grouping">
+  <img src="/resources/basic_expressions.png"  alt="" title="Basic Expressions">
 </figure>
 
 Note that there is fan-out but no fan-in in our circuit graphs. There are no cycles, so the circuit is a DAG (directed acyclic graph). Each circuit element is conceptually a function and wires connect outputs of one function to inputs of another. Evaluation proceeds left-to-right, since inputs must be evaluated before producing outputs. The evaluation order of the graph is only partially ordered (by topologically sorting) so we have to take extra care when a specific sequential evaluation order is required.
 
-Expressions can be used to build more complex diagrams, but this quickly leads to large, unreadable graphs. A better way is to turn expressions into new elements, that allow a higher level of abstraction in our diagrams. Grouping is how we create new elements. In this diagram, we take the expressions above and group them to form new elements that we can use just like the primitive ones.
+Expressions can be used to build more complex diagrams, but this quickly leads to large, unreadable graphs. A better way is to turn expressions into new functions, that allow us to program at a higher level of abstraction in our diagrams. Grouping is how we create new functions. In this diagram, we take the expressions above and group them to form new functions that we can use just like the primitive ones.
 
 <figure>
   <img src="/resources/basic_grouping.png"  alt="" title="Basic Grouping">
 </figure>
 
+Here's another example, cascading conditional functions to create more complex conditionals, where the inputs are successive pairs of <condition, value> tuples.
+
+<figure>
+  <img src="/resources/basic_grouping2.png"  alt="" title="Basic Grouping">
+</figure>
+
+We can use these to compute more complex expressions. Here's the sgn function, which takes a single number as input and returns 1 if it's > 0, 0 if it's equal to 0, or -1 if it's less than 0. On the right, we build it from primitive functions. However, it's clearer if we create helper functions: "less than 0" and "greater than 0" functions, and a 5 input conditional.
+
+<figure>
+  <img src="/resources/basic_grouping3.png"  alt="" title="Basic Grouping">
+</figure>
+
 ## Function Abstraction
 
-So far this language lacks expressive power. We have to rebuild these graphs every time we want to create a similar function, for example cascading multiplication or logical operations instead of addition. To make the graph representation more powerful, any function can be abstracted. This adds an input value, of the same type as the function, to indicate that the function is merely a template and the function body is imported. This operation is called "opening" the function. This allows us to create a function that takes a function as input.
+We have to rebuild these graphs every time we want to create a similar function, for example cascading multiplication or logical operations instead of addition. To make the graph representation more powerful, any function can be abstracted. This adds an input value, of the same type as the function, to indicate that the function is merely a "shell" and the function body is imported. This operation is called "opening" the function. This allows us to create a function that takes a function as input. Here, we use two abstract binary operations to create a cascaded 3-ary operation that takes a binary function as an additional input.
 
 <figure>
   <img src="/resources/function_abstraction.png"  alt="" title="Function Abstraction">
+</figure>
+
+We can nest function definitions to avoid lots of repetition. Here, we create a single abstract binary operation, and then cascade it to create 3-ary, 4-ary, and 5-ary functions.
+
+<figure>
+  <img src="/resources/function_abstraction2.png"  alt="" title="Function Abstraction (nested)">
 </figure>
 
 ## Function Creation
