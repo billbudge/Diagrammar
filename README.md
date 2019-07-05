@@ -37,7 +37,7 @@ We can combine these primitive functions to compute simple expressions. In the d
 
 Note that there is fan-out but no fan-in in our circuit graphs. There are no cycles, so the circuit is a DAG (directed acyclic graph). Each circuit element is conceptually a function and wires connect outputs of one function to inputs of another. Evaluation proceeds left-to-right, since inputs must be evaluated before producing outputs. The evaluation order of the graph is only partially ordered (by topologically sorting) so we have to take extra care when a specific sequential evaluation order is required.
 
-Expressions can be used to build more complex diagrams, but this quickly leads to large, unreadable graphs. A better way is to turn expressions into new functions, that allow us to program at a higher level of abstraction in our diagrams. Grouping is how we create new functions. In this diagram, we take the expressions above and group them to form new functions that we can use just like the primitive ones.
+Expressions can be used to build more complex diagrams, but this quickly leads to large, unreadable graphs. A better way is to turn expressions into new functions, which allow us to program at a higher level of abstraction. Grouping is how we create new functions. In this diagram, we take the expressions above and group them to form new functions that we can use just like the primitive ones. Each group is a separate context, denoted by a dotted boundary. New elements an be dragged and dropped into the context. Disconnected inputs or outputs become the new function's inputs and outputs. Input and output junctions can be connected to inputs and outputs in order to assign names to them. They can also be used to identify common inputs, since ordinarily each disconnected input leads to a unique group input. The "min" and "max" functions use input junctions this way.
 
 <figure>
   <img src="/resources/basic_grouping.png"  alt="" title="Basic Grouping">
@@ -49,7 +49,7 @@ Here's another example, cascading conditional functions to create more complex c
   <img src="/resources/basic_grouping2.png"  alt="" title="Basic Grouping">
 </figure>
 
-We can use these to compute more complex expressions. Here's the sgn function, which takes a single number as input and returns 1 if it's > 0, 0 if it's equal to 0, or -1 if it's less than 0. On the right, we build it from primitive functions. However, it's clearer if we create helper functions: "less than 0" and "greater than 0" functions, and a 5 input conditional.
+We can use these new functions just like the built in ones to create more complex functions. Here's the sgn function, which takes a single number as input and returns 1 if it's > 0, 0 if it's equal to 0, or -1 if it's less than 0. On the right, we build it from primitive functions. However, it's clearer if we create helper functions: "less than 0" and "greater than 0" functions, and a 5 input conditional.
 
 <figure>
   <img src="/resources/basic_grouping3.png"  alt="" title="Basic Grouping">
@@ -57,13 +57,13 @@ We can use these to compute more complex expressions. Here's the sgn function, w
 
 ## Function Abstraction
 
-We have to rebuild these graphs every time we want to create a similar function, for example cascading multiplication or logical operations instead of addition. To make the graph representation more powerful, any function can be abstracted. This adds an input value, of the same type as the function, to indicate that the function is merely a "shell" and the function body is imported. This operation is called "opening" the function. This allows us to create a function that takes a function as input. Here, we use two abstract binary operations to create a cascaded 3-ary operation that takes a binary function as an additional input.
+We have to rebuild these graphs every time we want to create a similar function, for example cascading binary multiplication or logical operations. To make the graph representation more powerful, any function can be abstracted. This adds an input value, of the same type as the function, to indicate that the function is merely a "shell" and the function body is imported. This operation is called "opening" the function. This allows us to create functions that takes other functions as inputs. Here, we use have abstracted two binary addition operations and identified both function inputs to create a cascaded 3-ary operation that takes a single binary function as an additional input.
 
 <figure>
   <img src="/resources/function_abstraction.png"  alt="" title="Function Abstraction">
 </figure>
 
-We can nest function definitions to avoid lots of repetition. Here, we create a single abstract binary operation, and then cascade it to create 3-ary, 4-ary, and 5-ary functions.
+We can nest function definitions to avoid repetition definitions. Before we stated that any disconnected inputs and outputs become group inputs and outputs. One exception to this rule is when we add instances of the new function to its own context. This allows us to create many interesting things. Here, we create a single abstract binary operation, and then cascade it to create 3-ary, 4-ary, 5-ary, and 6-ary functions by grouping these into nested function definitions.
 
 <figure>
   <img src="/resources/function_abstraction2.png"  alt="" title="Function Abstraction (nested)">
