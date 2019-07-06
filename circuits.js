@@ -2393,12 +2393,13 @@ Editor.prototype.onEndDrag = function(p) {
     case connectWireSrc:
     case connectWireDst:
       if (drag.isNewWire) {
-        // If wire wasn't connected, cancel the transaction. For existing wires,
-        // the wire will be deleted in the make-consistent phase.
-        if (!dragItem.srcId || !dragItem.dstId) {
-          transactionModel.cancelTransaction();
-          selectionModel.clear();
-          break;
+        if (!dragItem.srcId) {
+          // Add the appropriate source junction.
+          editingModel.connectInput(editingModel.getWireDst(dragItem), dragItem.dstPin);
+        } else if (!dragItem.dstId) {
+          // Add the appropriate destination junction, or for function outputs,
+          // add a new abstract function to connect.
+          editingModel.connectOutput(editingModel.getWireSrc(dragItem), dragItem.srcPin);
         }
       }
       transactionModel.endTransaction();
