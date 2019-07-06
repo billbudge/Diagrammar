@@ -1749,13 +1749,27 @@ Renderer.prototype.hitTestElement = function(element, p, tol, mode) {
         inputs = master.inputs, outputs = master.outputs,
         self = this;
     inputs.forEach(function(input, i) {
-      if (diagrams.hitTestRect(x, y + input[_y], input[_width], input[_height], p, 0))
+      if (diagrams.hitTestRect(x, y + input[_y],
+                               input[_width], input[_height], p, 0)) {
         hitInfo.input = i;
+      }
     });
     outputs.forEach(function(output, i) {
-      if (diagrams.hitTestRect(x + width - output[_width],
-          y + output[_y], output[_width], output[_height], p, 0))
-        hitInfo.output = i;
+      if (diagrams.hitTestRect(x + width - output[_width], y + output[_y],
+                               output[_width], output[_height], p, 0)) {
+        if (isFunctionType(output.type)) {
+          hitInfo.newElement = {
+            type: 'element',
+            x: x,
+            y: y + output[_y],
+            master: output.type,
+            [_master]: getMaster(output),
+            state: 'palette',
+          };
+        } else {
+          hitInfo.output = i;
+        }
+      }
     });
   }
   return hitInfo;
@@ -1768,12 +1782,13 @@ Renderer.prototype.hitTestGroup = function(group, p, tol, mode) {
   if (hitInfo) {
     let master = getMaster(group);
     if (master) {
-      const rect = this.getGroupMasterBounds(master, x + w, y + h);
-      if (diagrams.hitTestRect(rect.x, rect.y, rect.w, rect.h, p, tol)) {
-        hitInfo.groupElement = {
+      const newElementRect = this.getGroupMasterBounds(master, x + w, y + h);
+      if (diagrams.hitTestRect(newElementRect.x, newElementRect.y,
+                               newElementRect.w, newElementRect.h, p, tol)) {
+        hitInfo.newElement = {
           type: 'element',
-          x: rect.x,
-          y: rect.y,
+          x: newElementRect.x,
+          y: newElementRect.y,
           master: group.master,
           [_master]: master,
           state: 'palette',
@@ -2196,9 +2211,9 @@ Editor.prototype.onClick = function(p) {
       mouseHitInfo = this.mouseHitInfo = this.getFirstHit(hitList, isDraggable);
   if (mouseHitInfo) {
     let item = mouseHitInfo.item;
-    if (isGroup(item) && mouseHitInfo.groupElement) {
-      mouseHitInfo.groupElementOrigin = item;
-      item = mouseHitInfo.item = mouseHitInfo.groupElement;
+    if (mouseHitInfo.newElement) {
+      mouseHitInfo.newElementOrigin = item;
+      item = mouseHitInfo.item = mouseHitInfo.newElement;
     }
     if (cmdKeyDown || isPaletted(item)) {
       mouseHitInfo.moveCopy = true;
@@ -2248,8 +2263,8 @@ Editor.prototype.onBeginDrag = function(p0) {
     };
   } else if (mouseHitInfo.output !== undefined) {
     // Wire from output pin.
-    let elementId = model.dataModel.getId(dragItem),
-        cp0 = canvasController.viewToCanvas(p0);
+    const elementId = model.dataModel.getId(dragItem),
+          cp0 = canvasController.viewToCanvas(p0);
     // Start the new wire as connecting the src element to nothing.
     newWire = {
       type: 'wire',
@@ -2303,9 +2318,8 @@ Editor.prototype.onBeginDrag = function(p0) {
             ctx = this.ctx,
             map = new Map(),
             copies = editingModel.copyItems(selectionModel.contents(), map);
-        if (drag.isSingleElement && mouseHitInfo.groupElementOrigin) {
-          copies[0].groupId = model.dataModel.getId(mouseHitInfo.groupElementOrigin);
-          console.log(copies[0]);
+        if (drag.isSingleElement && mouseHitInfo.newElementOrigin) {
+          copies[0].groupId = model.dataModel.getId(mouseHitInfo.newElementOrigin);
         }
         editingModel.addItems(copies);
         selectionModel.set(copies);
