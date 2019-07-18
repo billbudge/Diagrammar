@@ -572,11 +572,11 @@ const editingModel = (function() {
       self.deleteItem(element);
     },
 
-    connectInput: function(element, pin) {
+    connectInput: function(element, pin, p) {
       let viewModel = this.model.viewModel,
           parent = this.model.hierarchicalModel.getParent(element),
           dstPin = getMaster(element).inputs[pin],
-          pinPoint = viewModel.pinToPoint(element, pin, true);
+          pinPoint = p || viewModel.pinToPoint(element, pin, true);
       let junction = {
         type: 'element',
         elementType: 'input',
@@ -598,11 +598,11 @@ const editingModel = (function() {
       return { junction: junction, wire: wire };
     },
 
-    connectOutput: function(element, pin) {
+    connectOutput: function(element, pin, p) {
       let viewModel = this.model.viewModel,
           parent = this.model.hierarchicalModel.getParent(element),
           srcPin = getMaster(element).outputs[pin],
-          pinPoint = viewModel.pinToPoint(element, pin, false);
+          pinPoint = p || viewModel.pinToPoint(element, pin, false);
       let junction = {
         type: 'element',
         elementType: 'output',
@@ -742,13 +742,13 @@ const editingModel = (function() {
           dataModel = model.dataModel,
           masteringModel = model.masteringModel,
           observableModel = model.observableModel,
+          translatableModel = model.translatableModel,
           master = getMaster(element);
-
       let newElement = {
         type: 'element',
         elementType: 'closed',
-        x: element.x,
-        y: element.y,
+        x: translatableModel.globalX(element),
+        y: translatableModel.globalY(element),
       };
       const id = dataModel.assignId(newElement);
       let type = '[',
@@ -1476,7 +1476,7 @@ Renderer.prototype.endDraw = function() {
 }
 
 const spacing = 6;
-const shrink = 0.8, inv_shrink = 1 / shrink;
+const shrink = 0.7, inv_shrink = 1 / shrink;
 const minMasterWidth = 16;
 const minMasterHeight = 16;
 
@@ -1551,7 +1551,7 @@ Renderer.prototype.layoutPin = function(pin) {
   }
 }
 
-Renderer.prototype.drawMaster = function(master, x, y, topLevel) {
+Renderer.prototype.drawMaster = function(master, x, y) {
   let self = this, ctx = this.ctx, theme = this.theme,
       textSize = theme.fontSize, name = master.name,
       inputs = master.inputs, outputs = master.outputs,
@@ -1575,7 +1575,7 @@ Renderer.prototype.drawMaster = function(master, x, y, topLevel) {
   outputs.forEach(function(pin) {
     let name = pin.name,
         pinLeft = right - pin[_width];
-    self.drawPin(pin, pinLeft, y + pin[_y], topLevel);
+    self.drawPin(pin, pinLeft, y + pin[_y]);
     if (name) {
       ctx.textAlign = 'right';
       ctx.fillText(name, pinLeft - spacing, y + pin[_baseline]);
@@ -1583,7 +1583,7 @@ Renderer.prototype.drawMaster = function(master, x, y, topLevel) {
   });
 }
 
-Renderer.prototype.drawPin = function(pin, x, y, topLevel) {
+Renderer.prototype.drawPin = function(pin, x, y) {
   ctx.strokeStyle = theme.strokeColor;
   if (pin.type == 'v' || pin.type == '*') {
     let r = this.knobbyRadius;
@@ -1602,10 +1602,6 @@ Renderer.prototype.drawPin = function(pin, x, y, topLevel) {
     x *= inv_shrink; y *= inv_shrink;
       ctx.beginPath();
     ctx.rect(x, y, width, height);
-    if (topLevel) {
-      ctx.fillStyle = theme.altBgColor;
-      ctx.fill();
-    }
     ctx.stroke();
     this.drawMaster(master, x, y);
     this.ctx.scale(inv_shrink, inv_shrink);
@@ -1643,7 +1639,7 @@ Renderer.prototype.drawElement = function(element, mode) {
       ctx.lineWidth = 0.5;
       ctx.stroke();
       let master = getMaster(element);
-      this.drawMaster(master, x, y, true);  // signals top level drawing
+      this.drawMaster(master, x, y);
       break;
     case highlightMode:
       ctx.strokeStyle = theme.highlightColor;
@@ -1757,18 +1753,7 @@ Renderer.prototype.hitTestElement = function(element, p, tol, mode) {
     outputs.forEach(function(output, i) {
       if (diagrams.hitTestRect(x + width - output[_width], y + output[_y],
                                output[_width], output[_height], p, 0)) {
-        if (isFunctionType(output.type)) {
-          hitInfo.newElement = {
-            type: 'element',
-            x: x,
-            y: y + output[_y],
-            master: output.type,
-            [_master]: getMaster(output),
-            state: 'palette',
-          };
-        } else {
-          hitInfo.output = i;
-        }
+        hitInfo.output = i;
       }
     });
   }
@@ -2399,6 +2384,7 @@ Editor.prototype.onEndDrag = function(p) {
   let dragItem = drag.item,
       model = this.model,
       diagram = this.diagram,
+      // dataModel = model.dataModel,
       selectionModel = model.selectionModel,
       transactionModel = model.transactionModel,
       editingModel = model.editingModel;
@@ -2409,11 +2395,38 @@ Editor.prototype.onEndDrag = function(p) {
       if (drag.isNewWire) {
         if (!dragItem.srcId) {
           // Add the appropriate source junction.
-          editingModel.connectInput(editingModel.getWireDst(dragItem), dragItem.dstPin);
+          editingModel.connectInput(editingModel.getWireDst(dragItem), dragItem.dstPin, p);
         } else if (!dragItem.dstId) {
+          const src = editingModel.getWireSrc(dragItem),
+                srcMaster = getMaster(src),
+                pinIndex = dragItem.srcPin,
+                pin = srcMaster.outputs[pinIndex];
           // Add the appropriate destination junction, or for function outputs,
           // add a new abstract function to connect.
-          editingModel.connectOutput(editingModel.getWireSrc(dragItem), dragItem.srcPin);
+          if (isFunctionType(pin.type)) {
+            let element = {
+              type: 'element',
+              master: pin.type,
+              x: p.x,
+              y: p.y,
+            };
+            editingModel.newItem(element);
+            editingModel.addItem(element, diagram);
+            const newElement = editingModel.openElement(element);
+            editingModel.replaceElement(element, newElement);
+
+            let wire = {
+              type: 'wire',
+              srcId: src.id,
+              srcPin: pinIndex,
+              dstId: newElement.id,
+              dstPin: getMaster(newElement).inputs.length - 1,
+            };
+            editingModel.newItem(wire);
+            editingModel.addItem(wire, diagram);
+          } else {
+            editingModel.connectOutput(editingModel.getWireSrc(dragItem), dragItem.srcPin, p);
+          }
         }
       }
       transactionModel.endTransaction();
