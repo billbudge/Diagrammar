@@ -1,8 +1,7 @@
 // Statecharts module.
 
+const statecharts = (function() {
 'use strict';
-
-var statecharts = (function() {
 
 // Utilities.
 function isPseudostate(item) {

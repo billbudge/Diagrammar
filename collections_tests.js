@@ -1,5 +1,6 @@
 // Collections tests.
 
+const collectionsTests = (function () {
 'use strict';
 
 //------------------------------------------------------------------------------
@@ -313,3 +314,4 @@ test("SelectionSet map", function() {
   deepEqual(reverse, 'ab');
 });
 
+})();

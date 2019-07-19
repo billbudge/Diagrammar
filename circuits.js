@@ -1,8 +1,7 @@
 // Circuits module.
 
-'use strict';
-
 const circuits = (function() {
+'use strict';
 
 function isCircuit(item) {
   return item.type == 'circuit';

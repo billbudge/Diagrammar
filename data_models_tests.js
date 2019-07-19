@@ -1,5 +1,7 @@
-
 // Data model unit tests
+
+const dataModelTests = (function () {
+'use strict';
 
 test("dataModel extend", function() {
   let model = { root: {} };
@@ -456,4 +458,6 @@ test("selectionModel select", function() {
   test.select('a', true);
   deepEqual(test.contents(), ['c', 'b']);
 });
+
+})();
 

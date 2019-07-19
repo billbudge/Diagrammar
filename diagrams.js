@@ -1,7 +1,8 @@
 
 // Diagrams module.
 
-let diagrams = (function() {
+const diagrams = (function() {
+'use strict';
 
 //------------------------------------------------------------------------------
 

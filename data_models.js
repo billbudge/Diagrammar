@@ -1,8 +1,7 @@
 // Data models and related objects.
 
-
 const dataModels = (function () {
-  'use strict';
+'use strict';
 
 //------------------------------------------------------------------------------
 

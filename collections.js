@@ -3,7 +3,6 @@
 var diagrammar = diagrammar || {};
 
 diagrammar.collections = (function() {
-
 'use strict';
 
 //------------------------------------------------------------------------------
@@ -141,7 +140,7 @@ Queue.prototype = {
     this.q_.push(item);
     return this;
   },
-  
+
   dequeue: function() {
     var result;
     if (!this.empty()) {

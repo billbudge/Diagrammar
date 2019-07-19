@@ -1,5 +1,7 @@
-
 // Circuit unit tests
+
+const circuitTests = (function () {
+'use strict';
 
 function newCircuit() {
   return {
@@ -541,3 +543,4 @@ test("circuits.editingModel.findDstType", function() {
   deepEqual(actualType, expectedType);
 });
 
+})();

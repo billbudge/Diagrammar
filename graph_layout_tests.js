@@ -1,5 +1,6 @@
 // Graph layout tests.
 
+const graphLayoutTests = (function() {
 'use strict';
 
 function adjacenciesToGraph(adjacencies) {
@@ -45,4 +46,4 @@ test("graphLayout makeAcyclic", function() {
   deepEqual(components.length, 8);
 });
 
-
+})();

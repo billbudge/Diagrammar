@@ -1,8 +1,8 @@
 // Graph layout module.
 
+const graphLayout = (function() {
 'use strict';
 
-var graphLayout = (function() {
   // graph format is:
   // var graph = [
   //   {

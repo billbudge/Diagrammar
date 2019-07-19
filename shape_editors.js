@@ -1,8 +1,7 @@
 // Pinball shapes module.
 
+const shapes = (function() {
 'use strict';
-
-var shapes = (function() {
 
 // Utilities.
 
