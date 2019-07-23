@@ -57,19 +57,19 @@ LinkedList.prototype.remove = function(node) {
 };
 
 LinkedList.prototype.insertAfter = function(value, prev) {
-  var node = (value instanceof LinkedListNode) ? value : new LinkedListNode(value);
+  const node = (value instanceof LinkedListNode) ? value : new LinkedListNode(value);
   if (!prev)
     prev = this.back;
-  var next = prev ? prev.next : null;
+  const next = prev ? prev.next : null;
   this.insert_(node, prev, next);
   return node;
 };
 
 LinkedList.prototype.insertBefore = function(value, next) {
-  var node = (value instanceof LinkedListNode) ? value : new LinkedListNode(value);
+  const node = (value instanceof LinkedListNode) ? value : new LinkedListNode(value);
   if (!next)
     next = this.front;
-  var prev = next ? next.prev : null;
+  const prev = next ? next.prev : null;
   this.insert_(node, prev, next);
   return node;
 };
@@ -94,7 +94,7 @@ LinkedList.prototype.clear = function() {
 };
 
 LinkedList.prototype.forEach = function(fn) {
-  var node = this.front;
+  let node = this.front;
   while (node) {
     fn(node.value);
     node = node.next;
@@ -102,7 +102,7 @@ LinkedList.prototype.forEach = function(fn) {
 };
 
 LinkedList.prototype.forEachReverse = function(fn) {
-  var node = this.back;
+  let node = this.back;
   while (node) {
     fn(node.value);
     node = node.prev;
@@ -110,7 +110,7 @@ LinkedList.prototype.forEachReverse = function(fn) {
 };
 
 LinkedList.prototype.find = function(value) {
-  var node = this.front;
+  let node = this.front;
   while (node) {
     if (value === node.value)
       return node;
@@ -142,7 +142,7 @@ Queue.prototype = {
   },
 
   dequeue: function() {
-    var result;
+    let result;
     if (!this.empty()) {
       result = this.q_[this.head_];
       this.head_++;
@@ -193,14 +193,14 @@ PriorityQueue.prototype = {
   },
 
   pop: function() {
-    var array = this.inner_;
+    const array = this.inner_;
     if (!array.length)
       return null;
-    var value = array[0];
-    var i = 1;
+    const value = array[0];
+    let i = 1;
     while (i < array.length) {
-      var parentIndex = Math.floor((i - 1) / 2);
-      var largestChild = i;
+      const parentIndex = Math.floor((i - 1) / 2);
+      let largestChild = i;
       if (i + 1 < array.length && this.compareFn_(array[i], array[i + 1]) < 0)
         largestChild = i + 1;
       array[parentIndex] = array[largestChild];
@@ -211,11 +211,11 @@ PriorityQueue.prototype = {
   },
 
   heapify_: function() {
-    var array = this.inner_;
-    for (var i = array.length - 1; i > 0; i--) {
-      var value = array[i];
-      var parentIndex = Math.floor((i - 1) / 2);
-      var parent = array[parentIndex];
+    const array = this.inner_;
+    for (let i = array.length - 1; i > 0; i--) {
+      const value = array[i],
+            parentIndex = Math.floor((i - 1) / 2),
+            parent = array[parentIndex];
       if (this.compareFn_(parent, value) < 0) {
         array[i] = parent;
         array[parentIndex] = value;
@@ -224,12 +224,12 @@ PriorityQueue.prototype = {
   },
 
   siftUp_: function() {
-    var array = this.inner_;
-    var i = array.length - 1;
+    const array = this.inner_;
+    let i = array.length - 1;
     while (i > 0) {
-      var value = array[i];
-      var parentIndex = Math.floor(i / 2);
-      var parent = array[parentIndex];
+      const value = array[i],
+            parentIndex = Math.floor(i / 2),
+            parent = array[parentIndex];
       if (this.compareFn_(parent, value) >= 0)
         break;
       array[i] = parent;
@@ -263,7 +263,7 @@ SelectionSet.prototype = {
   },
 
   add: function(element) {
-    var node = this.map_.get(element);
+    let node = this.map_.get(element);
     if (node) {
       this.list_.remove(node);
       this.list_.pushFront(node);
@@ -276,7 +276,7 @@ SelectionSet.prototype = {
   },
 
   remove: function(element) {
-    var node = this.map_.get(element);
+    const node = this.map_.get(element);
     if (node) {
       this.map_.delete(element);
       this.list_.remove(node);
@@ -312,6 +312,49 @@ SelectionSet.prototype = {
   },
 };
 
+//------------------------------------------------------------------------------
+// DisjointSet, a simple Union-Find implementation.
+
+function DisjointSet() {
+  this.sets = [];
+}
+
+DisjointSet.prototype = {
+  makeSet: function(item) {
+    const set = {
+      item: item,
+      rank: 0,
+    }
+    set.parent = set;
+    this.sets.push(set);
+    return set;
+  },
+
+  find: function(set) {
+    while (set.parent != set) {
+      const next = set.parent;
+      set.parent = next.parent;
+      set = next;
+    }
+    return set;
+  },
+
+  union: function(set1, set2) {
+   let root1 = this.find(set1),
+       root2 = this.find(set2);
+
+   if (root1 == root2)
+       return;
+
+   if (root1.rank < root2.rank)
+     root1, root2 = root2, root1;
+
+   root2.parent = root1;
+   if (root1.rank == root2.rank)
+     root1.rank += 1;
+  },
+};
+
 return {
   LinkedListNode: LinkedListNode,
   LinkedList: LinkedList,
@@ -320,6 +363,7 @@ return {
   PriorityQueue: PriorityQueue,
 
   SelectionSet: SelectionSet,
+  DisjointSet: DisjointSet,
 };
 
 })();  // diagrammar.collections

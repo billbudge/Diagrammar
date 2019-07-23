@@ -3,208 +3,176 @@
 const collectionsTests = (function () {
 'use strict';
 
-//------------------------------------------------------------------------------
-// LinkedList tests.
-
-function listStringify(list) {
-  var result = '';
-  list.forEach(function(item) {
+function stringify(iterable) {
+  let result = '';
+  iterable.forEach(function(item) {
     result += item;
   });
   return result;
 }
 
+//------------------------------------------------------------------------------
+// LinkedList tests.
+
 test("LinkedList constructor", function() {
-  var list = new diagrammar.collections.LinkedList();
-  deepEqual(0, list.length);
-  ok(list.empty());
-  deepEqual('', listStringify(list));
+  const test = new diagrammar.collections.LinkedList();
+  deepEqual(0, test.length);
+  ok(test.empty());
+  deepEqual('', stringify(test));
 });
 
 test("LinkedList pushBack", function() {
-  var list = new diagrammar.collections.LinkedList();
-  var node1 = list.pushBack('a');
-  deepEqual(list.front, node1);
-  deepEqual(list.back, node1);
-  var node2 = list.pushBack('b');
-  deepEqual(list.front, node1);
-  deepEqual(list.back, node2);
-  deepEqual(list.length, 2);
-  deepEqual(listStringify(list), 'ab');
+  const test = new diagrammar.collections.LinkedList(),
+        node1 = test.pushBack('a');
+  deepEqual(test.front, node1);
+  deepEqual(test.back, node1);
+  const node2 = test.pushBack('b');
+  deepEqual(test.front, node1);
+  deepEqual(test.back, node2);
+  deepEqual(test.length, 2);
+  deepEqual(stringify(test), 'ab');
 });
 
 test("LinkedList pushFront", function() {
-  var list = new diagrammar.collections.LinkedList();
-  var node1 = list.pushFront('a');
-  deepEqual(list.front, node1);
-  deepEqual(list.back, node1);
-  var node2 = list.pushFront('b');
-  deepEqual(list.front, node2);
-  deepEqual(list.back, node1);
-  deepEqual(list.length, 2);
-  deepEqual(listStringify(list), 'ba');
+  const test = new diagrammar.collections.LinkedList(),
+        node1 = test.pushFront('a');
+  deepEqual(test.front, node1);
+  deepEqual(test.back, node1);
+  const node2 = test.pushFront('b');
+  deepEqual(test.front, node2);
+  deepEqual(test.back, node1);
+  deepEqual(test.length, 2);
+  deepEqual(stringify(test), 'ba');
 });
 
 test("LinkedList insertAfter", function() {
-  var list = new diagrammar.collections.LinkedList();
-  var node1 = list.insertAfter('a');
-  deepEqual(list.front, node1);
-  deepEqual(list.back, node1);
-  var node2 = list.insertAfter('b', node1);
-  deepEqual(list.front, node1);
-  deepEqual(list.back, node2);
-  deepEqual(list.length, 2);
-  deepEqual(listStringify(list), 'ab');
+  const test = new diagrammar.collections.LinkedList(),
+        node1 = test.insertAfter('a');
+  deepEqual(test.front, node1);
+  deepEqual(test.back, node1);
+  const node2 = test.insertAfter('b', node1);
+  deepEqual(test.front, node1);
+  deepEqual(test.back, node2);
+  deepEqual(test.length, 2);
+  deepEqual(stringify(test), 'ab');
 });
 
 test("LinkedList insertBefore", function() {
-  var list = new diagrammar.collections.LinkedList();
-  var node1 = list.insertBefore('a');
-  deepEqual(list.front, node1);
-  deepEqual(list.back, node1);
-  var node2 = list.insertBefore('b', node1);
-  deepEqual(list.front, node2);
-  deepEqual(list.back, node1);
-  deepEqual(list.length, 2);
-  deepEqual(listStringify(list), 'ba');
+  const test = new diagrammar.collections.LinkedList(),
+        node1 = test.insertBefore('a');
+  deepEqual(test.front, node1);
+  deepEqual(test.back, node1);
+  const node2 = test.insertBefore('b', node1);
+  deepEqual(test.front, node2);
+  deepEqual(test.back, node1);
+  deepEqual(test.length, 2);
+  deepEqual(stringify(test), 'ba');
 });
 
 test("LinkedList remove", function() {
-  var list = new diagrammar.collections.LinkedList();
-  var node1 = list.pushBack('a');
-  var node2 = list.pushBack('b');
-  var node3 = list.pushBack('c');
-  deepEqual(list.length, 3);
-  deepEqual(listStringify(list), 'abc');
-  deepEqual(list.remove(node2), node2);
-  deepEqual(list.length, 2);
-  deepEqual(listStringify(list), 'ac');
-  deepEqual(list.front, node1);
+  const test = new diagrammar.collections.LinkedList(),
+        node1 = test.pushBack('a'),
+        node2 = test.pushBack('b'),
+        node3 = test.pushBack('c');
+  deepEqual(test.length, 3);
+  deepEqual(stringify(test), 'abc');
+  deepEqual(test.remove(node2), node2);
+  deepEqual(test.length, 2);
+  deepEqual(stringify(test), 'ac');
+  deepEqual(test.front, node1);
   deepEqual(node1.next, node3);
   deepEqual(node3.prev, node1);
-  deepEqual(list.back, node3);
-  deepEqual(list.remove(node1), node1);
-  deepEqual(list.front, node3);
-  deepEqual(list.back, node3);
-  deepEqual(list.length, 1);
-  deepEqual(listStringify(list), 'c');
-  deepEqual(list.remove(node3), node3);
-  deepEqual(list.front, null);
-  deepEqual(list.back, null);
-  deepEqual(list.length, 0);
-  deepEqual(listStringify(list), '');
+  deepEqual(test.back, node3);
+  deepEqual(test.remove(node1), node1);
+  deepEqual(test.front, node3);
+  deepEqual(test.back, node3);
+  deepEqual(test.length, 1);
+  deepEqual(stringify(test), 'c');
+  deepEqual(test.remove(node3), node3);
+  deepEqual(test.front, null);
+  deepEqual(test.back, null);
+  deepEqual(test.length, 0);
+  deepEqual(stringify(test), '');
 });
 
 test("LinkedList clear", function() {
-  var list = new diagrammar.collections.LinkedList();
-  var node1 = list.pushBack();
-  var node2 = list.pushBack();
-  list.clear();
-  deepEqual(list.length, 0);
-  deepEqual(listStringify(list), '');
+  const test = new diagrammar.collections.LinkedList(),
+        node1 = test.pushBack(),
+        node2 = test.pushBack();
+  test.clear();
+  deepEqual(test.length, 0);
+  deepEqual(stringify(test), '');
 });
 
 test("LinkedList map and mapReverse", function() {
-  var list = new diagrammar.collections.LinkedList();
-  var node1 = list.pushBack('a');
-  var node2 = list.pushBack('b');
-  var node3 = list.pushBack('c');
+  const test = new diagrammar.collections.LinkedList(),
+        node1 = test.pushBack('a'),
+        node2 = test.pushBack('b'),
+        node3 = test.pushBack('c');
 
-  var forward = '';
-  list.forEach(function(item) {
+  let forward = '';
+  test.forEach(function(item) {
     forward += item;
   });
   deepEqual(forward, 'abc');
-  var reverse = '';
-  list.forEachReverse(function(item) {
+  let reverse = '';
+  test.forEachReverse(function(item) {
     reverse += item;
   });
   deepEqual(reverse, 'cba');
 });
 
 test("LinkedList find", function() {
-  var list = new diagrammar.collections.LinkedList();
-  var node1 = list.pushBack('a');
-  var node2 = list.pushBack('b');
+  const test = new diagrammar.collections.LinkedList(),
+        node1 = test.pushBack('a'),
+        node2 = test.pushBack('b');
 
-  deepEqual(list.find('b'), node2);
+  deepEqual(test.find('b'), node2);
 });
 
 //------------------------------------------------------------------------------
 // Queue tests, for both SimpleQueue and Queue.
 
-(function() {
-  var qLength = 1e5;
-
 test("Queue basic operation", function() {
-  var q = new diagrammar.collections.Queue();
-  var a;
-  ok(q.empty());
-  q.enqueue(1);
-  q.enqueue(2);
-  q.enqueue(3);
-  strictEqual(q.dequeue(), 1);
-  strictEqual(q.empty(), false);
-  q.enqueue(4);
-  strictEqual(q.dequeue(), 2);
-  q.clear();
-  strictEqual(q.empty(), true);
+  const test = new diagrammar.collections.Queue();
+  ok(test.empty());
+  test.enqueue(1);
+  test.enqueue(2);
+  test.enqueue(3);
+  strictEqual(test.dequeue(), 1);
+  strictEqual(test.empty(), false);
+  test.enqueue(4);
+  strictEqual(test.dequeue(), 2);
+  test.clear();
+  strictEqual(test.empty(), true);
 });
 
 test("Queue error operations", function() {
-  var q = new diagrammar.collections.Queue();
-  strictEqual(q.dequeue(), undefined);
+  const test = new diagrammar.collections.Queue();
+  strictEqual(test.dequeue(), undefined);
 });
 
-test("Queue 100 by 10s", function() {
-  var q = new diagrammar.collections.Queue();
-  var i, j;
-  for (i = 0; i < 10; i++) {
-    for (j = 0; j < 10; j++) {
-      q.enqueue(j);
+test("Queue enqueue dequeue", function() {
+  const test = new diagrammar.collections.Queue();
+  for (let i = 0; i < 10; i++) {
+    for (let j = 0; j < 10; j++) {
+      test.enqueue(j);
     }
-    for (j = 0; j < 10; j++) {
-      strictEqual(q.dequeue(), j);
+    for (let j = 0; j < 10; j++) {
+      strictEqual(test.dequeue(), j);
     }
   }
 });
-
-test("Queue enqueue a lot", function() {
-  var q = new diagrammar.collections.Queue();
-  var i, limit = qLength;
-  for (i = 0; i < limit; i++) {
-    q.enqueue(i);
-  }
-  expect(0);
-});
-
-test("Queue enqueue and dequeue a lot", function() {
-  var q = new diagrammar.collections.Queue();
-  var i, limit = qLength;
-  for (i = 0; i < limit; i++) {
-    q.enqueue(i);
-  }
-  for (i = 0; i < limit; i++) {
-    q.dequeue();
-  }
-  expect(0);
-});
-
-}());
 
 //------------------------------------------------------------------------------
 // PriorityQueue tests.
 
 function pqCompareFn(a, b) {
-  if (a < b)
-    return -1;
-  if (a > b)
-    return 1;
-  return 0;
+  return a - b;
 }
 
 // Destroys queue.
-function priorityQueueContents(queue) {
+function pqContents(queue) {
   var length = arguments.length - 1;
   for (var i = 0; i < length; i++) {
     if (queue.empty())
@@ -216,102 +184,113 @@ function priorityQueueContents(queue) {
 }
 
 test("PriorityQueue constructor", function() {
-  var queue = new diagrammar.collections.PriorityQueue(pqCompareFn);
-  ok(queue.empty());
+  const test1 = new diagrammar.collections.PriorityQueue(pqCompareFn);
+  ok(test1.empty());
 
-  queue = new diagrammar.collections.PriorityQueue(pqCompareFn, [1, 0, 2, 3]);
-  ok(!queue.empty());
-  priorityQueueContents(queue, 3, 2, 1, 0);
+  const test2 = new diagrammar.collections.PriorityQueue(pqCompareFn, [1, 0, 2, 3]);
+  ok(!test2.empty());
+  pqContents(test2, 3, 2, 1, 0);
 });
 
 test("PriorityQueue push", function() {
-  var queue = new diagrammar.collections.PriorityQueue(pqCompareFn);
-  ok(queue.empty());
-  deepEqual(queue.pop(), null);
+  const test1 = new diagrammar.collections.PriorityQueue(pqCompareFn);
+  ok(test1.empty());
+  deepEqual(test1.pop(), null);
 
-  queue = new diagrammar.collections.PriorityQueue(pqCompareFn);
-  queue.push(0);
-  queue.push(2);
-  queue.push(1);
-  queue.push(3);
-  priorityQueueContents(queue, 3, 2, 1, 0);
+  const test2 = new diagrammar.collections.PriorityQueue(pqCompareFn);
+  test2.push(0);
+  test2.push(2);
+  test2.push(1);
+  test2.push(3);
+  pqContents(test2, 3, 2, 1, 0);
 });
 
 //------------------------------------------------------------------------------
 // SelectionSet tests.
 
-function selectionSetStringify(selectionSet) {
-  var result = '';
-  selectionSet.forEach(function(item) {
-    result += item;
-  });
-  return result;
-}
-
 test("SelectionSet constructor", function() {
-  var selectionSet = new diagrammar.collections.SelectionSet();
-  deepEqual(selectionSet.length, 0);
-  ok(selectionSet.empty());
-  deepEqual(selectionSet.lastSelected(), null);
-  deepEqual(selectionSetStringify(selectionSet), '');
+  const test = new diagrammar.collections.SelectionSet();
+  deepEqual(test.length, 0);
+  ok(test.empty());
+  deepEqual(test.lastSelected(), null);
+  deepEqual(stringify(test), '');
 });
 
 test("SelectionSet add", function() {
-  var selectionSet = new diagrammar.collections.SelectionSet();
-  selectionSet.add('a');
-  selectionSet.add('b');
-  deepEqual(selectionSet.length, 2);
-  deepEqual(selectionSet.lastSelected(), 'b');
-  deepEqual(selectionSetStringify(selectionSet), 'ba');
-  selectionSet.add('a');
-  deepEqual(selectionSet.length, 2);
-  deepEqual(selectionSet.lastSelected(), 'a');
-  deepEqual(selectionSetStringify(selectionSet), 'ab');
+  const test = new diagrammar.collections.SelectionSet();
+  test.add('a');
+  test.add('b');
+  deepEqual(test.length, 2);
+  deepEqual(test.lastSelected(), 'b');
+  deepEqual(stringify(test), 'ba');
+  test.add('a');
+  deepEqual(test.length, 2);
+  deepEqual(test.lastSelected(), 'a');
+  deepEqual(stringify(test), 'ab');
 });
 
 test("SelectionSet remove", function() {
-  var selectionSet = new diagrammar.collections.SelectionSet();
-  selectionSet.add('a');
-  selectionSet.add('b');
-  selectionSet.add('c');
-  deepEqual(selectionSet.length, 3);
-  deepEqual(selectionSet.lastSelected(), 'c');
-  deepEqual(selectionSetStringify(selectionSet), 'cba');
-  selectionSet.remove('c');
-  deepEqual(selectionSet.length, 2);
-  deepEqual(selectionSet.lastSelected(), 'b');
-  deepEqual(selectionSetStringify(selectionSet), 'ba');
-  selectionSet.remove('a');
-  deepEqual(selectionSet.length, 1);
-  deepEqual(selectionSet.lastSelected(), 'b');
-  deepEqual(selectionSetStringify(selectionSet), 'b');
+  const test = new diagrammar.collections.SelectionSet();
+  test.add('a');
+  test.add('b');
+  test.add('c');
+  deepEqual(test.length, 3);
+  deepEqual(test.lastSelected(), 'c');
+  deepEqual(stringify(test), 'cba');
+  test.remove('c');
+  deepEqual(test.length, 2);
+  deepEqual(test.lastSelected(), 'b');
+  deepEqual(stringify(test), 'ba');
+  test.remove('a');
+  deepEqual(test.length, 1);
+  deepEqual(test.lastSelected(), 'b');
+  deepEqual(stringify(test), 'b');
 });
 
 test("SelectionSet toggle", function() {
-  var selectionSet = new diagrammar.collections.SelectionSet();
-  selectionSet.toggle('a');
-  deepEqual(selectionSet.length, 1);
-  deepEqual(selectionSet.lastSelected(), 'a');
-  selectionSet.toggle('a');
-  deepEqual(selectionSet.length, 0);
-  deepEqual(selectionSet.lastSelected(), null);
+  const test = new diagrammar.collections.SelectionSet();
+  test.toggle('a');
+  deepEqual(test.length, 1);
+  deepEqual(test.lastSelected(), 'a');
+  test.toggle('a');
+  deepEqual(test.length, 0);
+  deepEqual(test.lastSelected(), null);
 });
 
 test("SelectionSet map", function() {
-  var selectionSet = new diagrammar.collections.SelectionSet();
-  selectionSet.add('a');
-  selectionSet.add('b');
+  const test = new diagrammar.collections.SelectionSet();
+  test.add('a');
+  test.add('b');
 
-  var forward = '';
-  selectionSet.forEach(function(item) {
+  let forward = '';
+  test.forEach(function(item) {
     forward += item;
   });
   deepEqual(forward, 'ba');
-  var reverse = '';
-  selectionSet.forEachReverse(function(item) {
+  let reverse = '';
+  test.forEachReverse(function(item) {
     reverse += item;
   });
   deepEqual(reverse, 'ab');
+});
+
+test("DisjointSet union find", function() {
+  const test = new diagrammar.collections.DisjointSet();
+  const a = test.makeSet('a'),
+        b = test.makeSet('b'),
+        c = test.makeSet('c'),
+        d = test.makeSet('d');
+  strictEqual(test.find(a), a);
+  test.union(a, b);
+  strictEqual(test.find(a), test.find(b));
+  test.union(a, c);
+  strictEqual(test.find(a), test.find(b));
+  strictEqual(test.find(a), test.find(c));
+
+  notStrictEqual(test.find(a), test.find(d));
+
+  test.union(d, a);
+  strictEqual(test.find(d), test.find(a));
 });
 
 })();
