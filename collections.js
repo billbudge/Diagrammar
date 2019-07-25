@@ -125,43 +125,45 @@ LinkedList.prototype.find = function(value) {
 // The head of the queue is indicated by head_, limited by
 // headLimit_.
 
+const _array = Symbol('array'),
+      _head = Symbol('head');
+
 function Queue() {
-  this.q_ = [];
+  this[_array] = new Array();
   // Index past unused portion.
-  this.head_ = 0;
-  // Size limit for unused portion.
-  this.headLimit_ = 1000;
-  // Minimum size needed to throw out unused portion.
-  this.sliceMin_ = 10;
+  this[_head] = 0;
 }
 
 Queue.prototype = {
   enqueue: function(item) {
-    this.q_.push(item);
+    this[_array].push(item);
     return this;
   },
 
   dequeue: function() {
+    const headLimit = 1000, // Size limit for unused portion
+          sliceMin = 10;    // Minimum size to discard array
+
     let result;
     if (!this.empty()) {
-      result = this.q_[this.head_];
-      this.head_++;
-      if (this.head_ >= this.headLimit_
-          || this.head_ > this.sliceMin_ && this.head_ > this.length) {
-        this.q_ = this.q_.slice(this.head_);
-        this.head_ = 0;
+      result = this[_array][this[_head]];
+      this[_head]++;
+      if (this[_head] >= headLimit
+          || this[_head] > sliceMin && this[_head] > this.length) {
+        this[_array] = this[_array].slice(this[_head]);
+        this[_head] = 0;
       }
     }
     return result;
   },
 
   empty: function() {
-    return this.q_.length - this.head_ === 0;
+    return this[_array].length - this[_head] === 0;
   },
 
   clear: function() {
-    this.q_ = [];
-    this.head_ = 0;
+    this[_array] = new Array();
+    this[_head] = 0;
   }
 };
 
@@ -171,29 +173,29 @@ Queue.prototype = {
 function PriorityQueue(compareFn, array) {
   this.compareFn_ = compareFn;
   if (array) {
-    this.inner_ = array.slice(0);
+    this[_array] = array.slice(0);
     this.heapify_();
   } else {
-    this.inner_ = [];
+    this[_array] = new Array();
   }
 }
 
 PriorityQueue.prototype = {
   empty: function() {
-    return this.inner_.length == 0;
+    return this[_array].length == 0;
   },
 
   front: function() {
-    return !empty() ? this.inner_[0] : null;
+    return !empty() ? this[_array][0] : null;
   },
 
   push: function(value) {
-    this.inner_.push(value);
+    this[_array].push(value);
     this.siftUp_();
   },
 
   pop: function() {
-    const array = this.inner_;
+    const array = this[_array];
     if (!array.length)
       return null;
     const value = array[0];
@@ -211,7 +213,7 @@ PriorityQueue.prototype = {
   },
 
   heapify_: function() {
-    const array = this.inner_;
+    const array = this[_array];
     for (let i = array.length - 1; i > 0; i--) {
       const value = array[i],
             parentIndex = Math.floor((i - 1) / 2),
@@ -224,7 +226,7 @@ PriorityQueue.prototype = {
   },
 
   siftUp_: function() {
-    const array = this.inner_;
+    const array = this[_array];
     let i = array.length - 1;
     while (i > 0) {
       const value = array[i],
@@ -243,9 +245,12 @@ PriorityQueue.prototype = {
 // Set that orders elements by the order in which they were added. Note that
 // adding an element already in the set makes it the most recently added.
 
+const _list = Symbol('list'),
+      _map = Symbol('map');
+
 function SelectionSet() {
-  this.list_ = new LinkedList();
-  this.map_ = new Map();
+  this[_list]= new LinkedList();
+  this[_map] = new Map();
   this.length = 0;
 }
 
@@ -255,31 +260,31 @@ SelectionSet.prototype = {
   },
 
   contains: function(element) {
-    return this.map_.has(element);
+    return this[_map].has(element);
   },
 
   lastSelected: function() {
-    return !this.list_.empty() ? this.list_.front.value : null;
+    return !this[_list].empty() ? this[_list].front.value : null;
   },
 
   add: function(element) {
-    let node = this.map_.get(element);
+    let node = this[_map].get(element);
     if (node) {
-      this.list_.remove(node);
-      this.list_.pushFront(node);
+      this[_list].remove(node);
+      this[_list].pushFront(node);
     } else {
-      node = this.list_.pushFront(element);
-      this.map_.set(element, node);
+      node = this[_list].pushFront(element);
+      this[_map].set(element, node);
       this.length += 1;
     }
     return true;
   },
 
   remove: function(element) {
-    const node = this.map_.get(element);
+    const node = this[_map].get(element);
     if (node) {
-      this.map_.delete(element);
-      this.list_.remove(node);
+      this[_map].delete(element);
+      this[_list].remove(node);
       this.length -= 1;
       return true;
     }
@@ -294,19 +299,19 @@ SelectionSet.prototype = {
   },
 
   clear: function() {
-    this.list_.clear();
-    this.map_.clear();
+    this[_list].clear();
+    this[_map].clear();
     this.length = 0;
   },
 
   forEach: function(fn) {
-    return this.list_.forEach(function(item) {
+    return this[_list].forEach(function(item) {
       fn(item);
     });
   },
 
   forEachReverse: function(fn) {
-    return this.list_.forEachReverse(function(item) {
+    return this[_list].forEachReverse(function(item) {
       fn(item);
     });
   },
@@ -314,6 +319,9 @@ SelectionSet.prototype = {
 
 //------------------------------------------------------------------------------
 // DisjointSet, a simple Union-Find implementation.
+
+const _parent = Symbol('parent'),
+      _rank = Symbol('rank');
 
 function DisjointSet() {
   this.sets = [];
@@ -323,17 +331,18 @@ DisjointSet.prototype = {
   makeSet: function(item) {
     const set = {
       item: item,
-      rank: 0,
+      [_rank]: 0,
     }
-    set.parent = set;
+    set[_parent] = set;
     this.sets.push(set);
     return set;
   },
 
   find: function(set) {
-    while (set.parent != set) {
-      const next = set.parent;
-      set.parent = next.parent;
+    // Path splitting rather than path compression for simplicity.
+    while (set[_parent] != set) {
+      const next = set[_parent];
+      set[_parent] = next[_parent];
       set = next;
     }
     return set;
@@ -346,12 +355,12 @@ DisjointSet.prototype = {
    if (root1 == root2)
        return;
 
-   if (root1.rank < root2.rank)
+   if (root1[_rank] < root2[_rank])
      root1, root2 = root2, root1;
 
-   root2.parent = root1;
-   if (root1.rank == root2.rank)
-     root1.rank += 1;
+   root2[_parent] = root1;
+   if (root1[_rank] == root2[_rank])
+     root1[_rank] += 1;
   },
 };
 
