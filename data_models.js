@@ -19,7 +19,7 @@ const dataModel = (function () {
 
     assignId: function (item) {
       // 0 is not a valid id in this model.
-      let id = this.nextId++;
+      const id = this.nextId++;
       item.id = id;
       return id;
     },
@@ -36,8 +36,8 @@ const dataModel = (function () {
 
     // Returns true iff. item[attr] is a property that references an item.
     isReference: function (item, attr) {
-      let attrName = attr.toString(),
-          position = attrName.length - 2;
+      const attrName = attr.toString(),
+            position = attrName.length - 2;
       if (position < 0)
         return false;
       return attrName.lastIndexOf('Id', position) === position;
@@ -47,7 +47,7 @@ const dataModel = (function () {
     visitProperties: function (item, propFn) {
       if (Array.isArray(item)) {
         // Array item.
-        let length = item.length;
+        const length = item.length;
         for (let i = 0; i < length; i++)
           propFn(item, i);
       } else {
@@ -61,7 +61,7 @@ const dataModel = (function () {
 
     // Visits the item's top level reference properties.
     visitReferences: function (item, refFn) {
-      let self = this;
+      const self = this;
       this.visitProperties(item, function (item, attr) {
         if (self.isReference(item, attr))
           refFn(item, attr);
@@ -70,9 +70,9 @@ const dataModel = (function () {
 
     // Visits the item's top level properties that are Arrays or child items.
     visitChildren: function (item, childFn) {
-      let self = this;
+      const self = this;
       this.visitProperties(item, function (item, attr) {
-        let value = item[attr];
+        const value = item[attr];
         if (!self.isItem(value))
           return;
         if (Array.isArray(value))
@@ -85,7 +85,7 @@ const dataModel = (function () {
     // Visits the item and all of its descendant items.
     visitSubtree: function (item, itemFn) {
       itemFn(item);
-      let self = this;
+      const self = this;
       this.visitChildren(item, function (child) {
         self.visitSubtree(child, itemFn);
       });
@@ -96,8 +96,8 @@ const dataModel = (function () {
     },
 
     initialize: function(item) {
-      let self = this,
-          root = item || this.getRoot();
+      const self = this,
+            root = item || this.getRoot();
       this.visitSubtree(root, function(item) {
         self.initializers.forEach(function(initializer) {
           initializer(item);
@@ -110,13 +110,14 @@ const dataModel = (function () {
     if (model.dataModel)
       return model.dataModel;
 
-    let instance = Object.create(proto);
+    const instance = Object.create(proto);
     instance.model = model;
 
     // Find the maximum id in the model and set nextId to 1 greater.
-    let maxId = 0, self = this;
+    const self = this;
+    let maxId = 0;
     instance.visitSubtree(instance.getRoot(), function (item) {
-      let id = instance.getId(item);
+      const id = instance.getId(item);
       if (id)
         maxId = Math.max(maxId, id);
     });
@@ -145,16 +146,16 @@ const eventMixin = (function () {
   }
 
   function removeHandler(event, handler) {
-    let list = this[event];
+    const list = this[event];
     if (list) {
-      let node = list.find(handler);
+      const node = list.find(handler);
       if (node)
         list.remove(node);
     }
   }
 
   function onEvent(event, handler) {
-    let list = this[event];
+    const list = this[event];
     if (list)
       list.forEach(handler);
   }
@@ -201,7 +202,7 @@ const observableModel = (function () {
     },
 
     changeValue: function (item, attr, newValue) {
-      let oldValue = item[attr];
+      const oldValue = item[attr];
       if (newValue !== oldValue) {
         item[attr] = newValue;
         this.onValueChanged(item, attr, oldValue);
@@ -219,7 +220,7 @@ const observableModel = (function () {
     },
 
     insertElement: function (item, attr, index, newValue) {
-      let array = item[attr];
+      const array = item[attr];
       array.splice(index, 0, newValue);
       this.onElementInserted(item, attr, index);
     },
@@ -235,7 +236,7 @@ const observableModel = (function () {
     },
 
     removeElement: function (item, attr, index) {
-      let array = item[attr], oldValue = array[index];
+      const array = item[attr], oldValue = array[index];
       array.splice(index, 1);
       this.onElementRemoved(item, attr, index, oldValue);
       return oldValue;
@@ -246,7 +247,7 @@ const observableModel = (function () {
     if (model.observableModel)
       return model.observableModel;
 
-    let instance = Object.create(proto);
+    const instance = Object.create(proto);
     instance.model = model;
     eventMixin.extend(instance);
 
@@ -264,19 +265,19 @@ const observableModel = (function () {
 const transactionModel = (function () {
   const opProto = {
     undo: function () {
-      let change = this.change,
-          item = change.item, attr = change.attr,
-          observableModel = this.observableModel;
+      const change = this.change,
+            item = change.item, attr = change.attr,
+            observableModel = this.observableModel;
       switch (change.type) {
         case 'change': {
-          let oldValue = change.item[change.attr];
+          const oldValue = change.item[change.attr];
           item[attr] = change.oldValue;
           change.oldValue = oldValue;
           observableModel.onChanged(change);  // this change is its own inverse.
           break;
         }
         case 'insert': {
-          let array = item[attr], index = change.index;
+          const array = item[attr], index = change.index;
           change.oldValue = array[index];
           array.splice(index, 1);
           observableModel.onElementRemoved(item, attr, index, change.oldValue);
@@ -284,7 +285,7 @@ const transactionModel = (function () {
           break;
         }
         case 'remove': {
-          let array = item[attr], index = change.index;
+          const array = item[attr], index = change.index;
           array.splice(index, 0, change.oldValue);
           observableModel.onElementInserted(item, attr, index);
           change.type = 'insert';
@@ -311,7 +312,7 @@ const transactionModel = (function () {
   const proto = {
     // Notifies observers that a transaction has started.
     beginTransaction: function (name) {
-      let transaction = {
+      const transaction = {
         name: name,
         ops: [],
       };
@@ -328,7 +329,7 @@ const transactionModel = (function () {
     // do any adjustments to make data valid, or cancel the transaction if
     // the data is in an invalid state.
     endTransaction: function () {
-      let transaction = this.transaction;
+      const transaction = this.transaction;
       this.onEndTransaction(transaction);
       this.onEvent('transactionEnding', function (handler) {
         handler(transaction);
@@ -346,7 +347,7 @@ const transactionModel = (function () {
     // rolled back.
     cancelTransaction: function () {
       this.undo(this.transaction);
-      let transaction = this.transaction;
+      const transaction = this.transaction;
       this.transaction = null;
       this.onCancelTransaction(transaction);
       this.onEvent('transactionCanceled', function (handler) {
@@ -357,7 +358,7 @@ const transactionModel = (function () {
     // Undoes the changes in the transaction.
     undo: function (transaction) {
       // Roll back changes.
-      let ops = transaction.ops, length = ops.length;
+      const ops = transaction.ops, length = ops.length;
       for (let i = length - 1; i >= 0; i--) {
         ops[i].undo();
       }
@@ -369,7 +370,7 @@ const transactionModel = (function () {
     // Redoes the changes in the transaction.
     redo: function (transaction) {
       // Roll forward changes.
-      let ops = transaction.ops, length = ops.length;
+      const ops = transaction.ops, length = ops.length;
       for (let i = 0; i < length; i++) {
         ops[i].redo();
       }
@@ -379,33 +380,33 @@ const transactionModel = (function () {
     },
 
     getSnapshot: function(item) {
-      let changedItems = this.changedItems;
+      const changedItems = this.changedItems;
       if (!changedItems)
         return;
-      let changedItem = changedItems.get(item);
+      const changedItem = changedItems.get(item);
       return changedItem ? changedItem.snapshot : item;
     },
 
     onBeginTransaction: function (transaction) {
-      let selectionModel = this.model.selectionModel;
+      const selectionModel = this.model.selectionModel;
       if (!selectionModel)
         return;
       this.startingSelection = selectionModel.contents();
     },
 
     onEndTransaction: function (transaction) {
-      let selectionModel = this.model.selectionModel;
+      const selectionModel = this.model.selectionModel;
       if (!selectionModel)
         return;
-      let startingSelection = this.startingSelection,
-          endingSelection = selectionModel.contents();
+      const startingSelection = this.startingSelection;
+      let endingSelection = selectionModel.contents();
       if (startingSelection.length == endingSelection.length &&
           startingSelection.every(function(element, i) {
             return element === endingSelection[i];
           })) {
         endingSelection = startingSelection;
       }
-      let op = Object.create(selectionOpProto);
+      const op = Object.create(selectionOpProto);
       op.startingSelection = startingSelection;
       op.endingSelection = endingSelection;
       op.selectionModel = selectionModel;
@@ -414,14 +415,14 @@ const transactionModel = (function () {
     },
 
     onCancelTransaction: function (transaction) {
-      let selectionModel = this.model.selectionModel;
+      const selectionModel = this.model.selectionModel;
       if (!selectionModel)
         return;
       this.startingSelection = null;
     },
 
     recordChange_: function(change) {
-      let op = Object.create(opProto);
+      const op = Object.create(opProto);
       op.change = change;
       op.observableModel = this.model.observableModel;
       this.transaction.ops.push(op);
@@ -431,8 +432,8 @@ const transactionModel = (function () {
       if (!this.transaction)
         return;
 
-      let dataModel = this.model.dataModel,
-          item = change.item, attr = change.attr;
+      const dataModel = this.model.dataModel,
+            item = change.item, attr = change.attr;
 
       if (change.type != 'change') {
         // Record insert and remove element changes.
@@ -440,8 +441,8 @@ const transactionModel = (function () {
       } else {
         // Coalesce value changes. Only record them if this is the first time
         // we've observed the (item, attr) change.
-        let changedItems = this.changedItems,
-            changedItem = changedItems.get(item),
+        const changedItems = this.changedItems;
+        let changedItem = changedItems.get(item),
             snapshot, oldValue;
         if (changedItem) {
           snapshot = changedItem.snapshot;
@@ -469,7 +470,7 @@ const transactionModel = (function () {
     dataModel.extend(model);
     observableModel.extend(model);
 
-    let instance = Object.create(proto);
+    const instance = Object.create(proto);
     instance.model = model;
     eventMixin.extend(instance);
     model.observableModel.addHandler('changed', function (change) {
@@ -490,17 +491,17 @@ const transactionModel = (function () {
 const transactionHistory = (function () {
   const proto = {
     getRedo: function () {
-      let length = this.undone.length;
+      const length = this.undone.length;
       return length > 0 ? this.undone[length - 1] : null;
     },
 
     getUndo: function () {
-      let length = this.done.length;
+      const length = this.done.length;
       return length > 0 ? this.done[length - 1] : null;
     },
 
     redo: function () {
-      let transaction = this.getRedo();
+      const transaction = this.getRedo();
       if (transaction) {
         this.model.transactionModel.redo(transaction);
         this.done.push(this.undone.pop());
@@ -508,7 +509,7 @@ const transactionHistory = (function () {
     },
 
     undo: function () {
-      let transaction = this.getUndo();
+      const transaction = this.getUndo();
       if (transaction) {
         this.model.transactionModel.undo(transaction);
         this.undone.push(this.done.pop());
@@ -528,7 +529,7 @@ const transactionHistory = (function () {
 
     transactionModel.extend(model);
 
-    let instance = Object.create(proto);
+    const instance = Object.create(proto);
     instance.model = model;
     instance.done = [];
     instance.undone = [];
@@ -558,9 +559,9 @@ const referencingModel = (function () {
     },
 
     getReferenceFn: function (attr) {
-      let self = this, s = Symbol.for(attr);
+      const self = this, symbol = Symbol.for(attr);
       return function(item) {
-        return item[s] || self.resolveReference(item, attr);
+        return item[symbol] || self.resolveReference(item, attr);
       }
     },
 
@@ -571,8 +572,8 @@ const referencingModel = (function () {
 
     // Resolves a reference to a target item if possible.
     resolveReference: function (item, attr) {
-      let newId = item[attr],
-          newTarget = this.resolveId(newId);
+      const newId = item[attr],
+            newTarget = this.resolveId(newId);
       item[Symbol.for(attr)] = newTarget;
       return newTarget;
     },
@@ -580,9 +581,9 @@ const referencingModel = (function () {
     // Recursively adds item and sub-items as potential reference targets, and
     // resolves any references they contain.
     addTargets_: function (item) {
-      let self = this, dataModel = this.model.dataModel;
+      const self = this, dataModel = this.model.dataModel;
       dataModel.visitSubtree(item, function (item) {
-        let id = dataModel.getId(item);
+        const id = dataModel.getId(item);
         if (id)
           self.targets_.set(id, item);
       });
@@ -595,40 +596,40 @@ const referencingModel = (function () {
 
     // Recursively removes item and sub-items as potential reference targets.
     removeTargets_: function (item) {
-      let self = this, dataModel = this.model.dataModel;
+      const self = this, dataModel = this.model.dataModel;
       dataModel.visitSubtree(item, function (item) {
-        let id = dataModel.getId(item);
+        const id = dataModel.getId(item);
         if (id)
           self.targets_.delete(id);
       });
     },
 
     onChanged_: function (change) {
-      let item = change.item,
-          attr = change.attr,
-          dataModel = this.model.dataModel;
+      const dataModel = this.model.dataModel,
+            item = change.item,
+            attr = change.attr;
       switch (change.type) {
         case 'change': {
           if (dataModel.isReference(item, attr)) {
             this.resolveReference(item, attr);
           } else {
-            let oldValue = change.oldValue;
+            const oldValue = change.oldValue;
             if (dataModel.isItem(oldValue))
               this.removeTargets_(oldValue);
-            let newValue = item[attr];
+            const newValue = item[attr];
             if (dataModel.isItem(newValue))
               this.addTargets_(newValue);
           }
           break;
         }
         case 'insert': {
-          let newValue = item[attr][change.index];
+          const newValue = item[attr][change.index];
           if (dataModel.isItem(newValue))
             this.addTargets_(newValue);
           break;
         }
         case 'remove': {
-          let oldValue = change.oldValue;
+          const oldValue = change.oldValue;
           if (dataModel.isItem(oldValue))
             this.removeTargets_(oldValue);
           break;
@@ -643,7 +644,7 @@ const referencingModel = (function () {
 
     dataModel.extend(model);
 
-    let instance = Object.create(proto);
+    const instance = Object.create(proto);
     instance.model = model;
     if (model.observableModel) {
       // Create wrappers here to capture 'instance'.
@@ -674,8 +675,9 @@ const referenceValidator = (function () {
     },
 
     onTransactionEnding_: function (transaction) {
-      let self = this, dataModel = this.model.dataModel,
-          referencingModel = this.model.referencingModel;
+      const self = this, model = this.model,
+            dataModel = tmodel.dataModel,
+            referencingModel = model.referencingModel;
       dataModel.visitSubtree(dataModel.getRoot(), function (item) {
         dataModel.visitReferences(item, function (item, attr) {
           if (!referencingModel.resolveId(item[attr]))
@@ -689,7 +691,7 @@ const referenceValidator = (function () {
     if (model.referenceValidator)
       return model.referenceValidator;
 
-    let instance = Object.create(proto);
+    const instance = Object.create(proto);
     instance.model = model;
     eventMixin.extend(instance);
     dataModel.extend(model);
@@ -786,7 +788,7 @@ const selectionModel = (function () {
     },
 
     contents: function () {
-      let result = [];
+      const result = [];
       this.selection.forEach(function (item) { result.push(item); });
       return result;
     }
@@ -796,7 +798,7 @@ const selectionModel = (function () {
     if (model.selectionModel)
       return model.selectionModel;
 
-    let instance = Object.create(proto);
+    const instance = Object.create(proto);
     instance.model = model;
     instance.selection = new diagrammar.collections.SelectionSet();
 
@@ -822,9 +824,9 @@ const instancingModel = (function () {
       if (!this.model.dataModel.isItem(item))
         return item;
 
-      let self = this, dataModel = this.model.dataModel;
+      const self = this, dataModel = this.model.dataModel;
       // Use constructor() to properly clone arrays, sets, maps, etc.
-      let copy = item.constructor();
+      const copy = item.constructor();
       dataModel.visitProperties(item, function (item, attr) {
         copy[attr] = self.clone(item[attr], map);
       });
@@ -833,7 +835,7 @@ const instancingModel = (function () {
         dataModel.assignId(copy);
         dataModel.initialize(copy);
         if (map) {
-          let id = dataModel.getId(item);
+          const id = dataModel.getId(item);
           map.set(id, copy);
         }
       }
@@ -841,8 +843,8 @@ const instancingModel = (function () {
     },
 
     cloneGraph: function (items, map) {
-      let dataModel = this.model.dataModel,
-          copies = [];
+      const dataModel = this.model.dataModel,
+            copies = [];
       items.forEach(function (item) {
         copies.push(this.clone(item, map));
       }, this);
@@ -872,7 +874,7 @@ const instancingModel = (function () {
 
     dataModel.extend(model);
 
-    let instance = Object.create(proto);
+    const instance = Object.create(proto);
     instance.model = model;
 
     model.instancingModel = instance;
@@ -897,10 +899,10 @@ const editingModel = (function () {
     },
 
     copyItems: function (items, map) {
-      let model = this.model,
-          dataModel = model.dataModel,
-          instancingModel = model.instancingModel,
-          copies = instancingModel.cloneGraph(items, map);
+      const model = this.model,
+            dataModel = model.dataModel,
+            instancingModel = model.instancingModel,
+            copies = instancingModel.cloneGraph(items, map);
       copies.forEach(function(item) {
         dataModel.initialize(item);
       });
@@ -916,8 +918,8 @@ const editingModel = (function () {
     },
 
     doDelete: function () {
-      let model = this.model, selectionModel = model.selectionModel,
-          transactionModel = model.transactionModel;
+      const model = this.model, selectionModel = model.selectionModel,
+            transactionModel = model.transactionModel;
       transactionModel.beginTransaction("Delete selection");
       this.deleteItems(selectionModel.contents());
       selectionModel.clear();
@@ -925,25 +927,25 @@ const editingModel = (function () {
     },
 
     doCopy: function () {
-      let model = this.model,
-          map = new Map(),
-          copies = this.copyItems(model.selectionModel.contents(), map);
+      const model = this.model,
+            map = new Map(),
+            copies = this.copyItems(model.selectionModel.contents(), map);
       this.setScrap(copies);
       return copies;
     },
 
     doCut: function () {
-      let copies = this.doCopy();
+      const copies = this.doCopy();
       this.doDelete();
       return copies;
     },
 
     doPaste: function () {
-      let model = this.model, selectionModel = model.selectionModel,
-          transactionModel = model.transactionModel;
+      const model = this.model, selectionModel = model.selectionModel,
+            transactionModel = model.transactionModel;
       transactionModel.beginTransaction("Paste scrap");
-      let map = new Map(),
-          items = this.copyItems(this.getScrap(), map);
+      const map = new Map(),
+            items = this.copyItems(this.getScrap(), map);
       selectionModel.clear();
       this.addItems(items);
       selectionModel.set(items);
@@ -959,7 +961,7 @@ const editingModel = (function () {
     selectionModel.extend(model);
     instancingModel.extend(model);
 
-    let instance = Object.create(proto);
+    const instance = Object.create(proto);
     instance.model = model;
 
     model.editingModel = instance;
@@ -995,7 +997,7 @@ const hierarchicalModel = (function () {
     },
 
     visitDescendants: function (item, childFn) {
-      let self = this;
+      const self = this;
       this.visitChildren(item, function (child) {
         childFn(child, item);
         self.visitDescendants(child, childFn);
@@ -1003,8 +1005,8 @@ const hierarchicalModel = (function () {
     },
 
     isItemInSelection: function(item) {
-      let selectionModel = this.model.selectionModel,
-          ancestor = item;
+      const selectionModel = this.model.selectionModel;
+      let ancestor = item;
       while (ancestor) {
         if (selectionModel.contains(ancestor))
           return true;
@@ -1016,9 +1018,9 @@ const hierarchicalModel = (function () {
     // Reduces the selection to the roots of the current selection. Thus, a
     // parent and child can't be simultaneously selected.
     reduceSelection: function () {
-      let selectionModel = this.model.selectionModel,
-          roots = [],
-          self = this;
+      const self = this,
+            selectionModel = this.model.selectionModel,
+            roots = [];
       selectionModel.forEach(function (item) {
         if (!self.isItemInSelection(self.getParent(item)))
           roots.push(item);
@@ -1027,7 +1029,7 @@ const hierarchicalModel = (function () {
     },
 
     getLineage: function(item) {
-      let lineage = [];
+      const lineage = [];
       while (item) {
         lineage.push(item);
         item = this.getParent(item);
@@ -1052,32 +1054,32 @@ const hierarchicalModel = (function () {
     },
 
     init: function (item, parent) {
+      const self = this;
       this.setParent(item, parent);
-      let self = this;
       this.visitDescendants(item, function (child, parent) {
         self.setParent(child, parent);
       });
     },
 
     onChanged_: function (change) {
-      let item = change.item,
-          attr = change.attr,
-          dataModel = this.model.dataModel;
+      const dataModel = this.model.dataModel,
+            item = change.item,
+            attr = change.attr;
       switch (change.type) {
         case 'change': {
-          let newValue = item[attr];
+          const newValue = item[attr];
           if (dataModel.isItem(newValue))
             this.init(newValue, item);
           break;
         }
         case 'insert': {
-          let newValue = item[attr][change.index];
+          const newValue = item[attr][change.index];
           if (dataModel.isItem(newValue))
             this.init(newValue, item);
           break;
         }
         case 'remove': {
-          let oldValue = change.oldValue;
+          const oldValue = change.oldValue;
           if (dataModel.isItem(oldValue))
             this.setParent(oldValue, null);
           break;
@@ -1095,7 +1097,7 @@ const hierarchicalModel = (function () {
     // TODO selectionModel shouldn't be a dependency.
     selectionModel.extend(model);
 
-    let instance = Object.create(proto);
+    const instance = Object.create(proto);
     instance.model = model;
 
     if (model.observableModel) {
@@ -1148,8 +1150,8 @@ const translatableModel = (function () {
     // Gets the translation to move an item from its current parent to
     // newParent. Handles the cases where current parent or newParent are null.
     getToParent: function (item, newParent) {
-      let oldParent = this.model.hierarchicalModel.getParent(item),
-          dx = 0, dy = 0;
+      const oldParent = this.model.hierarchicalModel.getParent(item);
+      let dx = 0, dy = 0;
       if (oldParent) {
         dx += this.globalX(oldParent);
         dy += this.globalY(oldParent);
@@ -1165,9 +1167,9 @@ const translatableModel = (function () {
       if (!this.hasTranslation(item))
         return;
 
-      let hierarchicalModel = this.model.hierarchicalModel,
-          parent = hierarchicalModel.getParent(item),
-          x = this.getX(item), y = this.getY(item);
+      const hierarchicalModel = this.model.hierarchicalModel,
+            parent = hierarchicalModel.getParent(item),
+            x = this.getX(item), y = this.getY(item);
       while (parent && !this.hasTranslation(parent))
         parent = hierarchicalModel.getParent(parent);
 
@@ -1181,7 +1183,7 @@ const translatableModel = (function () {
     },
 
     update: function (item) {
-      let self = this;
+      const self = this;
       this.updateTranslation(item);
       this.model.hierarchicalModel.visitDescendants(item, function (child, parent) {
         self.updateTranslation(child);
@@ -1189,11 +1191,11 @@ const translatableModel = (function () {
     },
 
     onChanged_: function (change) {
-      let dataModel = this.model.dataModel,
-          item = change.item, attr = change.attr;
+      const dataModel = this.model.dataModel,
+            item = change.item, attr = change.attr;
       switch (change.type) {
         case 'change': {
-          let newValue = item[attr];
+          const newValue = item[attr];
           if (dataModel.isItem(newValue))
             this.update(newValue);
           else
@@ -1201,7 +1203,7 @@ const translatableModel = (function () {
           break;
         }
         case 'insert': {
-          let newValue = item[attr][change.index];
+          const newValue = item[attr][change.index];
           if (dataModel.isItem(newValue))
             this.update(newValue);
           break;
@@ -1219,7 +1221,7 @@ const translatableModel = (function () {
     dataModel.extend(model);
     hierarchicalModel.extend(model);
 
-    let instance = Object.create(proto);
+    const instance = Object.create(proto);
     instance.model = model;
 
     if (model.observableModel) {
@@ -1303,20 +1305,20 @@ const transformableModel = (function () {
     // Gets the matrix to move an item from its current parent to newParent.
     // Handles the cases where current parent or newParent are null.
     getToParent: function (item, newParent) {
-      let oldParent = this.model.hierarchicalModel.getParent(item),
-          oldTransform = oldParent ? this.getAbsolute(oldParent) : null,
-          newInverse = newParent ? this.getInverseAbsolute(newParent) : null;
+      const oldParent = this.model.hierarchicalModel.getParent(item),
+            oldTransform = oldParent ? this.getAbsolute(oldParent) : null,
+            newInverse = newParent ? this.getInverseAbsolute(newParent) : null;
       if (oldTransform && newInverse)
         return geometry.matMulNew(oldTransform, newInverse);
       return oldTransform || newInverse;
     },
 
     updateLocal: function (item) {
-      let tx = this.getX(item), ty = this.getY(item),
-          scale = this.getScale(item), ooScale = 1.0 / scale,
-          rot = this.getRotation(item),
-          cos = Math.cos(rot), sin = Math.sin(rot),
-          ooScaleCos = ooScale * cos, ooScaleSin = ooScale * sin;
+      const tx = this.getX(item), ty = this.getY(item),
+            scale = this.getScale(item), ooScale = 1.0 / scale,
+            rot = this.getRotation(item),
+            cos = Math.cos(rot), sin = Math.sin(rot),
+            ooScaleCos = ooScale * cos, ooScaleSin = ooScale * sin;
       item[_ooScale] = ooScale;
       item[_transform] = [ scale * cos, scale * -sin,
                            scale * sin, scale * cos,
@@ -1332,8 +1334,8 @@ const transformableModel = (function () {
 
       this.updateLocal(item);
 
-      let hierarchicalModel = this.model.hierarchicalModel,
-          parent = hierarchicalModel.getParent(item);
+      const hierarchicalModel = this.model.hierarchicalModel;
+      let parent = hierarchicalModel.getParent(item);
       while (parent && !this.hasTransform(parent))
         parent = hierarchicalModel.getParent(parent);
 
@@ -1348,7 +1350,7 @@ const transformableModel = (function () {
     },
 
     update: function (item) {
-      let self = this, hierarchicalModel = this.model.hierarchicalModel;
+      const self = this, hierarchicalModel = this.model.hierarchicalModel;
       this.updateTransforms(item);
       hierarchicalModel.visitDescendants(item, function (child, parent) {
         self.updateTransforms(child);
@@ -1356,11 +1358,11 @@ const transformableModel = (function () {
     },
 
     onChanged_: function (change) {
-      let dataModel = this.model.dataModel,
-          item = change.item, attr = change.attr;
+      const dataModel = this.model.dataModel,
+            item = change.item, attr = change.attr;
       switch (change.type) {
         case 'change': {
-          let newValue = item[attr];
+          const newValue = item[attr];
           if (dataModel.isItem(newValue))
             this.update(newValue);
           else
@@ -1368,7 +1370,7 @@ const transformableModel = (function () {
           break;
         }
         case 'insert': {
-          let newValue = item[attr][change.index];
+          const newValue = item[attr][change.index];
           if (dataModel.isItem(newValue))
             this.update(newValue);
           break;
@@ -1386,7 +1388,7 @@ const transformableModel = (function () {
     dataModel.extend(model);
     hierarchicalModel.extend(model);
 
-    let instance = Object.create(proto);
+    const instance = Object.create(proto);
     instance.model = model;
 
     if (model.observableModel) {
@@ -1425,13 +1427,13 @@ const openingModel = (function () {
       this.openItem_ = undefined;
     },
     onChanged_: function (change) {
-      let item = change.item,
-          attr = change.attr,
-          dataModel = this.model.dataModel;
+      const dataModel = this.model.dataModel,
+            item = change.item,
+            attr = change.attr;
       switch (change.type) {
         case 'change':
         case 'remove':
-          let oldValue = change.oldValue;
+          const oldValue = change.oldValue;
           if (dataModel.isItem(oldValue) && oldValue === this.openItem_)
             this.clear();
           break;
@@ -1446,7 +1448,7 @@ const openingModel = (function () {
     dataModel.extend(model);
     observableModel.extend(model);
 
-    let instance = Object.create(proto);
+    const instance = Object.create(proto);
     instance.model = model;
     model.observableModel.addHandler('changed', function (change) {
       instance.onChanged_(change);
@@ -1479,7 +1481,7 @@ const openingModel = (function () {
 //     dataModels.otherModel.extend(model);
 
 //     // Create the instance from the prototype.
-//     let instance = Object.create(proto);
+//     const instance = Object.create(proto);
 //     instance.model = model;
 //     // Extend the instance if necessary.
 //     eventMixin.extend(instance);

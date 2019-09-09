@@ -173,8 +173,8 @@ function pqCompareFn(a, b) {
 
 // Destroys queue.
 function pqContents(queue) {
-  var length = arguments.length - 1;
-  for (var i = 0; i < length; i++) {
+  const length = arguments.length - 1;
+  for (let i = 0; i < length; i++) {
     if (queue.empty())
       return false;
     if (queue.pop() != arguments[i + 1])

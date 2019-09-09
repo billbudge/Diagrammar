@@ -328,11 +328,11 @@ const editingModel = (function() {
         elementsAndGroups.add(element);
         if (!isElement(element))
           return;
-        let master = getMaster(element);
+        const master = getMaster(element);
         // inputMap takes element to array of incoming wires.
         inputMap.set(element, new Array(master.inputs.length).fill(null));
         // outputMap takes element to array of array of outgoing wires.
-        let arrays = new Array(master.outputs.length);
+        const arrays = new Array(master.outputs.length);
         for (let i = 0; i < arrays.length; i++)
           arrays[i] = new Array();
         outputMap.set(element, arrays);
@@ -340,7 +340,9 @@ const editingModel = (function() {
       // Separate wires into incoming, outgoing, and interior. Populate
       // input/output maps, and incoming and outgoing pins.
       const wires = [],
-            incomingWires = [], outgoingWires = [], interiorWires = [];
+            incomingWires = [],
+            outgoingWires = [],
+            interiorWires = [];
       visitItems(this.diagram.items, function(wire) {
         wires.push(wire);
         const src = self.getWireSrc(wire),
@@ -375,25 +377,25 @@ const editingModel = (function() {
     },
 
     getConnectedElements: function(items, upstream) {
-      let self = this, model = this.model,
-          selectionModel = model.selectionModel,
-          graphInfo = this.collectGraphInfo(this.diagram.items),
-          result = new Set();
+      const self = this, model = this.model,
+            selectionModel = model.selectionModel,
+            graphInfo = this.collectGraphInfo(this.diagram.items),
+            result = new Set();
       while (items.length > 0) {
-        let item = items.pop();
+        const item = items.pop();
         if (!isElement(item)) continue;
         result.add(item);
         if (upstream) {
           graphInfo.inputMap.get(item).forEach(function(wire) {
             if (!wire) return;
-            let src = self.getWireSrc(wire);
+            const src = self.getWireSrc(wire);
             if (!result.has(src))
               items.push(src);
           });
         }
         graphInfo.outputMap.get(item).forEach(function(wires) {
           wires.forEach(function(wire) {
-            let dst = self.getWireDst(wire);
+            const dst = self.getWireDst(wire);
             if (!result.has(dst))
               items.push(dst);
           });
@@ -403,20 +405,20 @@ const editingModel = (function() {
     },
 
     selectInteriorWires: function() {
-      let model = this.model,
-          selectionModel = model.selectionModel,
-          graphInfo = this.collectGraphInfo(selectionModel.contents());
+      const model = this.model,
+            selectionModel = model.selectionModel,
+            graphInfo = this.collectGraphInfo(selectionModel.contents());
       selectionModel.add(graphInfo.interiorWires);
     },
 
     newItem: function(item) {
-      let dataModel = this.model.dataModel;
+      const dataModel = this.model.dataModel;
       dataModel.assignId(item);
       dataModel.initialize(item);
     },
 
     newItems: function(items) {
-      let self = this;
+      const self = this;
       items.forEach(item => self.newItem(item));
     },
 
@@ -434,7 +436,7 @@ const editingModel = (function() {
     },
 
     deleteItems: function(items) {
-      let self = this;
+      const self = this;
       items.forEach(function(item) {
         self.deleteItem(item);
       });
@@ -452,13 +454,13 @@ const editingModel = (function() {
             translatableModel = model.translatableModel,
             copies = this.prototype.copyItems(items, map);
       items.forEach(function(item) {
-        let copy = map.get(dataModel.getId(item));
+        const copy = map.get(dataModel.getId(item));
         if (isElementOrGroup(copy)) {
           // De-palettize clone.
           copy.state = 'normal';
           // Clone coordinates should be in circuit-space. Get global position
           // from original item.
-          let translation = translatableModel.getToParent(item, diagram);
+          const translation = translatableModel.getToParent(item, diagram);
           copy.x += translation.x;
           copy.y += translation.y;
         }
@@ -467,7 +469,7 @@ const editingModel = (function() {
     },
 
     doCopy: function() {
-      let selectionModel = this.model.selectionModel;
+      const selectionModel = this.model.selectionModel;
       this.reduceSelection();
       selectionModel.contents().forEach(function(item) {
         if (!isElementOrGroup(item))
@@ -478,9 +480,9 @@ const editingModel = (function() {
     },
 
     addItem: function(item, parent) {
-      let model = this.model,
-          translatableModel = model.translatableModel,
-          oldParent = this.getParent(item);
+      const model = this.model,
+            translatableModel = model.translatableModel,
+            oldParent = this.getParent(item);
       if (!parent)
         parent = this.diagram;
       if (oldParent === parent)
@@ -505,7 +507,7 @@ const editingModel = (function() {
     },
 
     addItems: function(items, parent) {
-      let self = this;
+      const self = this;
       items.forEach(function(item) {
         self.addItem(item, parent);
       });
@@ -523,20 +525,20 @@ const editingModel = (function() {
     },
 
     replaceElement: function(element, newElement) {
-      let self = this, model = this.model,
-          observableModel = model.observableModel,
-          masteringModel = model.masteringModel,
-          graphInfo = this.collectGraphInfo([element]),
-          elementInputs = graphInfo.inputMap.get(element),
-          elementOutputs = graphInfo.outputMap.get(element),
-          master = getMaster(element),
-          newId = model.dataModel.getId(newElement),
+      const self = this, model = this.model,
+            observableModel = model.observableModel,
+            masteringModel = model.masteringModel,
+            graphInfo = this.collectGraphInfo([element]),
+            elementInputs = graphInfo.inputMap.get(element),
+            elementOutputs = graphInfo.outputMap.get(element),
+            master = getMaster(element),
+            newId = model.dataModel.getId(newElement),
           newMaster = getMaster(newElement);
       function canRewire(index, pins, newPins) {
         if (index >= newPins.length)
           return false;
-        let type = masteringModel.getSignature(pins[index].type),
-            newType = masteringModel.getSignature(newPins[index].type);
+        const type = masteringModel.getSignature(pins[index].type),
+              newType = masteringModel.getSignature(newPins[index].type);
         return type == '*' || type == newType;
       }
       elementInputs.forEach(function(wire, pin) {
@@ -557,8 +559,8 @@ const editingModel = (function() {
           }
         });
       });
-      let parent = this.getParent(newElement),
-          newParent = this.getParent(element);
+      const parent = this.getParent(newElement),
+            newParent = this.getParent(element);
       if (parent != newParent)
         self.addItem(newElement, newParent);
       observableModel.changeValue(newElement, 'x', element.x);
@@ -567,11 +569,12 @@ const editingModel = (function() {
     },
 
     connectInput: function(element, pin, p) {
-      let viewModel = this.model.viewModel,
-          parent = this.getParent(element),
-          dstPin = getMaster(element).inputs[pin],
-          pinPoint = p || viewModel.pinToPoint(element, pin, true);
-      let junction = {
+      const viewModel = this.model.viewModel,
+            parent = this.getParent(element),
+            dstPin = getMaster(element).inputs[pin],
+            pinPoint = p || viewModel.pinToPoint(element, pin, true);
+
+      const junction = {
         type: 'element',
         elementType: 'input',
         x: pinPoint.x - 32,
@@ -580,7 +583,7 @@ const editingModel = (function() {
       };
       this.newItem(junction);
       this.addItem(junction, parent);  // same parent as element
-      let wire = {
+      const wire = {
         type: 'wire',
         srcId: junction.id,
         srcPin: 0,
@@ -593,11 +596,12 @@ const editingModel = (function() {
     },
 
     connectOutput: function(element, pin, p) {
-      let viewModel = this.model.viewModel,
-          parent = this.getParent(element),
-          srcPin = getMaster(element).outputs[pin],
-          pinPoint = p || viewModel.pinToPoint(element, pin, false);
-      let junction = {
+      const viewModel = this.model.viewModel,
+            parent = this.getParent(element),
+            srcPin = getMaster(element).outputs[pin],
+            pinPoint = p || viewModel.pinToPoint(element, pin, false);
+
+      const junction = {
         type: 'element',
         elementType: 'output',
         x: pinPoint.x + 32,
@@ -606,7 +610,7 @@ const editingModel = (function() {
       };
       this.newItem(junction);
       this.addItem(junction, parent);  // same parent as element
-      let wire = {
+      const wire = {
         type: 'wire',
         srcId: element.id,
         srcPin: pin,
@@ -619,9 +623,9 @@ const editingModel = (function() {
     },
 
     completeGroup: function(elements) {
-      let self = this, model = this.model,
-          selectionModel = model.selectionModel,
-          graphInfo = this.collectGraphInfo(elements);
+      const self = this, model = this.model,
+            selectionModel = model.selectionModel,
+            graphInfo = this.collectGraphInfo(elements);
 
       // Add junctions for disconnected pins on selected elements.
       graphInfo.inputMap.forEach(function(elementInputs, element) {
@@ -648,7 +652,7 @@ const editingModel = (function() {
     },
 
     getLabel: function (item) {
-      let master = getMaster(item);
+      const master = getMaster(item);
       if (isInput(item) || isLiteral(item)) {
         return master.outputs[0].name;
       } else if (isOutput(item)) {
@@ -658,17 +662,17 @@ const editingModel = (function() {
     },
 
     setLabel: function (item, newText) {
-      let masteringModel = this.model.masteringModel,
-          label = newText ? '(' + newText + ')' : '',
-          master = item.master,
-          newMaster;
+      const masteringModel = this.model.masteringModel,
+            label = newText ? '(' + newText + ')' : '',
+            master = item.master;
+      let newMaster;
       if (isInputPinLabeled(item)) {
-        let j = masteringModel.splitType(master),
-            prefix = master.substring(0, j),
-            suffix = master.substring(j);
+        const j = masteringModel.splitType(master),
+              prefix = master.substring(0, j),
+              suffix = master.substring(j);
         newMaster = masteringModel.unlabelType(prefix) + label + suffix;
       } else if (isOutputPinLabeled(item)) {
-        let prefix = master.substring(0, master.length - 1);
+        const prefix = master.substring(0, master.length - 1);
         newMaster = masteringModel.unlabelType(prefix) + label + ']';
       } else {
         newMaster = masteringModel.unlabelType(master) + label;
@@ -677,8 +681,8 @@ const editingModel = (function() {
     },
 
     changeType: function (item, newType) {
-      let master = getMaster(item),
-          newMaster;
+      const master = getMaster(item);
+      let newMaster;
       if (isJunction(item)) {
         if (isInput(item)) {
           let label = master.outputs[0].name;
@@ -694,13 +698,13 @@ const editingModel = (function() {
     },
 
     openElement: function(element) {
-      let self = this, model = this.model,
-          dataModel = model.dataModel,
-          masteringModel = model.masteringModel,
-          observableModel = model.observableModel,
-          master = getMaster(element);
+      const self = this, model = this.model,
+            dataModel = model.dataModel,
+            masteringModel = model.masteringModel,
+            observableModel = model.observableModel,
+            master = getMaster(element);
 
-      let newElement = {
+      const newElement = {
         type: 'element',
         elementType: 'abstract',
         x: element.x,
@@ -716,8 +720,8 @@ const editingModel = (function() {
     },
 
     openElements: function(elements) {
-      let self = this,
-          selectionModel = this.model.selectionModel;
+      const self = this,
+            selectionModel = this.model.selectionModel;
 
       // Open each non-input/output element.
       elements.forEach(function(element) {
@@ -732,18 +736,20 @@ const editingModel = (function() {
     },
 
     closeElement: function(element, incomingWires, outgoingWireArrays) {
-      let self = this, model = this.model,
-          dataModel = model.dataModel,
-          masteringModel = model.masteringModel,
-          observableModel = model.observableModel,
-          translatableModel = model.translatableModel,
-          master = getMaster(element);
-      let newElement = {
+      const self = this, model = this.model,
+            dataModel = model.dataModel,
+            masteringModel = model.masteringModel,
+            observableModel = model.observableModel,
+            translatableModel = model.translatableModel,
+            master = getMaster(element);
+
+      const newElement = {
         type: 'element',
         elementType: 'closed',
         x: translatableModel.globalX(element),
         y: translatableModel.globalY(element),
       };
+
       const id = dataModel.assignId(newElement);
       let type = '[',
           closedType = '[',
@@ -766,7 +772,7 @@ const editingModel = (function() {
       closedType += ',';
       pinIndex = 0;
       master.outputs.forEach(function(pin, i) {
-        let outgoingWires = outgoingWireArrays[i];
+        const outgoingWires = outgoingWireArrays[i];
         if (outgoingWires.length > 0) {
           type += self.getPinType(pin);
           outgoingWires.forEach(function(outgoingWire, j) {
@@ -811,13 +817,13 @@ const editingModel = (function() {
     },
 
     getGroupMaster: function(group, items, entireGraphInfo) {
-      let self = this, model = this.model,
-          dataModel = model.dataModel,
-          masteringModel = model.masteringModel,
-          viewModel = model.viewModel;
+      const self = this, model = this.model,
+            dataModel = model.dataModel,
+            masteringModel = model.masteringModel,
+            viewModel = model.viewModel;
 
-      let graphInfo = this.collectGraphInfo(items),
-          inputs = [], outputs = [];
+      const graphInfo = this.collectGraphInfo(items),
+            inputs = [], outputs = [];
 
       function makePin(type, y) {
         return {
@@ -849,10 +855,10 @@ const editingModel = (function() {
           if (!isElementOrGroup(item))
             return;
           if (isInput(item)) {
-            let y = viewModel.pinToPoint(item, 0, false).y;
+            const y = viewModel.pinToPoint(item, 0, false).y;
             inputs.push(makePin(getInputType(item), y));
           } else if (isOutput(item)) {
-            let y = viewModel.pinToPoint(item, 0, true).y;
+            const y = viewModel.pinToPoint(item, 0, true).y;
             outputs.push(makePin(getOutputType(item), y));
           } else if (isGroup(item)) {
             addItems(item.items);
@@ -879,26 +885,27 @@ const editingModel = (function() {
     },
 
     build: function(items) {
-      let self = this, model = this.model,
-          dataModel = model.dataModel,
-          masteringModel = model.masteringModel,
-          observableModel = model.observableModel,
-          viewModel = model.viewModel;
+      const self = this, model = this.model,
+            dataModel = model.dataModel,
+            masteringModel = model.masteringModel,
+            observableModel = model.observableModel,
+            viewModel = model.viewModel,
+            graphInfo = this.collectGraphInfo(items),
+            entireGraphInfo = this.collectGraphInfo(this.diagram.items),
+            groupItems = items.concat(graphInfo.interiorWires),
+            extents = viewModel.getItemRects(graphInfo.elementsAndGroups),
+            x = extents.x - spacing,
+            y = extents.y - spacing;
 
-      let graphInfo = this.collectGraphInfo(items),
-          entireGraphInfo = this.collectGraphInfo(this.diagram.items),
-          groupItems = items.concat(graphInfo.interiorWires),
-          extents = viewModel.getItemRects(graphInfo.elementsAndGroups),
-          x = extents.x - spacing, y = extents.y - spacing;
       // Create the new group element.
-      let group = {
+      const group = {
         type: 'element',
         x: x,
         y: y,
       };
 
-      let groupId = dataModel.assignId(group),
-          master = self.getGroupMaster(group, items, entireGraphInfo);
+      const groupId = dataModel.assignId(group),
+            master = self.getGroupMaster(group, items, entireGraphInfo);
 
       group.items = groupItems;
       groupItems.forEach(function(item) {
