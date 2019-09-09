@@ -319,10 +319,11 @@ const editingModel = (function() {
 
     //TODO make 'items' be the complete list so new grouping does the right thing.
     collectGraphInfo: function(items) {
-      let self = this;
       // Get elements and initialize input/output maps.
-      let elementsAndGroups = new Set();
-      let inputMap = new Map(), outputMap = new Map();
+      const self = this,
+            elementsAndGroups = new Set(),
+            inputMap = new Map(),
+            outputMap = new Map();
       visitItems(items, function(element) {
         elementsAndGroups.add(element);
         if (!isElement(element))
@@ -338,32 +339,26 @@ const editingModel = (function() {
       }, isElementOrGroup);
       // Separate wires into incoming, outgoing, and interior. Populate
       // input/output maps, and incoming and outgoing pins.
-      let wires = [], incomingWires = [], outgoingWires = [], interiorWires = [],
-          inputWires = [], outputWires = [];
+      const wires = [],
+            incomingWires = [], outgoingWires = [], interiorWires = [];
       visitItems(this.diagram.items, function(wire) {
         wires.push(wire);
-        let src = self.getWireSrc(wire),
-            dst = self.getWireDst(wire),
-            srcInside = elementsAndGroups.has(src),
-            dstInside = elementsAndGroups.has(dst);
+        const src = self.getWireSrc(wire),
+              dst = self.getWireDst(wire),
+              srcInside = elementsAndGroups.has(src),
+              dstInside = elementsAndGroups.has(dst);
         if (srcInside) {
           outputMap.get(src)[wire.srcPin].push(wire);
           if (dstInside) {
             interiorWires.push(wire);
-            if (isInput(src))
-              inputWires.push(wire);
-            if (isOutput(dst))
-              outputWires.push(wire);
           } else {
             outgoingWires.push(wire);
-            outputWires.push(wire);
           }
         }
         if (dstInside) {
           inputMap.get(dst)[wire.dstPin] = wire;
           if (!srcInside) {
             incomingWires.push(wire);
-            inputWires.push(wire);
           }
         }
       }, isWire);
@@ -374,8 +369,6 @@ const editingModel = (function() {
         outputMap: outputMap,
         wires: wires,
         interiorWires: interiorWires,
-        inputWires: inputWires,
-        outputWires: outputWires,
         incomingWires: incomingWires,
         outgoingWires: outgoingWires,
       }
@@ -943,172 +936,6 @@ const editingModel = (function() {
     //   });
     // },
 
-    makeGroup: function(elements) {
-      let self = this, model = this.model,
-          dataModel = model.dataModel,
-          masteringModel = model.masteringModel,
-          observableModel = model.observableModel,
-          viewModel = model.viewModel;
-
-      let graphInfo = this.collectGraphInfo(elements),
-          entireGraphInfo = this.collectGraphInfo(this.diagram.items),
-          groupItems = elements.concat(graphInfo.interiorWires),
-          extents = viewModel.getItemRects(graphInfo.elementsAndGroups),
-          inputs = [], outputs = [];
-      // Create the new group element.
-      let groupElement = {
-        type: 'element',
-      };
-
-      let groupId = dataModel.assignId(groupElement);
-
-      // Sort wire arrays so we encounter pins in increasing y-order.
-      function compareIncomingWires(wire1, wire2) {
-        let src1 = self.getWireSrc(wire1), src2 = self.getWireSrc(wire2);
-        return viewModel.pinToPoint(src1, wire1.srcPin, false).y -
-               viewModel.pinToPoint(src2, wire2.srcPin, false).y;
-      }
-      function compareOutgoingWires(wire1, wire2) {
-        let dst1 = self.getWireDst(wire1), dst2 = self.getWireDst(wire2);
-        return viewModel.pinToPoint(dst1, wire1.dstPin, true).y -
-               viewModel.pinToPoint(dst2, wire2.dstPin, true).y;
-      }
-      graphInfo.inputWires.sort(compareIncomingWires);
-      graphInfo.outputWires.sort(compareOutgoingWires);
-
-      let master = '[';
-      let pinIndex = 0;
-
-      // Use srcMap to ensure that an internal or external source is only
-      // represented once in inputs and outputs.
-      function addUniqueSource(wire, srcMap) {
-        let src = self.getWireSrc(wire),
-            srcPins = getMaster(src).outputs,
-            srcIndices = srcMap.get(src);
-        if (srcIndices === undefined) {
-          srcIndices = new Array(srcPins.length);
-          srcMap.set(src, srcIndices);
-        }
-        let index = wire.srcPin;
-        if (srcIndices[index] === undefined) {
-          srcIndices[index] = pinIndex++;
-          let srcPin = srcPins[index],
-              srcType = self.getPinType(srcPin);
-          if (srcType.startsWith('*')) {
-            if (isInput(src))
-              srcType = self.findDstType(wire, entireGraphInfo) + srcType.substring(1);
-            else
-              srcType = self.findSrcType(wire, entireGraphInfo);
-          }
-          master += srcType;
-        }
-        return srcIndices[index];
-      }
-
-      let incomingSrcMap = new Map(), outgoingSrcMap = new Map();
-      // Add input pins for inputWires.
-      graphInfo.inputWires.forEach(function(wire) {
-        let index = addUniqueSource(wire, incomingSrcMap);
-        let src = self.getWireSrc(wire);
-        if (graphInfo.elementsAndGroups.has(src)) {
-          observableModel.changeValue(src, 'pinIndex', index);
-          let srcType = self.findDstType(wire, entireGraphInfo);
-        } else {
-          // If this is the first instance of the source...
-          if (index == pinIndex - 1) {
-            // Add an input junction to represent the source.
-            let element = self.getWireDst(wire),
-                pin = wire.dstPin,
-                connection = self.connectInput(element, pin);
-            connection.junction.pinIndex = index;
-            groupItems.push(connection.junction, connection.wire);
-            graphInfo.interiorWires.push(connection.wire);
-          }
-          observableModel.changeValue(wire, 'dstId', groupId);
-          observableModel.changeValue(wire, 'dstPin', index);
-        }
-      });
-      master += ',';
-      pinIndex = 0;
-      // Add output pins for outputWires.
-      graphInfo.outputWires.forEach(function(wire) {
-        let index = addUniqueSource(wire, outgoingSrcMap);
-        let dst = self.getWireDst(wire);
-        if (graphInfo.elementsAndGroups.has(dst)) {
-          observableModel.changeValue(dst, 'pinIndex', index);
-          if (index == pinIndex - 1 && isOutput(dst)) {
-            // Let output override source name.
-            let name = getMaster(dst).inputs[0].name;
-            if (name)
-              master += masteringModel.unlabelType(master) + '(' + name + ')';
-          }
-        } else {
-          // If this is the first instance of the source...
-          if (index == pinIndex - 1) {
-            // Add an output junction to represent the source.
-            let element = self.getWireSrc(wire),
-                pin = wire.srcPin,
-                connection = self.connectOutput(element, pin);
-            connection.junction.pinIndex = index;
-            groupItems.push(connection.junction, connection.wire);
-            graphInfo.interiorWires.push(connection.wire);
-          }
-          observableModel.changeValue(wire, 'srcId', groupId);
-          observableModel.changeValue(wire, 'srcPin', index);
-        }
-      });
-      master += ']';
-      if (!masteringModel.hasOutput(master)) {
-        // Add a 'use' pin so group can be evaluated. Like 'return void'.
-        master = masteringModel.addOutputToType(master, '*');
-      }
-
-      // Compute wildcard pass throughs.
-      let passThroughs = new Set();
-      graphInfo.interiorWires.forEach(function(wire) {
-        let src = self.getWireSrc(wire),
-            srcPin = getMaster(src).outputs[wire.srcPin];
-        // Trace wires, starting at input junctions.
-        if (!isInput(src) || srcPin.type != '*')
-          return;
-        let srcPinIndex = src.pinIndex,
-            activeWires = [wire];
-        while (activeWires.length) {
-          wire = activeWires.pop();
-          let dst = self.getWireDst(wire),
-              dstPin = getMaster(dst).inputs[wire.dstPin];
-          if (isOutput(dst) && dstPin.type == '*') {
-            passThroughs.add([srcPinIndex, dst.pinIndex]);
-          } else if (dst.passThroughs) {
-            dst.passThroughs.forEach(function(passThrough) {
-              if (passThrough[0] == wire.dstPin) {
-                let outgoingWires = graphInfo.outputMap.get(dst)[passThrough[1]];
-                outgoingWires.forEach(wire => activeWires.push(wire));
-              }
-            });
-          }
-        }
-      });
-      if (passThroughs.size) {
-        groupElement.passThroughs = Array.from(passThroughs);
-      }
-
-      groupElement.items = groupItems;
-      groupItems.forEach(function(item) {
-        if (!isWire(item)) {
-          observableModel.changeValue(item, 'x', item.x - extents.x);
-          observableModel.changeValue(item, 'y', item.y - extents.y);
-        }
-        self.deleteItem(item);
-      });
-
-      groupElement.master = master;
-      groupElement.x = extents.x + extents.w / 2;
-      groupElement.y = extents.y + extents.h / 2;
-
-      return groupElement;
-    },
-
     findSrcType: function(wire, graphInfo) {
       let self = this, model = this.model, activeWires = [wire];
       // TODO get rid of array and while, there can be only one pass through.
@@ -1230,6 +1057,7 @@ const editingModel = (function() {
       const self = this, model = this.model,
             diagram = this.diagram,
             dataModel = model.dataModel,
+            hierarchicalModel = model.hierarchicalModel,
             masteringModel = model.masteringModel,
             selectionModel = model.selectionModel,
             observableModel = model.observableModel,
@@ -1251,7 +1079,7 @@ const editingModel = (function() {
         }
         // Make sure wires belong to lowest common container (circuit or group).
         const lca = hierarchicalModel.getLowestCommonAncestor([src, dst]);
-        if (this.getParent(wire) !== lca) {
+        if (self.getParent(wire) !== lca) {
           self.deleteItem(wire);
           self.addItem(wire, lca);
         }
