@@ -304,6 +304,10 @@ const masteringModel = (function() {
 
 const editingModel = (function() {
   const proto = {
+    getParent: function(item) {
+      return this.model.hierarchicalModel.getParent(item);
+    },
+
     reduceSelection: function () {
       let model = this.model;
       model.selectionModel.set(model.hierarchicalModel.reduceSelection());
@@ -425,7 +429,7 @@ const editingModel = (function() {
 
     deleteItem: function(item) {
       const model = this.model,
-          parent = model.hierarchicalModel.getParent(item);
+            parent = this.getParent(item);
       if (parent) {
         const items = parent.items,
             index = items.indexOf(item);
@@ -482,9 +486,8 @@ const editingModel = (function() {
 
     addItem: function(item, parent) {
       let model = this.model,
-          hierarchicalModel = model.hierarchicalModel,
           translatableModel = model.translatableModel,
-          oldParent = hierarchicalModel.getParent(item);
+          oldParent = this.getParent(item);
       if (!parent)
         parent = this.diagram;
       if (oldParent === parent)
@@ -528,7 +531,6 @@ const editingModel = (function() {
 
     replaceElement: function(element, newElement) {
       let self = this, model = this.model,
-          hierarchicalModel = model.hierarchicalModel,
           observableModel = model.observableModel,
           masteringModel = model.masteringModel,
           graphInfo = this.collectGraphInfo([element]),
@@ -562,8 +564,8 @@ const editingModel = (function() {
           }
         });
       });
-      let parent = hierarchicalModel.getParent(newElement),
-          newParent = hierarchicalModel.getParent(element);
+      let parent = this.getParent(newElement),
+          newParent = this.getParent(element);
       if (parent != newParent)
         self.addItem(newElement, newParent);
       observableModel.changeValue(newElement, 'x', element.x);
@@ -573,7 +575,7 @@ const editingModel = (function() {
 
     connectInput: function(element, pin, p) {
       let viewModel = this.model.viewModel,
-          parent = this.model.hierarchicalModel.getParent(element),
+          parent = this.getParent(element),
           dstPin = getMaster(element).inputs[pin],
           pinPoint = p || viewModel.pinToPoint(element, pin, true);
       let junction = {
@@ -599,7 +601,7 @@ const editingModel = (function() {
 
     connectOutput: function(element, pin, p) {
       let viewModel = this.model.viewModel,
-          parent = this.model.hierarchicalModel.getParent(element),
+          parent = this.getParent(element),
           srcPin = getMaster(element).outputs[pin],
           pinPoint = p || viewModel.pinToPoint(element, pin, false);
       let junction = {
@@ -807,7 +809,7 @@ const editingModel = (function() {
         const incomingWires = graphInfo.inputMap.get(element),
               outgoingWireArrays = graphInfo.outputMap.get(element),
               newElement = self.closeElement(element, incomingWires, outgoingWireArrays),
-              parent = self.model.hierarchicalModel.getParent(element);
+              parent = self.getParent(element);
 
         selectionModel.remove(element);
         self.deleteItem(element);
@@ -819,7 +821,6 @@ const editingModel = (function() {
       let self = this, model = this.model,
           dataModel = model.dataModel,
           masteringModel = model.masteringModel,
-          translatableModel = model.translatableModel,
           viewModel = model.viewModel;
 
       let graphInfo = this.collectGraphInfo(items),
@@ -850,33 +851,22 @@ const editingModel = (function() {
           return dstType;
         return self.findSrcType(wire, entireGraphInfo) + label;
       }
-      items.forEach(function(item) {
-        if (!isElement(item))
-          return;
-        if (isInput(item)) {
-          let y = viewModel.pinToPoint(item, 0, false).y;
-          inputs.push(makePin(getInputType(item), y));
-        } else if (isOutput(item)) {
-          let y = viewModel.pinToPoint(item, 0, true).y;
-          outputs.push(makePin(getOutputType(item), y));
-        } else if (group != self.getGroup(item)) {
-          const master = getMaster(item),
-                inputWires = graphInfo.inputMap.get(item),
-                outputWires = graphInfo.outputMap.get(item);
-          inputWires.forEach(function(wire, pin) {
-            if (!wire) {
-              let y = viewModel.pinToPoint(item, pin, true).y;
-              inputs.push(makePin(self.getPinType(master.inputs[pin]), y));
-            }
-          });
-          outputWires.forEach(function(wires, pin) {
-            if (!wires.length) {
-              let y = viewModel.pinToPoint(item, pin, false).y;
-              outputs.push(makePin(self.getPinType(master.outputs[pin]), y));
-            }
-          });
-        }
-      });
+      function addItems(items) {
+        items.forEach(function(item) {
+          if (!isElementOrGroup(item))
+            return;
+          if (isInput(item)) {
+            let y = viewModel.pinToPoint(item, 0, false).y;
+            inputs.push(makePin(getInputType(item), y));
+          } else if (isOutput(item)) {
+            let y = viewModel.pinToPoint(item, 0, true).y;
+            outputs.push(makePin(getOutputType(item), y));
+          } else if (isGroup(item)) {
+            addItems(item.items);
+          }
+        });
+      }
+      addItems(items);
 
       // Sort pins so we encounter them in increasing y-order. This lets us lay
       // out the group in an intuitively consistent way.
@@ -946,7 +936,7 @@ const editingModel = (function() {
     //       return;
     //     const lca = hierarchicalModel.getLowestCommonAncestor(item, group);
     //     let type = item.master,
-    //         parent = hierarchicalModel.getParent(group);
+    //         parent = self.getParent(group);
     //     // while (group != lca) {
 
     //     // }
@@ -1241,7 +1231,6 @@ const editingModel = (function() {
             diagram = this.diagram,
             dataModel = model.dataModel,
             masteringModel = model.masteringModel,
-            hierarchicalModel = model.hierarchicalModel,
             selectionModel = model.selectionModel,
             observableModel = model.observableModel,
             graphInfo = this.collectGraphInfo(diagram.items),
@@ -1262,7 +1251,7 @@ const editingModel = (function() {
         }
         // Make sure wires belong to lowest common container (circuit or group).
         const lca = hierarchicalModel.getLowestCommonAncestor([src, dst]);
-        if (hierarchicalModel.getParent(wire) !== lca) {
+        if (this.getParent(wire) !== lca) {
           self.deleteItem(wire);
           self.addItem(wire, lca);
         }
@@ -1476,8 +1465,8 @@ Renderer.prototype.endDraw = function() {
 
 const spacing = 6;
 const shrink = 0.7, inv_shrink = 1 / shrink;
-const minMasterWidth = 16;
-const minMasterHeight = 16;
+const minMasterWidth = 8;
+const minMasterHeight = 8;
 
 // Compute sizes for an element master.
 Renderer.prototype.layoutMaster = function(master) {
@@ -1489,7 +1478,7 @@ Renderer.prototype.layoutMaster = function(master) {
     width = spacing + ctx.measureText(name).width;
     height += textSize + spacing / 2;
   } else {
-    height += spacing;
+    height += spacing / 2;
   }
   let yIn = height, wIn = 0;
   for (let i = 0; i < inputs.length; i++) {
