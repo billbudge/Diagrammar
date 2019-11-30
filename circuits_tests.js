@@ -76,9 +76,9 @@ function newLiteral(value) {
   return element;
 }
 
-function newTestMasteringModel() {
+function newTestSignatureModel() {
   let circuit = newCircuit();
-  let test = circuits.masteringModel.extend(circuit);
+  let test = circuits.signatureModel.extend(circuit);
   return test;
 }
 
@@ -103,7 +103,7 @@ function addWire(test, src, srcPin, dst, dstPin) {
 
 function newTestEditingModel() {
   let circuit = newCircuit();
-  circuits.masteringModel.extend(circuit);
+  circuits.signatureModel.extend(circuit);
   circuits.viewModel.extend(circuit);
   let test = circuits.editingModel.extend(circuit),
       dataModel = test.model.dataModel;
@@ -115,16 +115,16 @@ function doInitialize(item) {
   item.initalized = true;
 }
 
-test("circuits.masteringModel", function() {
+test("circuits.signatureModel", function() {
   let circuit = newCircuit();
-  let test = circuits.masteringModel.extend(circuit);
+  let test = circuits.signatureModel.extend(circuit);
   ok(test);
   ok(test.model);
   ok(test.model.dataModel);
 });
 
-test("circuits.masteringModel", function() {
-  let test = newTestMasteringModel();
+test("circuits.signatureModel", function() {
+  let test = newTestSignatureModel();
   let types = [
     '[vv,v](+)',
     '[v(a)v(b),v(c)]',
@@ -135,22 +135,22 @@ test("circuits.masteringModel", function() {
     type => deepEqual(stringifyMaster(test.decodeType(type)), type));
 });
 
-test("circuits.masteringModel.unlabelType", function() {
-  let test = newTestMasteringModel();
+test("circuits.signatureModel.unlabelType", function() {
+  let test = newTestSignatureModel();
   deepEqual(test.unlabelType('[v,vv](foo)'), '[v,vv]');
   deepEqual(test.unlabelType('[v,vv]'), '[v,vv]');
   deepEqual(test.unlabelType('[vvv(foo)'), '[vvv');
 });
 
-test("circuits.masteringModel.getSignature", function() {
-  let test = newTestMasteringModel();
+test("circuits.signatureModel.getSignature", function() {
+  let test = newTestSignatureModel();
   deepEqual(test.getSignature('[v,vv](foo)'), '[v,vv]');
   deepEqual(test.getSignature('[v(a),v(b)v](foo)'), '[v,vv]');
   deepEqual(test.getSignature('[[v,v](a),vv](foo)'), '[[v,v],vv]');
 });
 
-test("circuits.masteringModel.splitType", function() {
-  let test = newTestMasteringModel();
+test("circuits.signatureModel.splitType", function() {
+  let test = newTestSignatureModel();
   let tuples = [
     { type: '[vv,v](+)', split: 3 },
     { type: '[v(a)v(b),v(c)]', split: 9 },
@@ -161,8 +161,8 @@ test("circuits.masteringModel.splitType", function() {
     tuple => deepEqual(test.splitType(tuple.type), tuple.split));
 });
 
-test("circuits.masteringModel.addInputToType", function() {
-  let test = newTestMasteringModel();
+test("circuits.signatureModel.addInputToType", function() {
+  let test = newTestSignatureModel();
   let tuples = [
     { type: '[,]', innerType: '*(x)', joined: '[*(x),]' },
     { type: '[vv,v](+)', innerType: '*(x)', joined: '[vv*(x),v](+)' },
@@ -171,8 +171,8 @@ test("circuits.masteringModel.addInputToType", function() {
     tuple => deepEqual(test.addInputToType(tuple.type, tuple.innerType), tuple.joined));
 });
 
-test("circuits.masteringModel.addOutputToType", function() {
-  let test = newTestMasteringModel();
+test("circuits.signatureModel.addOutputToType", function() {
+  let test = newTestSignatureModel();
   let tuples = [
     { type: '[,]', innerType: '*(x)', joined: '[,*(x)]' },
     { type: '[vv,v](+)', innerType: '*(x)', joined: '[vv,v*(x)](+)' },
@@ -184,13 +184,13 @@ test("circuits.masteringModel.addOutputToType", function() {
 test("circuits.editingAndMastering", function() {
   let test = newTestEditingModel(),
       circuit = test.model,
-      masteringModel = test.model.masteringModel;
+      signatureModel = test.model.signatureModel;
   let types = [], masters = [];
   function onMasterInserted(type, master) {
     types.push(type);
     masters.push(master);
   }
-  masteringModel.addHandler('masterInserted', onMasterInserted);
+  signatureModel.addHandler('masterInserted', onMasterInserted);
 
   // Add an item.
   let item1 = newTypedElement('[vv,v]');
@@ -198,9 +198,9 @@ test("circuits.editingAndMastering", function() {
   test.addItem(item1, circuit.root);
   // Check master
   let type = item1.master;
-  deepEqual(stringifyMaster(masteringModel.getMaster(item1)), type);
+  deepEqual(stringifyMaster(signatureModel.getMaster(item1)), type);
   deepEqual(types, [type]);
-  deepEqual(masters, [masteringModel.getMaster(item1)]);
+  deepEqual(masters, [signatureModel.getMaster(item1)]);
 });
 
 test("circuits.editingModel", function() {

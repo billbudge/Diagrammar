@@ -112,7 +112,7 @@ function getMaster(item) {
 
 //------------------------------------------------------------------------------
 
-const masteringModel = (function() {
+const signatureModel = (function() {
   const proto = {
     getMaster: function(item) {
       return item[_master];
@@ -291,7 +291,7 @@ const masteringModel = (function() {
       }
     });
 
-    model.masteringModel = instance;
+    model.signatureModel = instance;
     return instance;
   }
 
@@ -527,7 +527,7 @@ const editingModel = (function() {
     replaceElement: function(element, newElement) {
       const self = this, model = this.model,
             observableModel = model.observableModel,
-            masteringModel = model.masteringModel,
+            signatureModel = model.signatureModel,
             graphInfo = this.collectGraphInfo([element]),
             elementInputs = graphInfo.inputMap.get(element),
             elementOutputs = graphInfo.outputMap.get(element),
@@ -537,8 +537,8 @@ const editingModel = (function() {
       function canRewire(index, pins, newPins) {
         if (index >= newPins.length)
           return false;
-        const type = masteringModel.getSignature(pins[index].type),
-              newType = masteringModel.getSignature(newPins[index].type);
+        const type = signatureModel.getSignature(pins[index].type),
+              newType = signatureModel.getSignature(newPins[index].type);
         return type == '*' || type == newType;
       }
       elementInputs.forEach(function(wire, pin) {
@@ -662,20 +662,20 @@ const editingModel = (function() {
     },
 
     setLabel: function (item, newText) {
-      const masteringModel = this.model.masteringModel,
+      const signatureModel = this.model.signatureModel,
             label = newText ? '(' + newText + ')' : '',
             master = item.master;
       let newMaster;
       if (isInputPinLabeled(item)) {
-        const j = masteringModel.splitType(master),
+        const j = signatureModel.splitType(master),
               prefix = master.substring(0, j),
               suffix = master.substring(j);
-        newMaster = masteringModel.unlabelType(prefix) + label + suffix;
+        newMaster = signatureModel.unlabelType(prefix) + label + suffix;
       } else if (isOutputPinLabeled(item)) {
         const prefix = master.substring(0, master.length - 1);
-        newMaster = masteringModel.unlabelType(prefix) + label + ']';
+        newMaster = signatureModel.unlabelType(prefix) + label + ']';
       } else {
-        newMaster = masteringModel.unlabelType(master) + label;
+        newMaster = signatureModel.unlabelType(master) + label;
       }
       return newMaster;
     },
@@ -700,7 +700,7 @@ const editingModel = (function() {
     openElement: function(element) {
       const self = this, model = this.model,
             dataModel = model.dataModel,
-            masteringModel = model.masteringModel,
+            signatureModel = model.signatureModel,
             observableModel = model.observableModel,
             master = getMaster(element);
 
@@ -711,9 +711,9 @@ const editingModel = (function() {
         y: element.y,
       };
       const id = dataModel.assignId(newElement),
-            type = masteringModel.unlabelType(element.master),
-            innerType = masteringModel.getSignature(type),
-            newType = masteringModel.addInputToType(type, innerType);
+            type = signatureModel.unlabelType(element.master),
+            innerType = signatureModel.getSignature(type),
+            newType = signatureModel.addInputToType(type, innerType);
       newElement.master = newType;
       dataModel.initialize(newElement);
       return newElement;
@@ -738,7 +738,7 @@ const editingModel = (function() {
     closeElement: function(element, incomingWires, outgoingWireArrays) {
       const self = this, model = this.model,
             dataModel = model.dataModel,
-            masteringModel = model.masteringModel,
+            signatureModel = model.signatureModel,
             observableModel = model.observableModel,
             translatableModel = model.translatableModel,
             master = getMaster(element);
@@ -789,7 +789,7 @@ const editingModel = (function() {
       if (master.name) {
         closedType += '(' + master.name + ')';
       }
-      type = masteringModel.addOutputToType(type, closedType);
+      type = signatureModel.addOutputToType(type, closedType);
 
       newElement.master = type;
       dataModel.initialize(newElement);
@@ -819,7 +819,7 @@ const editingModel = (function() {
     getGroupMaster: function(group, items, entireGraphInfo) {
       const self = this, model = this.model,
             dataModel = model.dataModel,
-            masteringModel = model.masteringModel,
+            signatureModel = model.signatureModel,
             viewModel = model.viewModel;
 
       const graphInfo = this.collectGraphInfo(items),
@@ -887,7 +887,7 @@ const editingModel = (function() {
     build: function(items) {
       const self = this, model = this.model,
             dataModel = model.dataModel,
-            masteringModel = model.masteringModel,
+            signatureModel = model.signatureModel,
             observableModel = model.observableModel,
             viewModel = model.viewModel,
             graphInfo = this.collectGraphInfo(items),
@@ -1029,15 +1029,15 @@ const editingModel = (function() {
     },
 
     doGroup: function() {
-      let model = this.model;
-      this.reduceSelection();
-      let elements = model.selectionModel.contents().filter(isElementOrGroup);
-      model.transactionModel.beginTransaction('group');
-      let groupElement = this.makeGroup(elements);
-      model.dataModel.initialize(groupElement);
-      this.addItem(groupElement);  // add at top level.
-      model.selectionModel.set(groupElement);
-      model.transactionModel.endTransaction();
+      // let model = this.model;
+      // this.reduceSelection();
+      // let elements = model.selectionModel.contents().filter(isElementOrGroup);
+      // model.transactionModel.beginTransaction('group');
+      // let groupElement = this.makeGroup(elements);
+      // model.dataModel.initialize(groupElement);
+      // this.addItem(groupElement);  // add at top level.
+      // model.selectionModel.set(groupElement);
+      // model.transactionModel.endTransaction();
     },
 
     doToggleMaster: function() {
@@ -1065,7 +1065,7 @@ const editingModel = (function() {
             diagram = this.diagram,
             dataModel = model.dataModel,
             hierarchicalModel = model.hierarchicalModel,
-            masteringModel = model.masteringModel,
+            signatureModel = model.signatureModel,
             selectionModel = model.selectionModel,
             observableModel = model.observableModel,
             graphInfo = this.collectGraphInfo(diagram.items),
@@ -1099,7 +1099,7 @@ const editingModel = (function() {
           return;
         }
         const newSig = self.getGroupMaster(group, group.items, graphInfo),
-              oldSig = masteringModel.unlabelType(group.master);
+              oldSig = signatureModel.unlabelType(group.master);
         if (oldSig !== newSig) {
           let label = group.master.substring(oldSig.length);
           observableModel.changeValue(group, 'master', newSig + label);
@@ -1807,7 +1807,7 @@ function Editor(model, textInputController) {
 
   editingModel.extend(model);
 
-  let masters = masteringModel.extend(model);
+  let masters = signatureModel.extend(model);
   masters.addHandler('masterInserted', function(type, master) {
     let ctx = self.ctx,
         renderer = self.renderer,
@@ -2388,7 +2388,7 @@ Editor.prototype.onKeyDown = function(e) {
 
 return {
   editingModel: editingModel,
-  masteringModel: masteringModel,
+  signatureModel: signatureModel,
   viewModel: viewModel,
 
   normalMode: normalMode,
