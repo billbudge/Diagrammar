@@ -459,5 +459,56 @@ test("selectionModel select", function() {
   deepEqual(test.contents(), ['c', 'b']);
 });
 
+// Change model unit tests.
+
+test("changeModel extend", function() {
+  const model = { root: {} };
+  const test = dataModels.changeModel.extend(model);
+  deepEqual(test, model.changeModel);
+  ok(model.observableModel);
+});
+
+test("changeModel", function() {
+  const model = {
+    root: {
+      prop1: 'foo',
+      array: [],
+    },
+  };
+  const test = dataModels.changeModel.extend(model);
+  deepEqual(test.getChangedItems(), []);
+
+  // change attribute
+  model.root.prop1 = 'bar';
+  model.observableModel.onValueChanged(model.root, 'prop1', 'foo');
+  deepEqual(test.getChangedItems(), [model.root]);
+  test.clear();
+
+  // insert child
+  const child = { prop1: 'bar' };
+  model.root.array.push(child);
+  model.observableModel.onElementInserted(model.root, 'array', 0);
+  deepEqual(test.getChangedItems(), [model.root]);
+  test.clear();
+
+  // remove child
+  model.root.array.pop();
+  model.observableModel.onElementRemoved(model.root, 'array', 1, 'b');
+  deepEqual(test.getChangedItems(), [model.root]);
+  test.clear();
+
+  child.prop1 = 'baz';
+  model.observableModel.onValueChanged(child, 'prop1', 'baz');
+  deepEqual(test.getChangedItems(), [child]);
+
+  // multiple changed items
+  model.root.prop1 = 'baz';
+  model.observableModel.onValueChanged(model.root, 'prop1', 'baz');
+  const items = test.getChangedItems();
+  deepEqual(items.length, 2);
+  ok(items.includes(model.root));
+  ok(items.includes(child));
+});
+
 })();
 

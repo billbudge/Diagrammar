@@ -1465,6 +1465,54 @@ const openingModel = (function () {
 
 //------------------------------------------------------------------------------
 
+// A model for tracking which items have been changed.
+const changeModel = (function () {
+  const proto = {
+    getChangedItems: function() {
+      return Array.from(this.changedItems);
+    },
+    clear: function() {
+      this.changedItems.clear();
+    },
+
+    onChanged_: function (change) {
+      const dataModel = this.model.dataModel,
+            item = change.item;
+      switch (change.type) {
+        case 'change':
+        case 'insert':
+        case 'remove':
+          this.changedItems.add(item);
+          break;
+      }
+    },
+  }
+
+  function extend(model) {
+    if (model.changeModel)
+      return model.changeModel;
+
+    dataModel.extend(model);
+    observableModel.extend(model);
+
+    const instance = Object.create(proto);
+    instance.model = model;
+    instance.changedItems = new Set();
+    model.observableModel.addHandler('changed', function (change) {
+      instance.onChanged_(change);
+    });
+
+    model.changeModel = instance;
+    return instance;
+  }
+
+  return {
+    extend: extend,
+  };
+})();
+
+//------------------------------------------------------------------------------
+
 // const myModel = (function () {
 //   const proto = {
 //     foo: function (item) {
@@ -1514,5 +1562,6 @@ const openingModel = (function () {
     translatableModel: translatableModel,
     transformableModel: transformableModel,
     openingModel: openingModel,
+    changeModel: changeModel,
   }
 })();
