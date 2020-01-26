@@ -1020,7 +1020,7 @@ const editingModel = (function() {
       model.transactionModel.beginTransaction('build');
       let items = model.selectionModel.contents().filter(isElementOrGroup),
           parent = items.length == 1 ?
-              null : model.hierarchicalModel.getLowestCommonAncestor(items),
+              null : model.hierarchicalModel.getLowestCommonAncestor(...items),
           group = this.build(items);
       model.dataModel.initialize(group);
       this.addItem(group, parent);
@@ -1085,7 +1085,7 @@ const editingModel = (function() {
           return;
         }
         // Make sure wires belong to lowest common container (circuit or group).
-        const lca = hierarchicalModel.getLowestCommonAncestor([src, dst]);
+        const lca = hierarchicalModel.getLowestCommonAncestor(src, dst);
         if (self.getParent(wire) !== lca) {
           self.deleteItem(wire);
           self.addItem(wire, lca);

@@ -1037,20 +1037,34 @@ const hierarchicalModel = (function () {
       return lineage;
     },
 
-    getLowestCommonAncestor: function(items) {
+    getLowestCommonAncestor: function() {
       // LCA is associative, so perform the search pair-wise.
-      let lca = items[0];
-      for (let i = 1; i < items.length; i++) {
-        const lineage1 = this.getLineage(lca),
-              lineage2 = this.getLineage(items[i]);
-        let i1 = lineage1.length - 1, i2 = lineage2.length - 1;
-        while (i1 >= 0 && i2 >= 0 && lineage1[i1] == lineage2[i2]) {
-          lca = lineage1[i1];
-          i1--;
-          i2--;
-        }
+      function lca(a, b) {
+        let next_a = this.getParent(a);
+        if (next_a === b) return b;
+        let next_b = this.getParent(b);
+        if (next_b == a) return a;
+        return lca(next_a, next_b);
       }
-      return lca;
+      const items = arguments;
+      let result = arguments[0];
+      for (let i = 1; i < items.length; i++) {
+        let a = result, b = arguments[i];
+        while (a !== b) {
+          const next_a = this.getParent(a),
+                next_b = this.getParent(b);
+          if (next_a === b) {
+            a = next_a;
+          } else if (next_b === a) {
+            b = next_b
+          } else {
+            a = next_a;
+            b = next_b;
+          }
+        }
+        result = a;
+      }
+      return result;
     },
 
     init: function (item, parent) {
