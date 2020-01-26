@@ -1178,8 +1178,21 @@ const _x = Symbol('x'),
       _p2 = Symbol('p2'),
       _bezier = Symbol('bezier');
 
+const spacing = 6;
+const shrink = 0.7, inv_shrink = 1 / shrink;
+const minMasterWidth = 8;
+const minMasterHeight = 8;
+
+const knobbyRadius = 4;
+const padding = 8;
+
 const viewModel = (function() {
   const proto = {
+    initialize: function(ctx, theme) {
+      this.ctx = ctx;
+      this.theme = theme || diagrams.theme.create();
+    },
+
     getItemRect: function (item) {
       if (isWire(item))
         return;
@@ -1254,6 +1267,92 @@ const viewModel = (function() {
       }
       this.setItemBounds(group, width, height);
     },
+
+    // Compute sizes for an element master.
+    layoutMaster: function(master) {
+      let model = this.model,
+          ctx = this.ctx, theme = this.theme,
+          textSize = theme.fontSize, name = master.name,
+          inputs = master.inputs, outputs = master.outputs,
+          height = 0, width = 0;
+      if (name) {
+        width = spacing + ctx.measureText(name).width;
+        height += textSize + spacing / 2;
+      } else {
+        height += spacing / 2;
+      }
+      let yIn = height, wIn = 0;
+      for (let i = 0; i < inputs.length; i++) {
+        let pin = inputs[i];
+        this.layoutPin(pin);
+        pin[_y] = yIn + spacing / 2;
+        let name = pin.name, w = pin[_width], h = pin[_height] + spacing / 2;
+        if (name) {
+          let offset = Math.abs(h - textSize) / 2;
+          pin[_baseline] = yIn + textSize;
+          if (textSize > h) {
+            pin[_y] += offset;
+            h = textSize;
+          } else {
+            pin[_baseline] += offset;
+          }
+          w += spacing + ctx.measureText(name).width;
+        }
+        yIn += h;
+        wIn = Math.max(wIn, w);
+      }
+      let yOut = height, wOut = 0;
+      for (let i = 0; i < outputs.length; i++) {
+        let pin = outputs[i];
+        this.layoutPin(pin);
+        pin[_y] = yOut + spacing / 2;
+        let name = pin.name, w = pin[_width], h = pin[_height] + spacing / 2;
+        if (name) {
+          let offset = Math.abs(h - textSize) / 2;
+          pin[_baseline] = yOut + textSize;
+          if (textSize > h) {
+            pin[_y] += offset;
+            h = textSize;
+          } else {
+            pin[_baseline] += offset;
+          }
+          w += spacing + ctx.measureText(name).width;
+        }
+        yOut += h;
+        wOut = Math.max(wOut, w);
+      }
+
+      this.setItemBounds(
+        master,
+        Math.round(Math.max(width, wIn + 2 * spacing + wOut, minMasterWidth)),
+        Math.round(Math.max(yIn, yOut, minMasterHeight) + spacing / 2));
+      return master;
+    },
+
+    layoutPin: function(pin) {
+      if (pin.type == 'v' || pin.type == '*') {
+        pin[_width] = pin[_height] = 2 * knobbyRadius;
+      } else {
+        let master = getMaster(pin);
+        this.layoutMaster(master);
+        pin[_width] = master[_width] * shrink;
+        pin[_height] = master[_height] * shrink;
+      }
+    },
+
+    layoutWire: function(wire) {
+      let referencingModel = this.model.referencingModel,
+          src = referencingModel.getReference(wire, 'srcId'),
+          dst = referencingModel.getReference(wire, 'dstId'),
+          p1 = wire[_p1], p2 = wire[_p2];
+      if (src) {
+        p1 = this.pinToPoint(src, wire.srcPin, false);
+      }
+      if (dst) {
+        p2 = this.pinToPoint(dst, wire.dstPin, true);
+      }
+      wire[_bezier] = diagrams.getEdgeBezier(p1, p2);
+    },
   }
 
   function extend(model) {
@@ -1277,101 +1376,30 @@ const normalMode = 1,
     highlightMode = 2,
     hotTrackMode = 3;
 
-function Renderer(theme) {
+function Renderer(ctx, theme) {
+  this.ctx = ctx;
   this.theme = theme || diagrams.theme.create();
-
-  this.knobbyRadius = 4;
-  this.padding = 8;
 }
 
-Renderer.prototype.beginDraw = function(model, ctx) {
+Renderer.prototype.begin = function(model) {
   this.model = model;
-  this.viewModel = model.viewModel || viewModel.extend(model);
-  this.ctx = ctx;
+  this.viewModel = model.viewModel;
   ctx.save();
   ctx.font = this.theme.font;
 }
 
-Renderer.prototype.endDraw = function() {
+Renderer.prototype.end = function() {
   this.ctx.restore();
   this.model = null;
-  this.ctx = null;
 }
-
-const spacing = 6;
-const shrink = 0.7, inv_shrink = 1 / shrink;
-const minMasterWidth = 8;
-const minMasterHeight = 8;
 
 // Compute sizes for an element master.
 Renderer.prototype.layoutMaster = function(master) {
-  let ctx = this.ctx, theme = this.theme,
-      textSize = theme.fontSize, name = master.name,
-      inputs = master.inputs, outputs = master.outputs,
-      height = 0, width = 0;
-  if (name) {
-    width = spacing + ctx.measureText(name).width;
-    height += textSize + spacing / 2;
-  } else {
-    height += spacing / 2;
-  }
-  let yIn = height, wIn = 0;
-  for (let i = 0; i < inputs.length; i++) {
-    let pin = inputs[i];
-    this.layoutPin(pin);
-    pin[_y] = yIn + spacing / 2;
-    let name = pin.name, w = pin[_width], h = pin[_height] + spacing / 2;
-    if (name) {
-      let offset = Math.abs(h - textSize) / 2;
-      pin[_baseline] = yIn + textSize;
-      if (textSize > h) {
-        pin[_y] += offset;
-        h = textSize;
-      } else {
-        pin[_baseline] += offset;
-      }
-      w += spacing + ctx.measureText(name).width;
-    }
-    yIn += h;
-    wIn = Math.max(wIn, w);
-  }
-  let yOut = height, wOut = 0;
-  for (let i = 0; i < outputs.length; i++) {
-    let pin = outputs[i];
-    this.layoutPin(pin);
-    pin[_y] = yOut + spacing / 2;
-    let name = pin.name, w = pin[_width], h = pin[_height] + spacing / 2;
-    if (name) {
-      let offset = Math.abs(h - textSize) / 2;
-      pin[_baseline] = yOut + textSize;
-      if (textSize > h) {
-        pin[_y] += offset;
-        h = textSize;
-      } else {
-        pin[_baseline] += offset;
-      }
-      w += spacing + ctx.measureText(name).width;
-    }
-    yOut += h;
-    wOut = Math.max(wOut, w);
-  }
-
-  this.viewModel.setItemBounds(
-    master,
-    Math.round(Math.max(width, wIn + 2 * spacing + wOut, minMasterWidth)),
-    Math.round(Math.max(yIn, yOut, minMasterHeight) + spacing / 2));
-  return master;
+  return this.model.viewModel.layoutMaster(master);
 }
 
 Renderer.prototype.layoutPin = function(pin) {
-  if (pin.type == 'v' || pin.type == '*') {
-    pin[_width] = pin[_height] = 2 * this.knobbyRadius;
-  } else {
-    let master = getMaster(pin);
-    this.layoutMaster(master);
-    pin[_width] = master[_width] * shrink;
-    pin[_height] = master[_height] * shrink;
-  }
+  this.model.viewModel.layoutPin(pin);
 }
 
 Renderer.prototype.drawMaster = function(master, x, y) {
@@ -1409,7 +1437,7 @@ Renderer.prototype.drawMaster = function(master, x, y) {
 Renderer.prototype.drawPin = function(pin, x, y) {
   ctx.strokeStyle = theme.strokeColor;
   if (pin.type == 'v' || pin.type == '*') {
-    let r = this.knobbyRadius;
+    let r = knobbyRadius;
     ctx.beginPath();
     if (pin.type == 'v') {
       let d = 2 * r;
@@ -1599,27 +1627,13 @@ Renderer.prototype.hitTestGroup = function(group, p, tol, mode) {
           y: newElementRect.y,
           master: group.master,
           [_master]: master,
+          groupId: this.model.dataModel.getId(group),
           state: 'palette',
         };
       }
     }
   }
   return hitInfo;
-}
-
-Renderer.prototype.layoutWire = function(wire) {
-  let viewModel = this.viewModel,
-      referencingModel = this.model.referencingModel,
-      src = referencingModel.getReference(wire, 'srcId'),
-      dst = referencingModel.getReference(wire, 'dstId'),
-      p1 = wire[_p1], p2 = wire[_p2];
-  if (src) {
-    p1 = viewModel.pinToPoint(src, wire.srcPin, false);
-  }
-  if (dst) {
-    p2 = viewModel.pinToPoint(dst, wire.dstPin, true);
-  }
-  wire[_bezier] = diagrams.getEdgeBezier(p1, p2);
 }
 
 Renderer.prototype.drawWire = function(wire, mode) {
@@ -1648,7 +1662,7 @@ Renderer.prototype.hitTestWire = function(wire, p, tol, mode) {
 
 Renderer.prototype.layout = function(item) {
   if (isWire(item)) {
-    this.layoutWire(item);
+    this.viewModel.layoutWire(item);
   }
 }
 
@@ -1807,28 +1821,34 @@ function Editor(model, textInputController) {
 
   editingModel.extend(model);
 
-  let masters = signatureModel.extend(model);
-  masters.addHandler('masterInserted', function(type, master) {
+  let signatures = signatureModel.extend(model);
+  signatures.addHandler('masterInserted', function(type, master) {
     let ctx = self.ctx,
         renderer = self.renderer,
         model = self.model;
-    renderer.beginDraw(model, ctx);
+    renderer.begin(model, ctx);
     renderer.layoutMaster(master);
-    renderer.endDraw();
+    renderer.end();
   });
 
   viewModel.extend(model);
 }
 
 Editor.prototype.initialize = function(canvasController) {
+  const canvas = canvasController.canvas,
+        ctx = canvasController.ctx,
+        theme = canvasController.theme;
   this.canvasController = canvasController;
-  this.canvas = canvasController.canvas;
-  this.ctx = canvasController.ctx;
-  this.renderer = new Renderer(canvasController.theme);
+  this.canvas = canvas;
+  this.ctx = ctx;
+  this.renderer = new Renderer(ctx, theme);
 
   let model = this.model,
       viewModel = model.viewModel,
       renderer = this.renderer;
+
+  viewModel.initialize(ctx, theme);
+
   model.dataModel.initialize();
 
   // Create an instance of every junction and literal.
@@ -1866,18 +1886,17 @@ Editor.prototype.initialize = function(canvasController) {
 
 Editor.prototype.layoutItem = function(item) {
   const renderer = this.renderer,
-        model = this.model,
-        ctx = this.ctx;
-  renderer.beginDraw(model, ctx);
+        model = this.model;
+  renderer.begin(model);
   renderer.layout(item);
-  renderer.endDraw();
+  renderer.end();
 }
 
 Editor.prototype.draw = function() {
   let renderer = this.renderer, diagram = this.diagram,
       model = this.model, ctx = this.ctx,
       canvasController = this.canvasController;
-  renderer.beginDraw(model, ctx);
+  renderer.begin(model);
   canvasController.applyTransform();
 
   // Draw registration frame for generating screen shots.
@@ -1911,14 +1930,11 @@ Editor.prototype.draw = function() {
     }
   }
 
-  renderer.endDraw();
-
   let hoverHitInfo = this.hoverHitInfo;
   if (hoverHitInfo) {
-    renderer.beginDraw(model, ctx);
     renderer.drawHoverInfo(hoverHitInfo.item, hoverHitInfo.p);
-    renderer.endDraw();
   }
+  renderer.end();
 }
 
 Editor.prototype.hitTest = function(p) {
@@ -1936,6 +1952,7 @@ Editor.prototype.hitTest = function(p) {
     if (info)
       hitList.push(info);
   }
+  renderer.begin(model)
   model.selectionModel.forEach(function(item) {
     item => pushHit(renderer.hitTest(item, cp, cTol, normalMode));
   });
@@ -1943,6 +1960,7 @@ Editor.prototype.hitTest = function(p) {
     item => pushHit(renderer.hitTest(item, cp, cTol, normalMode)), isWire);
   reverseVisitItems(diagram.items,
     item => pushHit(renderer.hitTest(item, cp, cTol, normalMode)), isElementOrGroup);
+  renderer.end();
   return hitList;
 }
 
@@ -1982,7 +2000,7 @@ function isContainerTargetOrElementSlot(hitInfo, model) {
     return true;
   // TODO drop element on function inputs.
   let item = hitInfo.item;
-  return isElement(item) && !isPaletted(item) && !isJunction(item) &&
+  return isElement(item) && !isPaletted(item) &&
          !model.hierarchicalModel.isItemInSelection(item);
 }
 
@@ -2123,7 +2141,6 @@ Editor.prototype.onBeginDrag = function(p0) {
       if (mouseHitInfo.moveCopy) {
         let model = this.model,
             renderer = this.renderer,
-            ctx = this.ctx,
             map = new Map(),
             copies = editingModel.copyItems(selectionModel.contents(), map);
         if (drag.isSingleElement && mouseHitInfo.newElementOrigin) {
@@ -2135,6 +2152,9 @@ Editor.prototype.onBeginDrag = function(p0) {
         visitItems(copies, function(item) {
           self.layoutItem(item);
         }, isWire);
+        visitItems(copies, function(item) {
+          self.layoutItem(item);
+        }, isGroup);
       }
     }
   }
