@@ -1189,7 +1189,10 @@ const padding = 8;
 const viewModel = (function() {
   const proto = {
     initialize: function(ctx, theme) {
-      this.ctx = ctx;
+      this.ctx = ctx ||
+        {
+          measureText: () => { return { width: 10, height: 10 }},
+        };
       this.theme = theme || diagrams.theme.create();
     },
 
@@ -1342,24 +1345,101 @@ const viewModel = (function() {
 
     layoutWire: function(wire) {
       let referencingModel = this.model.referencingModel,
-          src = referencingModel.getReference(wire, 'srcId'),
-          dst = referencingModel.getReference(wire, 'dstId'),
-          p1 = wire[_p1], p2 = wire[_p2];
+          src = this.getWireSrc(wire),
+          dst = this.getWireDst(wire),
+          p1 = wire[_p1] || { x: 0, y: 0},  // TODO fix tests so layout works
+          p2 = wire[_p2] || { x: 0, y: 0};
       if (src) {
         p1 = this.pinToPoint(src, wire.srcPin, false);
       }
       if (dst) {
-        p2 = this.pinToPoint(dst, wire.dstPin, true);
+        p2 = this.pinToPoint(dst, wire.dstPin, true) || origin;
       }
       wire[_bezier] = diagrams.getEdgeBezier(p1, p2);
+    },
+
+    init_: function (item) {
+      const self = this;
+      function addRef(element, wire) {
+        if (!element)
+          return;
+
+        let refs;
+        if (!self.wiredElements_.has(element)) {
+          refs = new Array();
+          self.wiredElements_.set(element, refs);
+        } else {
+          refs = self.wiredElements_.get(element);
+        }
+        if (!refs.includes(wire)) {
+          refs.push(wire);
+        }
+      }
+      if (isWire(item)) {
+        const src = this.getWireSrc(item),
+              dst = this.getWireDst(item);
+        addRef(src, item);
+        addRef(dst, item);
+        this.layoutWire(item);
+      } else if (isElement(item)) {
+          const wires = this.wiredElements_.get(item);
+          if (wires && wires.length) {
+            wires.forEach(function(wire) {
+              self.layoutWire(wire);
+            });
+          }
+      } else if (isGroup(item)) {
+        item.items.forEach(function(child) {
+          self.init_(child);
+        });
+      }
+    },
+
+    onChanged_: function (change) {
+      const self = this,
+            item = change.item,
+            attr = change.attr;
+      switch (change.type) {
+        case 'change': {
+          if (isWire(item)) {
+            this.init_(item);
+          } else if (isElementOrGroup(item)) {
+            this.init_(item);
+          }
+          break;
+        }
+        case 'insert': {
+          const newValue = item[attr][change.index];
+          this.init_(newValue);
+          break;
+        }
+        case 'remove': {
+          const oldValue = change.oldValue;
+          if (isElement(oldValue))
+            this.wiredElements_.delete(oldValue);
+          break;
+        }
+      }
     },
   }
 
   function extend(model) {
     dataModels.translatableModel.extend(model);
+    dataModels.referencingModel.extend(model);
+    dataModels.hierarchicalModel.extend(model);
 
     let instance = Object.create(proto);
     instance.model = model;
+
+    model.observableModel.addHandler('changed', function (change) {
+      instance.onChanged_(change);
+    });
+
+    instance.wiredElements_ = new Map();
+    instance.init_(model.dataModel.getRoot());
+
+    instance.getWireSrc = model.referencingModel.getReferenceFn('srcId');
+    instance.getWireDst = model.referencingModel.getReferenceFn('dstId');
 
     model.viewModel = instance;
     return instance;
@@ -1393,13 +1473,9 @@ Renderer.prototype.end = function() {
   this.model = null;
 }
 
-// Compute sizes for an element master.
+// TODO eliminate explicit layout.
 Renderer.prototype.layoutMaster = function(master) {
   return this.model.viewModel.layoutMaster(master);
-}
-
-Renderer.prototype.layoutPin = function(pin) {
-  this.model.viewModel.layoutPin(pin);
 }
 
 Renderer.prototype.drawMaster = function(master, x, y) {
@@ -1660,12 +1736,6 @@ Renderer.prototype.hitTestWire = function(wire, p, tol, mode) {
   return diagrams.hitTestBezier(wire[_bezier], p, tol);
 }
 
-Renderer.prototype.layout = function(item) {
-  if (isWire(item)) {
-    this.viewModel.layoutWire(item);
-  }
-}
-
 Renderer.prototype.draw = function(item, mode) {
   switch (item.type) {
     case 'element':
@@ -1884,14 +1954,6 @@ Editor.prototype.initialize = function(canvasController) {
   });
 }
 
-Editor.prototype.layoutItem = function(item) {
-  const renderer = this.renderer,
-        model = this.model;
-  renderer.begin(model);
-  renderer.layout(item);
-  renderer.end();
-}
-
 Editor.prototype.draw = function() {
   let renderer = this.renderer, diagram = this.diagram,
       model = this.model, ctx = this.ctx,
@@ -1910,7 +1972,6 @@ Editor.prototype.draw = function() {
     }, isElementOrGroup);
   visitItems(diagram.items,
     function(wire) {
-      renderer.layout(wire),
       renderer.draw(wire, normalMode);
     }, isWire);
 
@@ -2134,7 +2195,6 @@ Editor.prototype.onBeginDrag = function(p0) {
       drag.item = newWire;
       model.dataModel.initialize(newWire);
       editingModel.addItem(newWire);
-      self.layoutItem(newWire);
       selectionModel.set(newWire);
     } else {
       drag.item = dragItem;
@@ -2148,13 +2208,6 @@ Editor.prototype.onBeginDrag = function(p0) {
         }
         editingModel.addItems(copies);
         selectionModel.set(copies);
-        // TODO layout groups here
-        visitItems(copies, function(item) {
-          self.layoutItem(item);
-        }, isWire);
-        visitItems(copies, function(item) {
-          self.layoutItem(item);
-        }, isGroup);
       }
     }
   }
@@ -2202,6 +2255,8 @@ Editor.prototype.onDrag = function(p0, p) {
       if (srcId) {
         observableModel.changeValue(dragItem, 'srcPin', hitInfo.output);
       } else {
+        // TODO remove dummy property change.
+        observableModel.changeValue(dragItem, 'p1', cp);
         dragItem[_p1] = cp;
       }
       break;
@@ -2212,6 +2267,8 @@ Editor.prototype.onDrag = function(p0, p) {
       if (dstId) {
         observableModel.changeValue(dragItem, 'dstPin', hitInfo.input);
       } else {
+        // TODO remove dummy property change.
+        observableModel.changeValue(dragItem, 'p2', cp);
         dragItem[_p2] = cp;
       }
       break;

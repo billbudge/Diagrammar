@@ -1067,7 +1067,7 @@ const hierarchicalModel = (function () {
       return result;
     },
 
-    init: function (item, parent) {
+    init_: function (item, parent) {
       const self = this;
       this.setParent(item, parent);
       this.visitDescendants(item, function (child, parent) {
@@ -1083,13 +1083,13 @@ const hierarchicalModel = (function () {
         case 'change': {
           const newValue = item[attr];
           if (dataModel.isItem(newValue))
-            this.init(newValue, item);
+            this.init_(newValue, item);
           break;
         }
         case 'insert': {
           const newValue = item[attr][change.index];
           if (dataModel.isItem(newValue))
-            this.init(newValue, item);
+            this.init_(newValue, item);
           break;
         }
         case 'remove': {
@@ -1114,14 +1114,12 @@ const hierarchicalModel = (function () {
     const instance = Object.create(proto);
     instance.model = model;
 
-    if (model.observableModel) {
-      // Create wrappers here to capture 'instance'.
-      model.observableModel.addHandler('changed', function (change) {
-        instance.onChanged_(change);
-      });
-    }
+    // Create wrappers here to capture 'instance'.
+    model.observableModel.addHandler('changed', function (change) {
+      instance.onChanged_(change);
+    });
 
-    instance.init(model.dataModel.getRoot(), null);
+    instance.init_(model.dataModel.getRoot(), null);
 
     model.hierarchicalModel = instance;
     return instance;
@@ -1182,8 +1180,8 @@ const translatableModel = (function () {
         return;
 
       const hierarchicalModel = this.model.hierarchicalModel,
-            parent = hierarchicalModel.getParent(item),
             x = this.getX(item), y = this.getY(item);
+      let parent = hierarchicalModel.getParent(item);
       while (parent && !this.hasTranslation(parent))
         parent = hierarchicalModel.getParent(parent);
 
