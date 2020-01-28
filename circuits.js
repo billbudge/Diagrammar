@@ -852,7 +852,7 @@ const editingModel = (function() {
       }
       function addItems(items) {
         items.forEach(function(item) {
-          if (!isElementOrGroup(item))
+          if (!isElement(item))
             return;
           if (isInput(item)) {
             const y = viewModel.pinToPoint(item, 0, false).y;
@@ -1114,14 +1114,6 @@ const editingModel = (function() {
         }
       });
     },
-
-    layoutGroups: function () {
-      let viewModel = this.model.viewModel;
-      // visit groups in pre-order to handle nested groups correctly.
-      reverseVisitItems(this.diagram.items, function(group) {
-        viewModel.updateGroupBounds(group);
-      }, isGroup);
-    }
   }
 
   function extend(model) {
@@ -1149,14 +1141,7 @@ const editingModel = (function() {
     model.transactionModel.addHandler('transactionEnding', function (transaction) {
       // ignore transaction argument.
       instance.makeConsistent();
-      instance.layoutGroups();
     });
-    function layout(transaction) {
-      // ignore transaction argument.
-      instance.layoutGroups();
-    }
-    model.transactionModel.addHandler('didUndo', layout);
-    model.transactionModel.addHandler('didRedo', layout);
 
     model.editingModel = instance;
     return instance;
@@ -1255,7 +1240,7 @@ const viewModel = (function() {
     },
 
     // Make sure a group is big enough to enclose its contents.
-    updateGroupBounds: function(group) {
+    layoutGroup: function(group) {
       const extents = this.getItemRects(group.items),
             translatableModel = this.model.translatableModel,
             groupX = translatableModel.globalX(group),
@@ -1395,6 +1380,13 @@ const viewModel = (function() {
       }
     },
 
+    updateGroup_: function(item) {
+      while (item && isGroup(item)) {
+        this.layoutGroup(item);
+        item = this.model.hierarchicalModel.getParent(item);
+      }
+    },
+
     onChanged_: function (change) {
       const self = this,
             item = change.item,
@@ -1411,6 +1403,9 @@ const viewModel = (function() {
         case 'insert': {
           const newValue = item[attr][change.index];
           this.init_(newValue);
+          if (isGroup(newValue)) {
+            this.updateGroup_(newValue);
+          }
           break;
         }
         case 'remove': {
@@ -1419,6 +1414,9 @@ const viewModel = (function() {
             this.wiredElements_.delete(oldValue);
           break;
         }
+      }
+      if (isGroup(item)) {
+        this.updateGroup_(item);
       }
     },
   }
