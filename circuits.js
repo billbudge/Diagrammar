@@ -1425,14 +1425,16 @@ const viewModel = (function() {
 
   function extend(model) {
     dataModels.translatableModel.extend(model);
-    dataModels.referencingModel.extend(model);
-    dataModels.hierarchicalModel.extend(model);
 
     let instance = Object.create(proto);
     instance.model = model;
 
     model.observableModel.addHandler('changed', function (change) {
       instance.onChanged_(change);
+    });
+
+    model.signatureModel.addHandler('masterInserted', function(type, master) {
+      instance.layoutMaster(master);
     });
 
     instance.wiredElements_ = new Map();
@@ -1471,11 +1473,6 @@ Renderer.prototype.begin = function(model) {
 Renderer.prototype.end = function() {
   this.ctx.restore();
   this.model = null;
-}
-
-// TODO eliminate explicit layout.
-Renderer.prototype.layoutMaster = function(master) {
-  return this.model.viewModel.layoutMaster(master);
 }
 
 Renderer.prototype.drawMaster = function(master, x, y) {
@@ -1890,17 +1887,7 @@ function Editor(model, textInputController) {
   this.primitives = primitives;
 
   editingModel.extend(model);
-
-  let signatures = signatureModel.extend(model);
-  signatures.addHandler('masterInserted', function(type, master) {
-    let ctx = self.ctx,
-        renderer = self.renderer,
-        model = self.model;
-    renderer.begin(model, ctx);
-    renderer.layoutMaster(master);
-    renderer.end();
-  });
-
+  signatureModel.extend(model);
   viewModel.extend(model);
 }
 
