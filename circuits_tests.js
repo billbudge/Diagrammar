@@ -108,6 +108,7 @@ function newTestEditingModel() {
   let test = circuits.editingModel.extend(circuit),
       dataModel = test.model.dataModel;
   circuit.dataModel.initialize();
+  circuit.viewModel.initialize();
   return test;
 }
 
@@ -329,8 +330,6 @@ test("circuits.editingModel.changeType", function() {
   dataModel.initialize(output);
   deepEqual(test.changeType(output, '*'), '[*(f),]');
   deepEqual(test.changeType(output, 'v'), '[v(f),]');
-
-  // TODO 'apply' junctions.
 });
 
 test("circuits.editingModel.completeGroup", function() {

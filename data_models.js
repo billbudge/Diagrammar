@@ -362,6 +362,7 @@ const transactionModel = (function () {
       for (let i = length - 1; i >= 0; i--) {
         ops[i].undo();
       }
+      // TODO consider raising transaction ended event instead.
       this.onEvent('didUndo', function(handler) {
         handler(transaction);
       });
@@ -374,6 +375,7 @@ const transactionModel = (function () {
       for (let i = 0; i < length; i++) {
         ops[i].redo();
       }
+      // TODO consider raising transaction ended event instead.
       this.onEvent('didRedo', function(handler) {
         handler(transaction);
       });

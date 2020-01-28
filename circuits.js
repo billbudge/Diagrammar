@@ -921,27 +921,10 @@ const editingModel = (function() {
       group.master = master;
       group.x = x;
       group.y = y;
+      group.frozen = false;
 
       return group;
     },
-
-    // lower: function(items) {
-    //   const self = this,
-    //         model = this.model,
-    //         hierarchicalModel = model.hierarchicalModel,
-    //         referencingModel = model.referencingModel;
-    //   items.forEach(function(item) {
-    //     const group = self.getGroup(item);
-    //     if (!group)
-    //       return;
-    //     const lca = hierarchicalModel.getLowestCommonAncestor(item, group);
-    //     let type = item.master,
-    //         parent = self.getParent(group);
-    //     // while (group != lca) {
-
-    //     // }
-    //   });
-    // },
 
     findSrcType: function(wire, graphInfo) {
       let self = this, model = this.model, activeWires = [wire];
@@ -1029,15 +1012,14 @@ const editingModel = (function() {
     },
 
     doGroup: function() {
-      // let model = this.model;
-      // this.reduceSelection();
-      // let elements = model.selectionModel.contents().filter(isElementOrGroup);
-      // model.transactionModel.beginTransaction('group');
-      // let groupElement = this.makeGroup(elements);
-      // model.dataModel.initialize(groupElement);
-      // this.addItem(groupElement);  // add at top level.
-      // model.selectionModel.set(groupElement);
-      // model.transactionModel.endTransaction();
+      let model = this.model;
+      this.reduceSelection();
+      let groups = model.selectionModel.contents().filter(isGroup);
+      model.transactionModel.beginTransaction('group');
+      groups.forEach(function(group) {
+        model.observableModel.changeValue(group, 'frozen', true);
+      });
+      model.transactionModel.endTransaction();
     },
 
     doToggleMaster: function() {
@@ -1332,15 +1314,19 @@ const viewModel = (function() {
       let referencingModel = this.model.referencingModel,
           src = this.getWireSrc(wire),
           dst = this.getWireDst(wire),
-          p1 = wire[_p1] || { x: 0, y: 0},  // TODO fix tests so layout works
-          p2 = wire[_p2] || { x: 0, y: 0};
+          p1 = wire[_p1],
+          p2 = wire[_p2];
       if (src) {
         p1 = this.pinToPoint(src, wire.srcPin, false);
       }
       if (dst) {
         p2 = this.pinToPoint(dst, wire.dstPin, true) || origin;
       }
-      wire[_bezier] = diagrams.getEdgeBezier(p1, p2);
+      // Since we intercept change events and not transactions, wires may be in
+      // an inconsistent state, so check before creating the path.
+      if (p1 && p2) {
+        wire[_bezier] = diagrams.getEdgeBezier(p1, p2);
+      }
     },
 
     init_: function (item) {
@@ -1380,11 +1366,22 @@ const viewModel = (function() {
       }
     },
 
-    updateGroup_: function(item) {
-      while (item && isGroup(item)) {
-        this.layoutGroup(item);
-        item = this.model.hierarchicalModel.getParent(item);
-      }
+    updateLayout: function() {
+      const self = this;
+      this.deletedElements.forEach(function(element) {
+        self.wiredElements_.delete(element);
+      });
+      this.deletedElements.clear();
+
+      this.changedElementsAndGroups.forEach(function(item) {
+        while (isElementOrGroup(item)) {
+          if (isGroup(item)) {
+            self.layoutGroup(item);
+          }
+          item = self.model.hierarchicalModel.getParent(item);
+        }
+      });
+      this.changedElementsAndGroups.clear();
     },
 
     onChanged_: function (change) {
@@ -1393,35 +1390,42 @@ const viewModel = (function() {
             attr = change.attr;
       switch (change.type) {
         case 'change': {
-          if (isWire(item)) {
-            this.init_(item);
-          } else if (isElementOrGroup(item)) {
-            this.init_(item);
+          this.init_(item);
+          if (isElementOrGroup(item)) {
+            this.changedElementsAndGroups.add(item);
           }
           break;
         }
         case 'insert': {
           const newValue = item[attr][change.index];
           this.init_(newValue);
-          if (isGroup(newValue)) {
-            this.updateGroup_(newValue);
+          if (isElementOrGroup(newValue)) {
+            if (isElement(newValue)) {
+              this.deletedElements.delete(newValue);
+            }
+            this.changedElementsAndGroups.add(item);
           }
           break;
         }
         case 'remove': {
           const oldValue = change.oldValue;
-          if (isElement(oldValue))
-            this.wiredElements_.delete(oldValue);
+          if (isElementOrGroup(oldValue)) {
+            if (isElement(oldValue)) {
+              this.deletedElements.add(oldValue);
+            }
+            this.changedElementsAndGroups.add(item);
+          }
           break;
         }
-      }
-      if (isGroup(item)) {
-        this.updateGroup_(item);
       }
     },
   }
 
   function extend(model) {
+    dataModels.dataModel.extend(model);
+    dataModels.observableModel.extend(model);
+    dataModels.referencingModel.extend(model);
+    dataModels.hierarchicalModel.extend(model);
     dataModels.translatableModel.extend(model);
 
     let instance = Object.create(proto);
@@ -1436,7 +1440,12 @@ const viewModel = (function() {
     });
 
     instance.wiredElements_ = new Map();
-    instance.init_(model.dataModel.getRoot());
+    instance.changedElementsAndGroups = new Set();
+    instance.deletedElements = new Set();
+    instance.deferLayout = false;
+
+    const dataModel = model.dataModel;
+    dataModel.visitSubtree(dataModel.getRoot(), item => instance.init_(item));
 
     instance.getWireSrc = model.referencingModel.getReferenceFn('srcId');
     instance.getWireDst = model.referencingModel.getReferenceFn('dstId');
@@ -1637,7 +1646,7 @@ Renderer.prototype.drawGroup = function(group, mode) {
             masterRect = this.getGroupMasterBounds(master, right, bottom);
         ctx.beginPath();
         ctx.rect(masterRect.x, masterRect.y, masterRect.w, masterRect.h);
-        ctx.fillStyle = theme.altBgColor;
+        ctx.fillStyle = group.frozen ? theme.altBgColor : theme.bgColor;
         ctx.fill();
         ctx.strokeStyle = theme.strokeColor;
         ctx.lineWidth = 0.5;
@@ -1805,7 +1814,7 @@ Renderer.prototype.drawHoverInfo = function(item, p) {
 //------------------------------------------------------------------------------
 
 function Editor(model, textInputController) {
-  let self = this;
+  const self = this;
   this.model = model;
   this.diagram = model.root;
   this.textInputController = textInputController;
@@ -1887,6 +1896,14 @@ function Editor(model, textInputController) {
   editingModel.extend(model);
   signatureModel.extend(model);
   viewModel.extend(model);
+
+  function update() {
+    self.model.viewModel.updateLayout();
+  }
+  const transactionModel = model.transactionModel;
+  transactionModel.addHandler('transactionEnded', update);
+  transactionModel.addHandler('didUndo', update);
+  transactionModel.addHandler('didRedo', update);
 }
 
 Editor.prototype.initialize = function(canvasController) {
