@@ -302,6 +302,148 @@ const signatureModel = (function() {
 
 //------------------------------------------------------------------------------
 
+const circuitModel = (function() {
+  const proto = {
+    addElementOrGroup_: function(item) {
+      visitItem(item, function(element) {
+        if (!isElement(element))
+          return;
+        const master = getMaster(element);
+        // inputMap takes element to array of incoming wires.
+        inputWires.set(element, new Array(master.inputs.length).fill(null));
+        // outputMap takes element to array of array of outgoing wires.
+        const arrays = new Array(master.outputs.length);
+        for (let i = 0; i < arrays.length; i++)
+          arrays[i] = new Array();
+        outputWires.set(element, arrays);
+      }, isElementOrGroup);
+    },
+
+    addWire_: function(item) {
+      const src = self.getWireSrc(wire),
+            dst = self.getWireDst(wire);
+      outputWires.get(src)[wire.srcPin].push(wire);
+      inputMap.get(dst)[wire.dstPin] = wire;
+    },
+
+    init_: function (item) {
+      const self = this;
+      function addRef(element, wire) {
+        if (!element)
+          return;
+
+        let refs;
+        if (!self.wiredElements_.has(element)) {
+          refs = new Array();
+          self.wiredElements_.set(element, refs);
+        } else {
+          refs = self.wiredElements_.get(element);
+        }
+        if (!refs.includes(wire)) {
+          refs.push(wire);
+        }
+      }
+      if (isWire(item)) {
+        const src = this.getWireSrc(item),
+              dst = this.getWireDst(item);
+        addRef(src, item);
+        addRef(dst, item);
+        this.layoutWire_(item);
+      } else if (isElement(item)) {
+          const wires = this.wiredElements_.get(item);
+          if (wires && wires.length) {
+            wires.forEach(function(wire) {
+              self.layoutWire_(wire);
+            });
+          }
+      } else if (isGroup(item)) {
+        item.items.forEach(function(child) {
+          self.init_(child);
+        });
+      }
+    },
+
+
+    onChanged_: function (change) {
+      const item = change.item,
+            attr = change.attr;
+      switch (change.type) {
+        case 'change': {
+          this.init_(item);
+          if (isElementOrGroup(item)) {
+            this.addTopLevelGroup_(item);
+          }
+          break;
+        }
+        case 'insert': {
+          const newValue = item[attr][change.index];
+          this.init_(newValue);
+          if (isElementOrGroup(newValue)) {
+            if (isElement(newValue)) {
+              this.deletedElements.delete(newValue);
+            } else if (isGroup(newValue)) {
+              this.layoutGroup_(newValue);
+            }
+            this.addTopLevelGroup_(item);
+          }
+          break;
+        }
+        case 'remove': {
+          const oldValue = change.oldValue;
+          if (isElementOrGroup(oldValue)) {
+            if (isElement(oldValue)) {
+              this.deletedElements.add(oldValue);
+            }
+            this.addTopLevelGroup_(item);
+          }
+          break;
+        }
+      }
+    },
+  }
+
+  function extend(model) {
+    dataModels.dataModel.extend(model);
+    dataModels.observableModel.extend(model);
+    dataModels.referencingModel.extend(model);
+    dataModels.hierarchicalModel.extend(model);
+
+    let instance = Object.create(proto);
+    instance.model = model;
+
+    model.observableModel.addHandler('changed', function (change) {
+      instance.onChanged_(change);
+    });
+
+    instance.inputWires = new Map();   // element -> input wires[]
+    instance.outputWires = new Map();  // element -> output wires[][]
+    instance.changedTopLevelGroups = new Set();
+    instance.deletedElements = new Set();
+
+    const dataModel = model.dataModel;
+    // Initialize items and layout groups.
+    dataModel.getRoot().items.forEach(function(item) {
+      instance.init_(item);
+    });
+    dataModel.getRoot().items.forEach(function(item) {
+      if (isGroup(item))
+        instance.layoutGroup_(item);
+    });
+
+    instance.getWireSrc = model.referencingModel.getReferenceFn('srcId');
+    instance.getWireDst = model.referencingModel.getReferenceFn('dstId');
+
+    model.viewModel = instance;
+    return instance;
+  }
+
+  return {
+    extend: extend,
+  }
+})();
+
+//------------------------------------------------------------------------------
+
 const editingModel = (function() {
   const proto = {
     getParent: function(item) {
@@ -1204,11 +1346,14 @@ const viewModel = (function() {
     pinToPoint: function(item, index, isInput) {
       let rect = this.getItemRect(item),
           x = rect.x, y = rect.y, w = rect.w, h = rect.h,
-          pin;
+          master = getMaster(item),
+          pin, nx;
       if (isInput) {
-        pin = getMaster(item).inputs[index];
+        pin = master.inputs[index];
+        nx = -1;
       } else {
-        pin = getMaster(item).outputs[index];
+        pin = master.outputs[index];
+        nx = 1;
         x += w;
       }
       y += pin[_y] + pin[_height] / 2;
@@ -1216,30 +1361,50 @@ const viewModel = (function() {
       return {
         x: x,
         y: y,
-        nx: isInput ? -1 : 1,
+        nx: nx,
         ny: 0,
       }
     },
 
+    updateLayout: function() {
+      const self = this;
+      this.deletedElements.forEach(function(element) {
+        self.wiredElements_.delete(element);
+      });
+      this.deletedElements.clear();
+
+      this.changedTopLevelGroups.forEach(function(group) {
+        self.layoutGroup_(group);
+      });
+      this.changedTopLevelGroups.clear();
+    },
+
     // Make sure a group is big enough to enclose its contents.
-    layoutGroup: function(group) {
-      const extents = this.getItemRects(group.items),
-            translatableModel = this.model.translatableModel,
-            groupX = translatableModel.globalX(group),
-            groupY = translatableModel.globalY(group),
-            margin = 2 * spacing,
-            master = getMaster(group);
-      let width = extents.x + extents.w - groupX + margin,
-          height = extents.y + extents.h - groupY + margin;
-      if (master) {
-        width += master[_width];
-        height = Math.max(height, master[_height] + margin);
+    layoutGroup_: function(group) {
+      const self = this;
+      function layout(group) {
+        const extents = self.getItemRects(group.items),
+              translatableModel = self.model.translatableModel,
+              groupX = translatableModel.globalX(group),
+              groupY = translatableModel.globalY(group),
+              margin = 2 * spacing,
+              master = getMaster(group);
+        let width = extents.x + extents.w - groupX + margin,
+            height = extents.y + extents.h - groupY + margin;
+        if (master) {
+          width += master[_width];
+          height = Math.max(height, master[_height] + margin);
+        }
+        self.setItemBounds(group, width, height);
       }
-      this.setItemBounds(group, width, height);
+      // visit in reverse order to correctly include sub-group bounds.
+      reverseVisitItem(group, function(group) {
+        layout(group);
+      }, isGroup);
     },
 
     // Compute sizes for an element master.
-    layoutMaster: function(master) {
+    layoutMaster_: function(master) {
       let model = this.model,
           ctx = this.ctx, theme = this.theme,
           textSize = theme.fontSize, name = master.name,
@@ -1254,7 +1419,7 @@ const viewModel = (function() {
       let yIn = height, wIn = 0;
       for (let i = 0; i < inputs.length; i++) {
         let pin = inputs[i];
-        this.layoutPin(pin);
+        this.layoutPin_(pin);
         pin[_y] = yIn + spacing / 2;
         let name = pin.name, w = pin[_width], h = pin[_height] + spacing / 2;
         if (name) {
@@ -1274,7 +1439,7 @@ const viewModel = (function() {
       let yOut = height, wOut = 0;
       for (let i = 0; i < outputs.length; i++) {
         let pin = outputs[i];
-        this.layoutPin(pin);
+        this.layoutPin_(pin);
         pin[_y] = yOut + spacing / 2;
         let name = pin.name, w = pin[_width], h = pin[_height] + spacing / 2;
         if (name) {
@@ -1299,31 +1464,31 @@ const viewModel = (function() {
       return master;
     },
 
-    layoutPin: function(pin) {
+    layoutPin_: function(pin) {
       if (pin.type == 'v' || pin.type == '*') {
         pin[_width] = pin[_height] = 2 * knobbyRadius;
       } else {
         let master = getMaster(pin);
-        this.layoutMaster(master);
+        this.layoutMaster_(master);
         pin[_width] = master[_width] * shrink;
         pin[_height] = master[_height] * shrink;
       }
     },
 
-    layoutWire: function(wire) {
+    layoutWire_: function(wire) {
       let referencingModel = this.model.referencingModel,
           src = this.getWireSrc(wire),
           dst = this.getWireDst(wire),
           p1 = wire[_p1],
           p2 = wire[_p2];
-      if (src) {
-        p1 = this.pinToPoint(src, wire.srcPin, false);
-      }
-      if (dst) {
-        p2 = this.pinToPoint(dst, wire.dstPin, true) || origin;
-      }
       // Since we intercept change events and not transactions, wires may be in
       // an inconsistent state, so check before creating the path.
+      if (src && wire.srcPin !== undefined) {
+        p1 = this.pinToPoint(src, wire.srcPin, false);
+      }
+      if (dst && wire.dstPin !== undefined) {
+        p2 = this.pinToPoint(dst, wire.dstPin, true);
+      }
       if (p1 && p2) {
         wire[_bezier] = diagrams.getEdgeBezier(p1, p2);
       }
@@ -1351,12 +1516,12 @@ const viewModel = (function() {
               dst = this.getWireDst(item);
         addRef(src, item);
         addRef(dst, item);
-        this.layoutWire(item);
+        this.layoutWire_(item);
       } else if (isElement(item)) {
           const wires = this.wiredElements_.get(item);
           if (wires && wires.length) {
             wires.forEach(function(wire) {
-              self.layoutWire(wire);
+              self.layoutWire_(wire);
             });
           }
       } else if (isGroup(item)) {
@@ -1366,33 +1531,31 @@ const viewModel = (function() {
       }
     },
 
-    updateLayout: function() {
-      const self = this;
-      this.deletedElements.forEach(function(element) {
-        self.wiredElements_.delete(element);
-      });
-      this.deletedElements.clear();
+    addTopLevelGroup_: function(item) {
+      let hierarchicalModel = this.model.hierarchicalModel,
+          ancestor = hierarchicalModel.getParent(item);
 
-      this.changedElementsAndGroups.forEach(function(item) {
-        while (isElementOrGroup(item)) {
-          if (isGroup(item)) {
-            self.layoutGroup(item);
-          }
-          item = self.model.hierarchicalModel.getParent(item);
-        }
-      });
-      this.changedElementsAndGroups.clear();
+      if (!ancestor)
+        return;
+
+      while (!isCircuit(ancestor)) {
+        item = ancestor;
+        ancestor = hierarchicalModel.getParent(ancestor);
+      }
+      if (isGroup(item)) {
+        this.changedTopLevelGroups.add(item);
+      }
     },
 
+
     onChanged_: function (change) {
-      const self = this,
-            item = change.item,
+      const item = change.item,
             attr = change.attr;
       switch (change.type) {
         case 'change': {
           this.init_(item);
           if (isElementOrGroup(item)) {
-            this.changedElementsAndGroups.add(item);
+            this.addTopLevelGroup_(item);
           }
           break;
         }
@@ -1402,8 +1565,10 @@ const viewModel = (function() {
           if (isElementOrGroup(newValue)) {
             if (isElement(newValue)) {
               this.deletedElements.delete(newValue);
+            } else if (isGroup(newValue)) {
+              this.layoutGroup_(newValue);
             }
-            this.changedElementsAndGroups.add(item);
+            this.addTopLevelGroup_(item);
           }
           break;
         }
@@ -1413,7 +1578,7 @@ const viewModel = (function() {
             if (isElement(oldValue)) {
               this.deletedElements.add(oldValue);
             }
-            this.changedElementsAndGroups.add(item);
+            this.addTopLevelGroup_(item);
           }
           break;
         }
@@ -1436,16 +1601,23 @@ const viewModel = (function() {
     });
 
     model.signatureModel.addHandler('masterInserted', function(type, master) {
-      instance.layoutMaster(master);
+      instance.layoutMaster_(master);
     });
 
     instance.wiredElements_ = new Map();
-    instance.changedElementsAndGroups = new Set();
+    instance.changedTopLevelGroups = new Set();
     instance.deletedElements = new Set();
     instance.deferLayout = false;
 
     const dataModel = model.dataModel;
-    dataModel.visitSubtree(dataModel.getRoot(), item => instance.init_(item));
+    // Initialize items and layout groups.
+    dataModel.getRoot().items.forEach(function(item) {
+      instance.init_(item);
+    });
+    dataModel.getRoot().items.forEach(function(item) {
+      if (isGroup(item))
+        instance.layoutGroup_(item);
+    });
 
     instance.getWireSrc = model.referencingModel.getReferenceFn('srcId');
     instance.getWireDst = model.referencingModel.getReferenceFn('dstId');

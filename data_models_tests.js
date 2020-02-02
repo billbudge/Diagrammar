@@ -482,6 +482,8 @@ test("changeModel", function() {
   model.root.prop1 = 'bar';
   model.observableModel.onValueChanged(model.root, 'prop1', 'foo');
   deepEqual(test.getChangedItems(), [model.root]);
+  deepEqual(test.getInsertedItems(), []);
+  deepEqual(test.getRemovedItems(), []);
   test.clear();
 
   // insert child
@@ -489,12 +491,27 @@ test("changeModel", function() {
   model.root.array.push(child);
   model.observableModel.onElementInserted(model.root, 'array', 0);
   deepEqual(test.getChangedItems(), [model.root]);
+  deepEqual(test.getInsertedItems(), [child]);
+  deepEqual(test.getRemovedItems(), []);
   test.clear();
 
   // remove child
   model.root.array.pop();
-  model.observableModel.onElementRemoved(model.root, 'array', 1, 'b');
+  model.observableModel.onElementRemoved(model.root, 'array', 1, child);
   deepEqual(test.getChangedItems(), [model.root]);
+  deepEqual(test.getInsertedItems(), []);
+  deepEqual(test.getRemovedItems(), [child]);
+  test.clear();
+
+  // remove and then re-insert an item.
+  model.root.array.push(child);
+  model.root.array.pop();
+  model.observableModel.onElementRemoved(model.root, 'array', 0, child);
+  model.root.array.push(child);
+  model.observableModel.onElementInserted(model.root, 'array', 0);
+  deepEqual(test.getChangedItems(), [model.root]);
+  deepEqual(test.getInsertedItems(), [child]);
+  deepEqual(test.getRemovedItems(), []);
   test.clear();
 
   child.prop1 = 'baz';

@@ -1479,25 +1479,50 @@ const openingModel = (function () {
 
 //------------------------------------------------------------------------------
 
-// A model for tracking which items have been changed.
+// A model for tracking which items in the data model have changed.
 const changeModel = (function () {
   const proto = {
+    // Changed items that are still in the data model.
     getChangedItems: function() {
       return Array.from(this.changedItems);
     },
+    // Inserted items that are still in the data model.
+    getInsertedItems: function() {
+      return Array.from(this.insertedItems);
+    },
+    // Items removed from the data model.
+    getRemovedItems: function() {
+      return Array.from(this.removedItems);
+    },
+
     clear: function() {
       this.changedItems.clear();
+      this.insertedItems.clear();
+      this.removedItems.clear();
     },
 
     onChanged_: function (change) {
       const dataModel = this.model.dataModel,
-            item = change.item;
+            item = change.item,
+            attr = change.attr;
+      this.changedItems.add(item);
       switch (change.type) {
-        case 'change':
-        case 'insert':
-        case 'remove':
-          this.changedItems.add(item);
+        case 'change': {
           break;
+        }
+        case 'insert': {
+          let newValue = item[attr][change.index];
+          this.insertedItems.add(newValue);
+          this.removedItems.delete(newValue);
+          break;
+        }
+        case 'remove': {
+          let oldValue = change.oldValue;
+          this.removedItems.add(oldValue);
+          this.insertedItems.delete(oldValue);
+          this.changedItems.delete(oldValue);
+          break;
+        }
       }
     },
   }
@@ -1512,6 +1537,8 @@ const changeModel = (function () {
     const instance = Object.create(proto);
     instance.model = model;
     instance.changedItems = new Set();
+    instance.insertedItems = new Set();
+    instance.removedItems = new Set();
     model.observableModel.addHandler('changed', function (change) {
       instance.onChanged_(change);
     });
