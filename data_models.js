@@ -1482,45 +1482,51 @@ const openingModel = (function () {
 // A model for tracking which items in the data model have changed.
 const changeModel = (function () {
   const proto = {
+    hasChanges: function() {
+      return this.has_changes_;
+    },
+
     // Changed items that are still in the data model.
     getChangedItems: function() {
-      return Array.from(this.changedItems);
+      return Array.from(this.changedItems_);
     },
     // Inserted items that are still in the data model.
     getInsertedItems: function() {
-      return Array.from(this.insertedItems);
+      return Array.from(this.insertedItems_);
     },
     // Items removed from the data model.
     getRemovedItems: function() {
-      return Array.from(this.removedItems);
+      return Array.from(this.removedItems_);
     },
 
     clear: function() {
-      this.changedItems.clear();
-      this.insertedItems.clear();
-      this.removedItems.clear();
+      this.changedItems_.clear();
+      this.insertedItems_.clear();
+      this.removedItems_.clear();
+      this.has_changes_ = false;
     },
 
     onChanged_: function (change) {
       const dataModel = this.model.dataModel,
             item = change.item,
             attr = change.attr;
-      this.changedItems.add(item);
+      this.changedItems_.add(item);
+      this.has_changes_ = true;
       switch (change.type) {
         case 'change': {
           break;
         }
         case 'insert': {
           let newValue = item[attr][change.index];
-          this.insertedItems.add(newValue);
-          this.removedItems.delete(newValue);
+          this.insertedItems_.add(newValue);
+          this.removedItems_.delete(newValue);
           break;
         }
         case 'remove': {
           let oldValue = change.oldValue;
-          this.removedItems.add(oldValue);
-          this.insertedItems.delete(oldValue);
-          this.changedItems.delete(oldValue);
+          this.removedItems_.add(oldValue);
+          this.insertedItems_.delete(oldValue);
+          this.changedItems_.delete(oldValue);
           break;
         }
       }
@@ -1536,9 +1542,11 @@ const changeModel = (function () {
 
     const instance = Object.create(proto);
     instance.model = model;
-    instance.changedItems = new Set();
-    instance.insertedItems = new Set();
-    instance.removedItems = new Set();
+    instance.changedItems_ = new Set();
+    instance.insertedItems_ = new Set();
+    instance.removedItems_ = new Set();
+    instance.has_changes_ = false;
+
     model.observableModel.addHandler('changed', function (change) {
       instance.onChanged_(change);
     });

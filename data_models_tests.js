@@ -477,19 +477,23 @@ test("changeModel", function() {
   };
   const test = dataModels.changeModel.extend(model);
   deepEqual(test.getChangedItems(), []);
+  ok(!test.hasChanges());
 
   // change attribute
   model.root.prop1 = 'bar';
   model.observableModel.onValueChanged(model.root, 'prop1', 'foo');
+  ok(test.hasChanges());
   deepEqual(test.getChangedItems(), [model.root]);
   deepEqual(test.getInsertedItems(), []);
   deepEqual(test.getRemovedItems(), []);
   test.clear();
+  ok(!test.hasChanges());
 
   // insert child
   const child = { prop1: 'bar' };
   model.root.array.push(child);
   model.observableModel.onElementInserted(model.root, 'array', 0);
+  ok(test.hasChanges());
   deepEqual(test.getChangedItems(), [model.root]);
   deepEqual(test.getInsertedItems(), [child]);
   deepEqual(test.getRemovedItems(), []);
@@ -498,6 +502,7 @@ test("changeModel", function() {
   // remove child
   model.root.array.pop();
   model.observableModel.onElementRemoved(model.root, 'array', 1, child);
+  ok(test.hasChanges());
   deepEqual(test.getChangedItems(), [model.root]);
   deepEqual(test.getInsertedItems(), []);
   deepEqual(test.getRemovedItems(), [child]);
@@ -509,18 +514,20 @@ test("changeModel", function() {
   model.observableModel.onElementRemoved(model.root, 'array', 0, child);
   model.root.array.push(child);
   model.observableModel.onElementInserted(model.root, 'array', 0);
+  ok(test.hasChanges());
   deepEqual(test.getChangedItems(), [model.root]);
   deepEqual(test.getInsertedItems(), [child]);
   deepEqual(test.getRemovedItems(), []);
   test.clear();
 
+  // multiple changed items
   child.prop1 = 'baz';
   model.observableModel.onValueChanged(child, 'prop1', 'baz');
+  ok(test.hasChanges());
   deepEqual(test.getChangedItems(), [child]);
-
-  // multiple changed items
   model.root.prop1 = 'baz';
   model.observableModel.onValueChanged(model.root, 'prop1', 'baz');
+  ok(test.hasChanges());
   const items = test.getChangedItems();
   deepEqual(items.length, 2);
   ok(items.includes(model.root));
