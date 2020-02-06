@@ -798,21 +798,33 @@ const editingModel = (function() {
             circuitModel = model.circuitModel,
             graphInfo = circuitModel.getSubgraphInfo(elements);
 
-      // Add junctions for disconnected pins on selected elements.
-      graphInfo.inputMap.forEach(function(elementInputs, element) {
-        elementInputs.forEach(function(connectedWire, pin) {
-          if (connectedWire)
-            return;
-          self.connectInput(element, pin);
+      // Add junctions for disconnected pins on elements.
+      elements.forEach(function(element) {
+        const inputs = graphInfo.inputMap.get(element),
+              outputs = graphInfo.outputMap.get(element);
+        inputs.forEach(function(wire, pin) {
+          if (!wire)
+            self.connectInput(element, pin);
+        });
+        outputs.forEach(function(wires, pin) {
+          if (wires.length == 0)
+            self.connectOutput(element, pin);
         });
       });
-      graphInfo.outputMap.forEach(function(elementOutputs, element) {
-        elementOutputs.forEach(function(wires, pin) {
-          if (wires.length > 0)
-            return;
-          self.connectOutput(element, pin);
-        });
-      });
+      // graphInfo.inputMap.forEach(function(elementInputs, element) {
+      //   elementInputs.forEach(function(connectedWire, pin) {
+      //     if (connectedWire)
+      //       return;
+      //     self.connectInput(element, pin);
+      //   });
+      // });
+      // graphInfo.outputMap.forEach(function(elementOutputs, element) {
+      //   elementOutputs.forEach(function(wires, pin) {
+      //     if (wires.length > 0)
+      //       return;
+      //     self.connectOutput(element, pin);
+      //   });
+      // });
     },
 
     getPinType: function(pin) {
