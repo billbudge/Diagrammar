@@ -811,20 +811,6 @@ const editingModel = (function() {
             self.connectOutput(element, pin);
         });
       });
-      // graphInfo.inputMap.forEach(function(elementInputs, element) {
-      //   elementInputs.forEach(function(connectedWire, pin) {
-      //     if (connectedWire)
-      //       return;
-      //     self.connectInput(element, pin);
-      //   });
-      // });
-      // graphInfo.outputMap.forEach(function(elementOutputs, element) {
-      //   elementOutputs.forEach(function(wires, pin) {
-      //     if (wires.length > 0)
-      //       return;
-      //     self.connectOutput(element, pin);
-      //   });
-      // });
     },
 
     getPinType: function(pin) {
@@ -1416,16 +1402,27 @@ const viewModel = (function() {
     },
 
     updateLayout: function() {
-      const self = this;
-      this.deletedElements.forEach(function(element) {
-        self.wiredElements_.delete(element);
+      const self = this,
+            graphInfo = this.model.circuitModel.getGraphInfo();
+      this.changedElements_.forEach(function(element) {
+        const outputs = graphInfo.outputMap.get(element),
+              inputs = graphInfo.inputMap.get(element);
+        function addWire(wire) {
+          if (wire)
+            self.changedWires_.add(wire);
+        }
+        if (inputs)
+          inputs.forEach(wire => addWire(wire));
+        if (outputs)
+          outputs.forEach(wires => wires.forEach(wire => addWire(wire)));
       });
-      this.deletedElements.clear();
+      this.changedElements_.clear();
 
-      this.changedTopLevelGroups.forEach(function(group) {
-        self.layoutGroup_(group);
-      });
-      this.changedTopLevelGroups.clear();
+      this.changedTopLevelGroups_.forEach(group => self.layoutGroup_(group));
+      this.changedTopLevelGroups_.clear();
+
+      this.changedWires_.forEach(wire => self.layoutWire_(wire));
+      this.changedWires_.clear();
     },
 
     // Make sure a group is big enough to enclose its contents.
@@ -1543,43 +1540,6 @@ const viewModel = (function() {
       }
     },
 
-    init_: function (item) {
-      const self = this;
-      function addRef(element, wire) {
-        if (!element)
-          return;
-
-        let refs;
-        if (!self.wiredElements_.has(element)) {
-          refs = new Array();
-          self.wiredElements_.set(element, refs);
-        } else {
-          refs = self.wiredElements_.get(element);
-        }
-        if (!refs.includes(wire)) {
-          refs.push(wire);
-        }
-      }
-      if (isWire(item)) {
-        const src = this.getWireSrc(item),
-              dst = this.getWireDst(item);
-        addRef(src, item);
-        addRef(dst, item);
-        this.layoutWire_(item);
-      } else if (isElement(item)) {
-          const wires = this.wiredElements_.get(item);
-          if (wires && wires.length) {
-            wires.forEach(function(wire) {
-              self.layoutWire_(wire);
-            });
-          }
-      } else if (isGroup(item)) {
-        item.items.forEach(function(child) {
-          self.init_(child);
-        });
-      }
-    },
-
     addTopLevelGroup_: function(item) {
       let hierarchicalModel = this.model.hierarchicalModel,
           ancestor = hierarchicalModel.getParent(item);
@@ -1592,43 +1552,36 @@ const viewModel = (function() {
         ancestor = hierarchicalModel.getParent(ancestor);
       }
       if (isGroup(item)) {
-        this.changedTopLevelGroups.add(item);
+        this.changedTopLevelGroups_.add(item);
       }
     },
 
+
+    update_: function (item) {
+      const self = this;
+      if (isWire(item)) {
+        this.changedWires_.add(item);
+      } else if (isElement(item)) {
+        this.changedElements_.add(item);
+        this.addTopLevelGroup_(item);
+      } else if (isGroup(item)) {
+        visitItems(item.items, child => self.update_(child));
+      }
+    },
 
     onChanged_: function (change) {
       const item = change.item,
             attr = change.attr;
       switch (change.type) {
-        case 'change': {
-          this.init_(item);
-          if (isElementOrGroup(item)) {
-            this.addTopLevelGroup_(item);
-          }
+        case 'change':
+        case 'remove': {
+          this.update_(item);
           break;
         }
         case 'insert': {
           const newValue = item[attr][change.index];
-          this.init_(newValue);
-          if (isElementOrGroup(newValue)) {
-            if (isElement(newValue)) {
-              this.deletedElements.delete(newValue);
-            } else if (isGroup(newValue)) {
-              this.layoutGroup_(newValue);
-            }
-            this.addTopLevelGroup_(item);
-          }
-          break;
-        }
-        case 'remove': {
-          const oldValue = change.oldValue;
-          if (isElementOrGroup(oldValue)) {
-            if (isElement(oldValue)) {
-              this.deletedElements.add(oldValue);
-            }
-            this.addTopLevelGroup_(item);
-          }
+          this.update_(item);
+          this.update_(newValue);
           break;
         }
       }
@@ -1654,14 +1607,15 @@ const viewModel = (function() {
     });
 
     instance.wiredElements_ = new Map();
-    instance.changedTopLevelGroups = new Set();
-    instance.deletedElements = new Set();
-    instance.deferLayout = false;
+    instance.changedWires_ = new Set();
+    instance.changedElements_ = new Set();
+    instance.changedTopLevelGroups_ = new Set();
 
     const dataModel = model.dataModel;
     // Initialize items and layout groups.
+    // TODO fix this...
     dataModel.getRoot().items.forEach(function(item) {
-      instance.init_(item);
+      instance.update_(item);
     });
     dataModel.getRoot().items.forEach(function(item) {
       if (isGroup(item))
@@ -1692,10 +1646,14 @@ function Renderer(ctx, theme) {
 }
 
 Renderer.prototype.begin = function(model) {
+  let viewModel = model.viewModel;
   this.model = model;
-  this.viewModel = model.viewModel;
+  this.viewModel = viewModel;
+
   ctx.save();
   ctx.font = this.theme.font;
+
+  viewModel.updateLayout();
 }
 
 Renderer.prototype.end = function() {
@@ -2117,14 +2075,6 @@ function Editor(model, textInputController) {
   editingModel.extend(model);
   signatureModel.extend(model);
   viewModel.extend(model);
-
-  function update() {
-    self.model.viewModel.updateLayout();
-  }
-  const transactionModel = model.transactionModel;
-  transactionModel.addHandler('transactionEnded', update);
-  transactionModel.addHandler('didUndo', update);
-  transactionModel.addHandler('didRedo', update);
 }
 
 Editor.prototype.initialize = function(canvasController) {
@@ -2687,6 +2637,7 @@ Editor.prototype.onKeyDown = function(e) {
 }
 
 return {
+  circuitModel: circuitModel,
   editingModel: editingModel,
   signatureModel: signatureModel,
   viewModel: viewModel,

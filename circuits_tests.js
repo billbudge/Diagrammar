@@ -103,10 +103,10 @@ function addWire(test, src, srcPin, dst, dstPin) {
 
 function newTestEditingModel() {
   let circuit = newCircuit();
-  circuits.signatureModel.extend(circuit);
-  circuits.viewModel.extend(circuit);
   let test = circuits.editingModel.extend(circuit),
       dataModel = test.model.dataModel;
+  circuits.signatureModel.extend(circuit);
+  circuits.viewModel.extend(circuit);
   circuit.dataModel.initialize();
   circuit.viewModel.initialize();
   return test;
