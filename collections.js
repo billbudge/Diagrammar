@@ -364,6 +364,38 @@ DisjointSet.prototype = {
   },
 };
 
+//------------------------------------------------------------------------------
+// EmptyArray instance.
+
+const _emptyArray = new Array();
+_emptyArray.push =
+_emptyArray.unshift =
+_emptyArray.pop =
+_emptyArray.shift =
+_emptyArray.splice = function() {}
+
+Object.freeze(_emptyArray);
+
+function EmptyArray() {
+  return _emptyArray;
+}
+
+//------------------------------------------------------------------------------
+// EmptySet instance.
+
+const _emptySet = new Set();
+_emptySet.add =
+_emptySet.delete =
+_emptySet.clear = function() {}
+
+Object.freeze(_emptySet);
+
+function EmptySet() {
+  return _emptySet;
+}
+
+//------------------------------------------------------------------------------
+
 return {
   LinkedListNode: LinkedListNode,
   LinkedList: LinkedList,
@@ -373,6 +405,8 @@ return {
 
   SelectionSet: SelectionSet,
   DisjointSet: DisjointSet,
+  EmptyArray: EmptyArray,
+  EmptySet: EmptySet,
 };
 
 })();  // diagrammar.collections

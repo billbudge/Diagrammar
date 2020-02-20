@@ -293,4 +293,20 @@ test("DisjointSet union find", function() {
   strictEqual(test.find(d), test.find(a));
 });
 
+test("EmptyArray", function() {
+  const test = diagrammar.collections.EmptyArray();
+  strictEqual(test.length, 0);
+  test.push('foo');
+  strictEqual(test.length, 0);
+  test.pop();
+  strictEqual(test.length, 0);
+});
+
+test("EmptySet", function() {
+  const test = diagrammar.collections.EmptySet();
+  strictEqual(test.size, 0);
+  test.add('foo');
+  strictEqual(test.size, 0);
+});
+
 })();

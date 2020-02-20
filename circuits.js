@@ -313,17 +313,16 @@ const signatureModel = (function() {
 const circuitModel = (function() {
 
   function iterators(self) {
-    function* inputs_(element) {
+    function forEachInput(element, fn) {
       const inputs = self.inputMap_.get(element);
       if (!inputs)
         return;
       for (let i = 0; i < inputs.length; i++) {
         if (inputs[i])
-          yield inputs[i];
+          fn(inputs[i], i);
       }
     }
-
-    function* outputs_(element) {
+    function forEachOutput(element, fn) {
       const arrays = self.outputMap_.get(element);
       if (!arrays)
         return;
@@ -331,13 +330,13 @@ const circuitModel = (function() {
         let outputs = arrays[i];
         if (outputs.length > 0) {
           for (let j = 0; j < outputs.length; j++)
-            yield outputs[j];
+            fn(outputs[j], i);
         }
       }
     }
     return {
-      inputs: inputs_,
-      outputs: outputs_,
+      forEachInput: forEachInput,
+      forEachOutput: forEachOutput,
     }
   }
 
@@ -351,8 +350,8 @@ const circuitModel = (function() {
         inputMap: this.inputMap_,
         outputMap: this.outputMap_,
         interiorWires: this.wires_,
-        incomingWires: [],
-        outgoingWires: [],
+        incomingWires: new diagrammar.collections.EmptySet(),
+        outgoingWires: new diagrammar.collections.EmptySet(),
         iterators: iterators(this),
       }
     },
@@ -360,7 +359,6 @@ const circuitModel = (function() {
     getSubgraphInfo: function(items) {
       this.update_();
 
-      // Get elements and initialize input/output maps.
       const self = this,
             elementsAndGroups = new Set(),
             wires = new Set(),
@@ -368,11 +366,12 @@ const circuitModel = (function() {
             incomingWires = new Set(),
             outgoingWires = new Set(),
             iters = iterators(this);
+      // First collect elements and groups.
       visitItems(items, function(item) {
         elementsAndGroups.add(item);
-        if (!isElement(item))
-          return;
-
+      }, isElementOrGroup);
+      // Now collect and classify wires that connect to items.
+      visitItems(items, function(item) {
         function addWire(wire) {
           wires.add(wire);
           const src = self.getWireSrc(wire),
@@ -392,20 +391,18 @@ const circuitModel = (function() {
             }
           }
         }
-        for (const wire of iters.inputs(item))
-          addWire(wire);
-        for (const wire of iters.outputs(item))
-          addWire(wire);
-      }, isElementOrGroup);
+        iters.forEachInput(item, addWire);
+        iters.forEachOutput(item, addWire);
+      }, isElement);
 
       return {
         elementsAndGroups: elementsAndGroups,
         wires: wires,
         inputMap: this.inputMap_,
         outputMap: this.outputMap_,
-        interiorWires: Array.from(interiorWires),
-        incomingWires: Array.from(incomingWires),
-        outgoingWires: Array.from(outgoingWires),
+        interiorWires: interiorWires,
+        incomingWires: incomingWires,
+        outgoingWires: outgoingWires,
         iterators: iters,
       }
     },
@@ -561,6 +558,9 @@ const circuitModel = (function() {
 
 //------------------------------------------------------------------------------
 
+const _index = Symbol('index'),
+      _passThroughs = Symbol('passThroughs');
+
 const editingModel = (function() {
   const proto = {
     getParent: function(item) {
@@ -581,21 +581,22 @@ const editingModel = (function() {
         const item = items.pop();
         if (!isElement(item))
           continue;
+
         result.add(item);
 
         if (upstream) {
-          for (const wire of graphInfo.iterators.inputs(item)) {
+          graphInfo.iterators.forEachInput(item, function(wire) {
             const src = self.getWireSrc(wire);
             if (!result.has(src))
               items.push(src);
-          }
+          });
         }
         if (downstream) {
-          for (const wire of graphInfo.iterators.outputs(item)) {
+          graphInfo.iterators.forEachOutput(item, function(wire) {
             const dst = self.getWireDst(wire);
             if (!result.has(dst))
               items.push(dst);
-          }
+          });
         }
       }
       return result;
@@ -614,11 +615,6 @@ const editingModel = (function() {
       dataModel.initialize(item);
     },
 
-    newItems: function(items) {
-      const self = this;
-      items.forEach(item => self.newItem(item));
-    },
-
     deleteItem: function(item) {
       const model = this.model,
             parent = this.getParent(item);
@@ -630,13 +626,6 @@ const editingModel = (function() {
           model.selectionModel.remove(item);
         }
       }
-    },
-
-    deleteItems: function(items) {
-      const self = this;
-      items.forEach(function(item) {
-        self.deleteItem(item);
-      });
     },
 
     doDelete: function() {
@@ -726,8 +715,6 @@ const editingModel = (function() {
             observableModel = model.observableModel,
             signatureModel = model.signatureModel,
             graphInfo = model.circuitModel.getGraphInfo(),
-            inputs = graphInfo.inputMap.get(element),
-            outputs = graphInfo.outputMap.get(element),
             master = getMaster(element),
             newId = model.dataModel.getId(newElement),
             newMaster = getMaster(newElement);
@@ -738,23 +725,19 @@ const editingModel = (function() {
               newType = signatureModel.getSignature(newPins[index].type);
         return type == '*' || type == newType;
       }
-      inputs.forEach(function(wire, pin) {
-        if (!wire)
-          return;
+      graphInfo.iterators.forEachInput(element, function(wire, pin) {
         if (canRewire(wire.dstPin, master.inputs, newMaster.inputs)) {
           observableModel.changeValue(wire, 'dstId', newId);
         } else {
           self.deleteItem(wire);
         }
       });
-      outputs.forEach(function(wires, pin) {
-        wires.forEach(function(wire) {
-          if (canRewire(wire.srcPin, master.outputs, newMaster.outputs)) {
-            observableModel.changeValue(wire, 'srcId', newId);
-          } else {
-            self.deleteItem(wire);
-          }
-        });
+      graphInfo.iterators.forEachOutput(element, function(wire, pin) {
+        if (canRewire(wire.srcPin, master.outputs, newMaster.outputs)) {
+          observableModel.changeValue(wire, 'srcId', newId);
+        } else {
+          self.deleteItem(wire);
+        }
       });
       const parent = this.getParent(newElement),
             newParent = this.getParent(element);
@@ -1011,7 +994,7 @@ const editingModel = (function() {
       });
     },
 
-    getGroupMaster: function(group, items) {
+    setGroupMasterInfo: function(group, items) {
       const self = this, model = this.model,
             dataModel = model.dataModel,
             signatureModel = model.signatureModel,
@@ -1019,8 +1002,9 @@ const editingModel = (function() {
             graphInfo = model.circuitModel.getSubgraphInfo(items),
             inputs = [], outputs = [];
 
-      function makePin(type, y) {
+      function makePin(item, type, y) {
         return {
+          item: item,
           type: type,
           y: y,
         }
@@ -1045,15 +1029,16 @@ const editingModel = (function() {
         return self.findSrcType(wire) + label;
       }
       function addItems(items) {
-        items.forEach(function(item) {
+        let inputCount = 0, outputCount = 0;
+        items.forEach(function(item, index) {
           if (!isElement(item))
             return;
           if (isInput(item)) {
             const y = viewModel.pinToPoint(item, 0, false).y;
-            inputs.push(makePin(getInputType(item), y));
+            inputs.push(makePin(item, getInputType(item), y));
           } else if (isOutput(item)) {
             const y = viewModel.pinToPoint(item, 0, true).y;
-            outputs.push(makePin(getOutputType(item), y));
+            outputs.push(makePin(item, getOutputType(item), y));
           } else if (isGroup(item)) {
             addItems(item.items);
           }
@@ -1070,10 +1055,47 @@ const editingModel = (function() {
       outputs.sort(comparePins);
 
       let master = '[';
-      inputs.forEach(pin => master += pin.type);
+      inputs.forEach(function(input, i) {
+        master += input.type;
+        input.item[_index] = i;
+      });
       master += ',';
-      outputs.forEach(pin => master += pin.type);
+      outputs.forEach(function(output, i) {
+        master += output.type;
+        output.item[_index] = i;
+      });
       master += ']';
+
+      // Compute group pass throughs.
+      const passThroughs = new Set();
+      graphInfo.interiorWires.forEach(function(wire) {
+        let src = self.getWireSrc(wire),
+            srcPin = getMaster(src).outputs[wire.srcPin];
+        // Trace wires, starting at input junctions.
+        if (!isInput(src) || srcPin.type != '*')
+          return;
+        let srcPinIndex = src[_index],
+            activeWires = [wire];
+        while (activeWires.length) {
+          wire = activeWires.pop();
+          let dst = self.getWireDst(wire),
+              dstPin = getMaster(dst).inputs[wire.dstPin];
+          if (isOutput(dst) && dstPin.type == '*') {
+            passThroughs.add([srcPinIndex, dst[_index]]);
+          } else if (dst[_passThroughs]) {
+            dst[_passThroughs].forEach(function(passThrough) {
+              if (passThrough[0] == wire.dstPin) {
+                let outgoingWires = graphInfo.outputMap.get(dst)[passThrough[1]];
+                outgoingWires.forEach(wire => activeWires.push(wire));
+              }
+            });
+          }
+        }
+      });
+      if (passThroughs.size) {
+        console.log(passThroughs);
+        group[_passThroughs] = Array.from(passThroughs);
+      }
 
       return master;
     },
@@ -1085,7 +1107,7 @@ const editingModel = (function() {
             observableModel = model.observableModel,
             viewModel = model.viewModel,
             graphInfo = model.circuitModel.getSubgraphInfo(items),
-            groupItems = items.concat(graphInfo.interiorWires),
+            groupItems = items.concat(Array.from(graphInfo.interiorWires)),
             extents = viewModel.getItemRects(graphInfo.elementsAndGroups),
             x = extents.x - spacing,
             y = extents.y - spacing;
@@ -1098,7 +1120,7 @@ const editingModel = (function() {
       };
 
       const groupId = dataModel.assignId(group),
-            master = self.getGroupMaster(group, items);
+            master = self.setGroupMasterInfo(group, items);
 
       group.items = groupItems;
       groupItems.forEach(function(item) {
@@ -1133,8 +1155,9 @@ const editingModel = (function() {
             dstPin = getMaster(dst).inputs[wire.dstPin];
         if (srcPin.type != '*')
           return srcPin.type;
-        if (src.passThroughs) {
-          src.passThroughs.forEach(function(passThrough) {
+        if (src[_passThroughs]) {
+          src[_passThroughs].forEach(function(passThrough) {
+            console.log(src, graphInfo);
             if (passThrough[1] == wire.srcPin) {
               srcPin = getMaster(src).inputs[passThrough[0]];
               let incomingWire = graphInfo.inputMap.get(src)[passThrough[0]];
@@ -1160,8 +1183,8 @@ const editingModel = (function() {
             dstPin = getMaster(dst).inputs[wire.dstPin];
         if (dstPin.type != '*')
           return dstPin.type;
-        if (dst.passThroughs) {
-          dst.passThroughs.forEach(function(passThrough) {
+        if (dst[_passThroughs]) {
+          dst[_passThroughs].forEach(function(passThrough) {
             if (passThrough[0] == wire.dstPin) {
               dstPin = getMaster(dst).outputs[passThrough[1]];
               let outgoingWires = graphInfo.outputMap.get(dst)[passThrough[1]];
@@ -1279,7 +1302,7 @@ const editingModel = (function() {
           self.deleteItem(group);
           return;
         }
-        const newSig = self.getGroupMaster(group, group.items),
+        const newSig = self.setGroupMasterInfo(group, group.items),
               oldSig = signatureModel.unlabelType(group.master);
         if (oldSig !== newSig) {
           let label = group.master.substring(oldSig.length);
@@ -1430,16 +1453,12 @@ const viewModel = (function() {
       const self = this,
             graphInfo = this.model.circuitModel.getGraphInfo();
       this.changedElements_.forEach(function(element) {
-        const outputs = graphInfo.outputMap.get(element),
-              inputs = graphInfo.inputMap.get(element);
         function addWire(wire) {
           if (wire)
             self.changedWires_.add(wire);
         }
-        for (const wire of graphInfo.iterators.inputs(element))
-          addWire(wire);
-        for (const wire of graphInfo.iterators.outputs(element))
-          addWire(wire);
+        graphInfo.iterators.forEachInput(element, addWire);
+        graphInfo.iterators.forEachOutput(element, addWire);
       });
       this.changedElements_.clear();
 
@@ -1690,7 +1709,6 @@ Renderer.prototype.end = function() {
 Renderer.prototype.drawMaster = function(master, x, y) {
   let self = this, ctx = this.ctx, theme = this.theme,
       textSize = theme.fontSize, name = master.name,
-      inputs = master.inputs, outputs = master.outputs,
       w = master[_width], h = master[_height],
       right = x + w;
   ctx.lineWidth = 0.5;
@@ -1700,7 +1718,7 @@ Renderer.prototype.drawMaster = function(master, x, y) {
     ctx.textAlign = 'center';
     ctx.fillText(name, x + w / 2, y + textSize + spacing / 2);
   }
-  inputs.forEach(function(pin, i) {
+  master.inputs.forEach(function(pin, i) {
     let name = pin.name;
     self.drawPin(pin, x, y + pin[_y]);
     if (name) {
@@ -1708,7 +1726,7 @@ Renderer.prototype.drawMaster = function(master, x, y) {
       ctx.fillText(name, x + pin[_width] + spacing, y + pin[_baseline]);
     }
   });
-  outputs.forEach(function(pin) {
+  master.outputs.forEach(function(pin) {
     let name = pin.name,
         pinLeft = right - pin[_width];
     self.drawPin(pin, pinLeft, y + pin[_y]);
