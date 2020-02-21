@@ -889,6 +889,8 @@ const instancingModel = (function () {
 })();
 
 //------------------------------------------------------------------------------
+// A model to add cut/copy/paste/delete behavior with a selection, instancing,
+// and transaction model.
 
 const copyPasteModel = (function () {
   const proto = {
@@ -920,10 +922,11 @@ const copyPasteModel = (function () {
       transactionModel.endTransaction();
     },
 
-    doCopy: function () {
+    doCopy: function (copyItemsFn) {
       const model = this.model,
             map = new Map(),
-            copies = this.copyItems(model.selectionModel.contents(), map);
+            copyItemsFn = copyItemsFn || this.copyItems.bind(this);
+            copies = copyItemsFn(model.selectionModel.contents(), map);
       this.setScrap(copies);
       return copies;
     },
