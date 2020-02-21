@@ -306,12 +306,12 @@ test("circuits.circuitModel.iterators", function() {
         wire4 = addWire(test, elem2, 0, output, 0);
 
   let subgraph = test.getSubgraphInfo([elem1, elem2]);
-  testIterator(subgraph.iterators.forEachInput, input, []);
-  testIterator(subgraph.iterators.forEachOutput, input, [wire2, wire3]);
-  testIterator(subgraph.iterators.forEachInput, elem1, [wire2]);
-  testIterator(subgraph.iterators.forEachOutput, elem1, [wire1]);
-  testIterator(subgraph.iterators.forEachInput, elem2, [wire1, wire3]);
-  testIterator(subgraph.iterators.forEachOutput, elem2, [wire4]);
+  testIterator(subgraph.iterators.forInputWires, input, []);
+  testIterator(subgraph.iterators.forOutputWires, input, [wire2, wire3]);
+  testIterator(subgraph.iterators.forInputWires, elem1, [wire2]);
+  testIterator(subgraph.iterators.forOutputWires, elem1, [wire1]);
+  testIterator(subgraph.iterators.forInputWires, elem2, [wire1, wire3]);
+  testIterator(subgraph.iterators.forOutputWires, elem2, [wire4]);
 });
 
 test("circuits.editingAndMastering", function() {

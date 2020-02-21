@@ -94,13 +94,14 @@ var editingModel = (function() {
 
     doDelete: function() {
       this.reduceSelection();
-      this.prototype.doDelete.call(this);
+      this.model.copyPasteModel.doDelete(this.deleteItems.bind(this));
     },
 
     copyItems: function(items, map) {
-      var model = this.model, dataModel = model.dataModel,
+      var model = this.model,
+          dataModel = model.dataModel,
           transformableModel = model.transformableModel,
-          copies = this.prototype.copyItems(items, map),
+          copies = model.copyPasteModel.copyItems(items, map),
           board = this.board;
 
       items.forEach(function(item) {
@@ -114,7 +115,7 @@ var editingModel = (function() {
 
     doCopy: function() {
       this.reduceSelection();
-      this.prototype.doCopy.call(this);
+      this.model.copyPasteModel.doCopy();
     },
 
     addItems: function(items) {
@@ -126,11 +127,11 @@ var editingModel = (function() {
     },
 
     doPaste: function() {
-      this.getScrap().forEach(function(item) {
+      this.model.copyPasteModel.getScrap().forEach(function(item) {
         item.x += 16;
         item.y += 16;
       });
-      this.prototype.doPaste.call(this);
+      this.model.copyPasteModel.doPaste(this.addItems.bind(this));
     },
 
     addItem: function(item, parent) {
@@ -172,9 +173,9 @@ var editingModel = (function() {
     dataModels.transactionModel.extend(model);
     dataModels.transactionHistory.extend(model);
     dataModels.instancingModel.extend(model);
-    dataModels.editingModel.extend(model);
+    dataModels.copyPasteModel.extend(model);
 
-    var instance = Object.create(model.editingModel);
+    var instance = Object.create(model.copyPasteModel);
     instance.prototype = Object.getPrototypeOf(instance);
     for (var prop in functions)
       instance[prop] = functions[prop];
@@ -1562,7 +1563,7 @@ Editor.prototype.onKeyDown = function(e) {
         handled = true;
         break;
       case 86:  // 'v'
-        if (editingModel.getScrap()) {
+        if (model.copyPasteModel.getScrap()) {
           editingModel.doPaste();
         }
         handled = true;

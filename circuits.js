@@ -308,12 +308,15 @@ const signatureModel = (function() {
 //------------------------------------------------------------------------------
 
 // Extends dataModels.changeModel to add:
-//   - maps from element to connected input and output wires.
+// - maps from element to connected input and output wires.
+// - information about graphs and subgraphs.
+// - iterators for walking the graph.
 
 const circuitModel = (function() {
 
   function iterators(self) {
-    function forEachInput(element, fn) {
+
+    function forInputWires(element, fn) {
       const inputs = self.inputMap_.get(element);
       if (!inputs)
         return;
@@ -322,7 +325,8 @@ const circuitModel = (function() {
           fn(inputs[i], i);
       }
     }
-    function forEachOutput(element, fn) {
+
+    function forOutputWires(element, fn) {
       const arrays = self.outputMap_.get(element);
       if (!arrays)
         return;
@@ -334,9 +338,10 @@ const circuitModel = (function() {
         }
       }
     }
+
     return {
-      forEachInput: forEachInput,
-      forEachOutput: forEachOutput,
+      forInputWires: forInputWires,
+      forOutputWires: forOutputWires,
     }
   }
 
@@ -391,8 +396,8 @@ const circuitModel = (function() {
             }
           }
         }
-        iters.forEachInput(item, addWire);
-        iters.forEachOutput(item, addWire);
+        iters.forInputWires(item, addWire);
+        iters.forOutputWires(item, addWire);
       }, isElement);
 
       return {
@@ -585,14 +590,14 @@ const editingModel = (function() {
         result.add(item);
 
         if (upstream) {
-          graphInfo.iterators.forEachInput(item, function(wire) {
+          graphInfo.iterators.forInputWires(item, function(wire) {
             const src = self.getWireSrc(wire);
             if (!result.has(src))
               items.push(src);
           });
         }
         if (downstream) {
-          graphInfo.iterators.forEachOutput(item, function(wire) {
+          graphInfo.iterators.forOutputWires(item, function(wire) {
             const dst = self.getWireDst(wire);
             if (!result.has(dst))
               items.push(dst);
@@ -615,6 +620,11 @@ const editingModel = (function() {
       dataModel.initialize(item);
     },
 
+    newItems: function(items) {
+      const self = this;
+      items.forEach(item => self.newItem(item));
+    },
+
     deleteItem: function(item) {
       const model = this.model,
             parent = this.getParent(item);
@@ -628,9 +638,16 @@ const editingModel = (function() {
       }
     },
 
+    deleteItems: function(items) {
+      const self = this;
+      items.forEach(function(item) {
+        self.deleteItem(item);
+      });
+    },
+
     doDelete: function() {
       this.reduceSelection();
-      this.prototype.doDelete.call(this);
+      this.model.copyPasteModel.doDelete(this.deleteItems.bind(this));
     },
 
     copyItems: function(items, map) {
@@ -638,7 +655,7 @@ const editingModel = (function() {
             diagram = this.diagram,
             dataModel = model.dataModel,
             translatableModel = model.translatableModel,
-            copies = this.prototype.copyItems(items, map);
+            copies = this.model.copyPasteModel.copyItems(items, map);
       items.forEach(function(item) {
         const copy = map.get(dataModel.getId(item));
         if (isElementOrGroup(copy)) {
@@ -662,7 +679,7 @@ const editingModel = (function() {
           selectionModel.remove(item);
       });
       this.selectInteriorWires();
-      this.prototype.doCopy.call(this);
+      this.model.copyPasteModel.doCopy();
     },
 
     addItem: function(item, parent) {
@@ -700,14 +717,14 @@ const editingModel = (function() {
     },
 
     doPaste: function(dx, dy) {
-      this.getScrap().forEach(function(item) {
+      this.model.copyPasteModel.getScrap().forEach(function(item) {
         // Offset pastes so the user can see them.
         if (isElementOrGroup(item)) {
           item.x += dx;
           item.y += dy;
         }
       });
-      this.prototype.doPaste.call(this);
+      this.model.copyPasteModel.doPaste(this.addItems.bind(this));
     },
 
     replaceElement: function(element, newElement) {
@@ -725,14 +742,14 @@ const editingModel = (function() {
               newType = signatureModel.getSignature(newPins[index].type);
         return type == '*' || type == newType;
       }
-      graphInfo.iterators.forEachInput(element, function(wire, pin) {
+      graphInfo.iterators.forInputWires(element, function(wire, pin) {
         if (canRewire(wire.dstPin, master.inputs, newMaster.inputs)) {
           observableModel.changeValue(wire, 'dstId', newId);
         } else {
           self.deleteItem(wire);
         }
       });
-      graphInfo.iterators.forEachOutput(element, function(wire, pin) {
+      graphInfo.iterators.forOutputWires(element, function(wire, pin) {
         if (canRewire(wire.srcPin, master.outputs, newMaster.outputs)) {
           observableModel.changeValue(wire, 'srcId', newId);
         } else {
@@ -1329,14 +1346,11 @@ const editingModel = (function() {
     dataModels.transactionModel.extend(model);
     dataModels.transactionHistory.extend(model);
     dataModels.instancingModel.extend(model);
-    dataModels.editingModel.extend(model);
+    dataModels.copyPasteModel.extend(model);
 
     circuitModel.extend(model);
 
-    let instance = Object.create(model.editingModel);
-    instance.prototype = Object.getPrototypeOf(instance);
-    Object.assign(instance, proto);
-
+    let instance = Object.create(proto);
     instance.model = model;
     instance.diagram = model.root;
 
@@ -1457,8 +1471,8 @@ const viewModel = (function() {
           if (wire)
             self.changedWires_.add(wire);
         }
-        graphInfo.iterators.forEachInput(element, addWire);
-        graphInfo.iterators.forEachOutput(element, addWire);
+        graphInfo.iterators.forInputWires(element, addWire);
+        graphInfo.iterators.forOutputWires(element, addWire);
       });
       this.changedElements_.clear();
 
@@ -2644,7 +2658,7 @@ Editor.prototype.onKeyDown = function(e) {
         editingModel.doCopy();
         return true;
       case 86:  // 'v'
-        if (editingModel.getScrap()) {
+        if (model.copyPasteModel.getScrap()) {
           editingModel.doPaste(24, 24);
           return true;
         }

@@ -890,16 +890,8 @@ const instancingModel = (function () {
 
 //------------------------------------------------------------------------------
 
-const editingModel = (function () {
+const copyPasteModel = (function () {
   const proto = {
-    addItems: function (items) {
-      // Implement.
-    },
-
-    deleteItems: function (items) {
-      // Implement.
-    },
-
     copyItems: function (items, map) {
       const model = this.model,
             dataModel = model.dataModel,
@@ -919,11 +911,11 @@ const editingModel = (function () {
       this.scrap = scrap;
     },
 
-    doDelete: function () {
+    doDelete: function (deleteItemsFn) {
       const model = this.model, selectionModel = model.selectionModel,
             transactionModel = model.transactionModel;
       transactionModel.beginTransaction("Delete selection");
-      this.deleteItems(selectionModel.contents());
+      deleteItemsFn(selectionModel.contents());
       selectionModel.clear();
       transactionModel.endTransaction();
     },
@@ -936,28 +928,28 @@ const editingModel = (function () {
       return copies;
     },
 
-    doCut: function () {
+    doCut: function (deleteItemsFn) {
       const copies = this.doCopy();
-      this.doDelete();
+      this.doDelete(deleteItemsFn);
       return copies;
     },
 
-    doPaste: function () {
+    doPaste: function (addItemsFn) {
       const model = this.model, selectionModel = model.selectionModel,
             transactionModel = model.transactionModel;
       transactionModel.beginTransaction("Paste scrap");
       const map = new Map(),
             items = this.copyItems(this.getScrap(), map);
       selectionModel.clear();
-      this.addItems(items);
+      addItemsFn(items);
       selectionModel.set(items);
       transactionModel.endTransaction();
     },
   }
 
   function extend(model) {
-    if (model.editingModel)
-      return model.editingModel;
+    if (model.copyPasteModel)
+      return model.copyPasteModel;
 
     transactionModel.extend(model);
     selectionModel.extend(model);
@@ -966,7 +958,7 @@ const editingModel = (function () {
     const instance = Object.create(proto);
     instance.model = model;
 
-    model.editingModel = instance;
+    model.copyPasteModel = instance;
     return instance;
   }
 
@@ -1606,7 +1598,7 @@ const changeModel = (function () {
     referenceValidator: referenceValidator,
     selectionModel: selectionModel,
     instancingModel: instancingModel,
-    editingModel: editingModel,
+    copyPasteModel: copyPasteModel,
     hierarchicalModel: hierarchicalModel,
     translatableModel: translatableModel,
     transformableModel: transformableModel,

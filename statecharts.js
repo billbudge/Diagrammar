@@ -131,14 +131,14 @@ var editingModel = (function() {
 
     doDelete: function() {
       this.reduceSelection();
-      this.prototype.doDelete.call(this);
+      this.model.copyPasteModel.doDelete(this.deleteItems.bind(this));
     },
 
     copyItems: function(items, map) {
       var model = this.model, dataModel = model.dataModel,
           transformableModel = model.transformableModel,
           connected = this.getConnectedConnections(items, true),
-          copies = this.prototype.copyItems(items.concat(connected), map),
+          copies = model.copyPasteModel.copyItems(items.concat(connected), map),
           statechart = this.statechart;
 
       items.forEach(function(item) {
@@ -158,7 +158,7 @@ var editingModel = (function() {
         if (!isState(item))
           selectionModel.remove(item);
       });
-      this.prototype.doCopy.call(this);
+      this.model.copyPasteModel.doCopy(this.copyItems.bind(this));
     },
 
     addItems: function(items) {
@@ -172,14 +172,14 @@ var editingModel = (function() {
     },
 
     doPaste: function() {
-      this.getScrap().forEach(function(item) {
+      this.model.copyPasteModel.getScrap().forEach(function(item) {
         // Offset pastes so the user can see them.
         if (isState(item)) {
           item.x += 16;
           item.y += 16;
         }
       });
-      this.prototype.doPaste.call(this);
+      this.model.copyPasteModel.doPaste(this.addItems.bind(this));
     },
 
     // Returns a value indicating if the item can be added to the state
@@ -359,9 +359,9 @@ var editingModel = (function() {
     dataModels.transactionModel.extend(model);
     dataModels.transactionHistory.extend(model);
     dataModels.instancingModel.extend(model);
-    dataModels.editingModel.extend(model);
+    dataModels.copyPasteModel.extend(model);
 
-    var instance = Object.create(model.editingModel);
+    var instance = Object.create(model.copyPasteModel);
     instance.prototype = Object.getPrototypeOf(instance);
     for (var prop in functions)
       instance[prop] = functions[prop];
@@ -1518,7 +1518,7 @@ Editor.prototype.onKeyDown = function(e) {
         editingModel.doCopy();
         return true;
       case 86:  // 'v'
-        if (editingModel.getScrap()) {
+        if (model.copyPasteModel.getScrap()) {
           editingModel.doPaste();
           return true;
         }
