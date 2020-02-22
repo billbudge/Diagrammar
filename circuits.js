@@ -673,12 +673,12 @@ const editingModel = (function() {
 
     doCopy: function() {
       const selectionModel = this.model.selectionModel;
+      this.selectInteriorWires();
       this.reduceSelection();
       selectionModel.contents().forEach(function(item) {
         if (!isElementOrGroup(item))
           selectionModel.remove(item);
       });
-      this.selectInteriorWires();
       this.model.copyPasteModel.doCopy();
     },
 

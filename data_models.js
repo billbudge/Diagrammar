@@ -923,10 +923,9 @@ const copyPasteModel = (function () {
     },
 
     doCopy: function (copyItemsFn) {
-      const model = this.model,
-            map = new Map(),
-            copyItemsFn = copyItemsFn || this.copyItems.bind(this);
-            copies = copyItemsFn(model.selectionModel.contents(), map);
+      copyItemsFn = copyItemsFn || this.copyItems.bind(this);
+      const map = new Map(),
+            copies = copyItemsFn(this.model.selectionModel.contents(), map);
       this.setScrap(copies);
       return copies;
     },
