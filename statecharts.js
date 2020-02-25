@@ -121,6 +121,7 @@ var editingModel = (function() {
     },
 
     deleteItems: function(items) {
+      const self = this;
       this.getConnectedConnections(items, false).forEach(function(item) {
         this.deleteItem(item);
       }, this);
@@ -135,10 +136,11 @@ var editingModel = (function() {
     },
 
     copyItems: function(items, map) {
-      var model = this.model, dataModel = model.dataModel,
+      var model = this.model,
+          dataModel = model.dataModel,
           transformableModel = model.transformableModel,
           connected = this.getConnectedConnections(items, true),
-          copies = model.copyPasteModel.copyItems(items.concat(connected), map),
+          copies = model.copyPasteModel.cloneItems(items.concat(connected), map),
           statechart = this.statechart;
 
       items.forEach(function(item) {
@@ -161,8 +163,14 @@ var editingModel = (function() {
       this.model.copyPasteModel.doCopy(this.copyItems.bind(this));
     },
 
+    doCut: function() {
+      this.doCopy();
+      this.doDelete();
+    },
+
     addItems: function(items) {
-      var model = this.model, statechart = this.statechart,
+      var model = this.model,
+          statechart = this.statechart,
           statechartItems = statechart.items;
       items.forEach(function(item) {
         statechartItems.push(item);
@@ -172,14 +180,16 @@ var editingModel = (function() {
     },
 
     doPaste: function() {
-      this.model.copyPasteModel.getScrap().forEach(function(item) {
+      const copyPasteModel = this.model.copyPasteModel;
+      copyPasteModel.getScrap().forEach(function(item) {
         // Offset pastes so the user can see them.
         if (isState(item)) {
           item.x += 16;
           item.y += 16;
         }
       });
-      this.model.copyPasteModel.doPaste(this.addItems.bind(this));
+      copyPasteModel.doPaste(this.copyItems.bind(this),
+                             this.addItems.bind(this));
     },
 
     // Returns a value indicating if the item can be added to the state

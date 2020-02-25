@@ -890,11 +890,13 @@ const instancingModel = (function () {
 
 //------------------------------------------------------------------------------
 // A model to add cut/copy/paste/delete behavior with a selection, instancing,
-// and transaction model.
+// and transaction model. The actual work of copying, deleting, and adding is
+// done by the client.
 
 const copyPasteModel = (function () {
   const proto = {
-    copyItems: function (items, map) {
+    // Generic cloning, returning copies and map from item => copy.
+    cloneItems: function (items, map) {
       const model = this.model,
             dataModel = model.dataModel,
             instancingModel = model.instancingModel,
@@ -906,11 +908,11 @@ const copyPasteModel = (function () {
     },
 
     getScrap: function () {
-      return this.scrap;
+      return this.scrap_;
     },
 
     setScrap: function (scrap) {
-      this.scrap = scrap;
+      this.scrap_ = scrap;
     },
 
     doDelete: function (deleteItemsFn) {
@@ -923,28 +925,28 @@ const copyPasteModel = (function () {
     },
 
     doCopy: function (copyItemsFn) {
-      copyItemsFn = copyItemsFn || this.copyItems.bind(this);
       const map = new Map(),
             copies = copyItemsFn(this.model.selectionModel.contents(), map);
       this.setScrap(copies);
       return copies;
     },
 
-    doCut: function (deleteItemsFn) {
-      const copies = this.doCopy();
+    doCut: function (copyItemsFn, deleteItemsFn) {
+      const copies = this.doCopy(copyItemsFn);
       this.doDelete(deleteItemsFn);
       return copies;
     },
 
-    doPaste: function (addItemsFn) {
-      const model = this.model, selectionModel = model.selectionModel,
+    doPaste: function (copyItemsFn, addItemsFn) {
+      const model = this.model,
+            selectionModel = model.selectionModel,
             transactionModel = model.transactionModel;
       transactionModel.beginTransaction("Paste scrap");
       const map = new Map(),
-            items = this.copyItems(this.getScrap(), map);
+            copies = copyItemsFn(this.getScrap(), map);
       selectionModel.clear();
-      addItemsFn(items);
-      selectionModel.set(items);
+      addItemsFn(copies);
+      selectionModel.set(copies);
       transactionModel.endTransaction();
     },
   }
@@ -959,6 +961,7 @@ const copyPasteModel = (function () {
 
     const instance = Object.create(proto);
     instance.model = model;
+    instance.scrap_ = new diagrammar.collections.EmptyArray();
 
     model.copyPasteModel = instance;
     return instance;

@@ -640,9 +640,7 @@ const editingModel = (function() {
 
     deleteItems: function(items) {
       const self = this;
-      items.forEach(function(item) {
-        self.deleteItem(item);
-      });
+      items.forEach(item => self.deleteItem(item));
     },
 
     doDelete: function() {
@@ -655,7 +653,7 @@ const editingModel = (function() {
             diagram = this.diagram,
             dataModel = model.dataModel,
             translatableModel = model.translatableModel,
-            copies = this.model.copyPasteModel.copyItems(items, map);
+            copies = this.model.copyPasteModel.cloneItems(items, map);
       items.forEach(function(item) {
         const copy = map.get(dataModel.getId(item));
         if (isElementOrGroup(copy)) {
@@ -673,13 +671,18 @@ const editingModel = (function() {
 
     doCopy: function() {
       const selectionModel = this.model.selectionModel;
-      this.selectInteriorWires();
-      this.reduceSelection();
       selectionModel.contents().forEach(function(item) {
         if (!isElementOrGroup(item))
           selectionModel.remove(item);
       });
-      this.model.copyPasteModel.doCopy();
+      this.selectInteriorWires();
+      this.reduceSelection();
+      this.model.copyPasteModel.doCopy(this.copyItems.bind(this));
+    },
+
+    doCut: function() {
+      this.doCopy();
+      this.doDelete();
     },
 
     addItem: function(item, parent) {
@@ -711,20 +714,20 @@ const editingModel = (function() {
 
     addItems: function(items, parent) {
       const self = this;
-      items.forEach(function(item) {
-        self.addItem(item, parent);
-      });
+      items.forEach(item => self.addItem(item, parent));
     },
 
     doPaste: function(dx, dy) {
-      this.model.copyPasteModel.getScrap().forEach(function(item) {
+      const copyPasteModel = this.model.copyPasteModel;
+      copyPasteModel.getScrap().forEach(function(item) {
         // Offset pastes so the user can see them.
         if (isElementOrGroup(item)) {
           item.x += dx;
           item.y += dy;
         }
       });
-      this.model.copyPasteModel.doPaste(this.addItems.bind(this));
+      copyPasteModel.doPaste(this.copyItems.bind(this),
+                             this.addItems.bind(this));
     },
 
     replaceElement: function(element, newElement) {

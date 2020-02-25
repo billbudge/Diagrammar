@@ -86,10 +86,8 @@ var editingModel = (function() {
     },
 
     deleteItems: function(items) {
-      var self = this;
-      items.forEach(function(item) {
-        self.deleteItem(item);
-      })
+      const self = this;
+      items.forEach(item => self.deleteItem(item));
     },
 
     doDelete: function() {
@@ -101,7 +99,7 @@ var editingModel = (function() {
       var model = this.model,
           dataModel = model.dataModel,
           transformableModel = model.transformableModel,
-          copies = model.copyPasteModel.copyItems(items, map),
+          copies = model.copyPasteModel.cloneItems(items, map),
           board = this.board;
 
       items.forEach(function(item) {
@@ -115,23 +113,12 @@ var editingModel = (function() {
 
     doCopy: function() {
       this.reduceSelection();
-      this.model.copyPasteModel.doCopy();
+      this.model.copyPasteModel.doCopy(this.copyItems.bind(this));
     },
 
-    addItems: function(items) {
-      var self = this, selectionModel = this.model.selectionModel;
-      items.forEach(function(item) {
-        self.addItem(item, self.board);
-        selectionModel.add(item);
-      });
-    },
-
-    doPaste: function() {
-      this.model.copyPasteModel.getScrap().forEach(function(item) {
-        item.x += 16;
-        item.y += 16;
-      });
-      this.model.copyPasteModel.doPaste(this.addItems.bind(this));
+    doCut: function() {
+      this.doCopy();
+      this.doDelete();
     },
 
     addItem: function(item, parent) {
@@ -145,6 +132,21 @@ var editingModel = (function() {
         this.deleteItem(item);  // notifies observer
         model.observableModel.insertElement(parent, 'items', parent.items.length, item);
       }
+    },
+
+    addItems: function(items) {
+      var self = this;
+      items.forEach(item => self.addItem(item, self.board));
+    },
+
+    doPaste: function() {
+      const copyPasteModel = this.model.copyPasteModel;
+      copyPasteModel.getScrap().forEach(function(item) {
+        item.x += 16;
+        item.y += 16;
+      });
+      copyPasteModel.doPaste(this.copyItems.bind(this),
+                             this.addItems.bind(this));
     },
 
     addPoint: function(point, edge, index) {
