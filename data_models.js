@@ -931,12 +931,6 @@ const copyPasteModel = (function () {
       return copies;
     },
 
-    doCut: function (copyItemsFn, deleteItemsFn) {
-      const copies = this.doCopy(copyItemsFn);
-      this.doDelete(deleteItemsFn);
-      return copies;
-    },
-
     doPaste: function (copyItemsFn, addItemsFn) {
       const model = this.model,
             selectionModel = model.selectionModel,
