@@ -335,6 +335,8 @@ function TextInputController(textInput, theme) {
 
 TextInputController.prototype.start = function(text, changeHandler) {
   this.textInput.value = text;
+  this.textInput.select();
+  this.textInput.focus();
   this.changeHandler = changeHandler;
 }
 
@@ -654,7 +656,7 @@ let theme = (function() {
       hoverColor: '#FCF0AD',
       hoverTextColor: '#404040',
 
-      font: '14px monospace',
+      font: '14px sans-serif',
       fontSize: 14,
     },
     blueprint: {
@@ -668,7 +670,7 @@ let theme = (function() {
       hoverColor: '#FCF0AD',
       hoverTextColor: '#404040',
 
-      font: '14px monospace',
+      font: '14px sans-serif',
       fontSize: 14,
     },
   };

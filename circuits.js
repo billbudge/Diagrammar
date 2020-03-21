@@ -1521,7 +1521,7 @@ const viewModel = (function() {
           inputs = master.inputs, outputs = master.outputs,
           height = 0, width = 0;
       if (name) {
-        width = spacing + ctx.measureText(name).width;
+        width = spacing + ctx.measureText(name).width * 2;
         height += textSize + spacing / 2;
       } else {
         height += spacing / 2;
@@ -1533,15 +1533,14 @@ const viewModel = (function() {
         pin[_y] = yIn + spacing / 2;
         let name = pin.name, w = pin[_width], h = pin[_height] + spacing / 2;
         if (name) {
-          let offset = Math.abs(h - textSize) / 2;
           pin[_baseline] = yIn + textSize;
           if (textSize > h) {
-            pin[_y] += offset;
+            pin[_y] += (textSize - h) / 2;
             h = textSize;
           } else {
-            pin[_baseline] += offset;
+            pin[_baseline] += (h - textSize) / 2;
           }
-          w += spacing + ctx.measureText(name).width;
+          w += spacing + ctx.measureText(name).width * 2;
         }
         yIn += h;
         wIn = Math.max(wIn, w);
@@ -1553,15 +1552,14 @@ const viewModel = (function() {
         pin[_y] = yOut + spacing / 2;
         let name = pin.name, w = pin[_width], h = pin[_height] + spacing / 2;
         if (name) {
-          let offset = Math.abs(h - textSize) / 2;
           pin[_baseline] = yOut + textSize;
           if (textSize > h) {
-            pin[_y] += offset;
+            pin[_y] += (textSize - h) / 2;
             h = textSize;
           } else {
-            pin[_baseline] += offset;
+            pin[_baseline] += (h - textSize) / 2;
           }
-          w += spacing + ctx.measureText(name).width;
+          w += spacing + ctx.measureText(name).width * 2;
         }
         yOut += h;
         wOut = Math.max(wOut, w);
@@ -2594,6 +2592,8 @@ Editor.prototype.onEndDrag = function(p) {
       transactionModel.endTransaction();
       break;
   }
+
+  this.setEditableText();
 
   this.drag = null;
   this.mouseHitInfo = null;
