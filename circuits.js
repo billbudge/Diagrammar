@@ -1515,55 +1515,43 @@ const viewModel = (function() {
 
     // Compute sizes for an element master.
     layoutMaster_: function(master) {
-      let model = this.model,
-          ctx = this.ctx, theme = this.theme,
-          textSize = theme.fontSize, name = master.name,
-          inputs = master.inputs, outputs = master.outputs,
-          height = 0, width = 0;
+      const self = this,
+            model = this.model,
+            ctx = this.ctx, theme = this.theme,
+            textSize = theme.fontSize, name = master.name,
+            inputs = master.inputs, outputs = master.outputs;
+      let height = 0, width = 0;
       if (name) {
-        width = spacing + ctx.measureText(name).width * 2;
+        width = 2 * spacing + ctx.measureText(name).width;
         height += textSize + spacing / 2;
       } else {
         height += spacing / 2;
       }
-      let yIn = height, wIn = 0;
-      for (let i = 0; i < inputs.length; i++) {
-        let pin = inputs[i];
-        this.layoutPin_(pin);
-        pin[_y] = yIn + spacing / 2;
-        let name = pin.name, w = pin[_width], h = pin[_height] + spacing / 2;
-        if (name) {
-          pin[_baseline] = yIn + textSize;
-          if (textSize > h) {
-            pin[_y] += (textSize - h) / 2;
-            h = textSize;
-          } else {
-            pin[_baseline] += (h - textSize) / 2;
+
+      function layoutPins(pins) {
+        let y = height, w = 0;
+        for (let i = 0; i < pins.length; i++) {
+          let pin = pins[i];
+          self.layoutPin_(pin);
+          pin[_y] = y + spacing / 2;
+          let name = pin.name, pw = pin[_width], ph = pin[_height] + spacing / 2;
+          if (name) {
+            pin[_baseline] = y + textSize;
+            if (textSize > ph) {
+              pin[_y] += (textSize - ph) / 2;
+              ph = textSize;
+            } else {
+              pin[_baseline] += (ph - textSize) / 2;
+            }
+            pw += 2 * spacing + ctx.measureText(name).width;
           }
-          w += spacing + ctx.measureText(name).width * 2;
+          y += ph;
+          w = Math.max(w, pw);
         }
-        yIn += h;
-        wIn = Math.max(wIn, w);
+        return [y, w];
       }
-      let yOut = height, wOut = 0;
-      for (let i = 0; i < outputs.length; i++) {
-        let pin = outputs[i];
-        this.layoutPin_(pin);
-        pin[_y] = yOut + spacing / 2;
-        let name = pin.name, w = pin[_width], h = pin[_height] + spacing / 2;
-        if (name) {
-          pin[_baseline] = yOut + textSize;
-          if (textSize > h) {
-            pin[_y] += (textSize - h) / 2;
-            h = textSize;
-          } else {
-            pin[_baseline] += (h - textSize) / 2;
-          }
-          w += spacing + ctx.measureText(name).width * 2;
-        }
-        yOut += h;
-        wOut = Math.max(wOut, w);
-      }
+      const [yIn, wIn] = layoutPins(inputs);
+      const [yOut, wOut] = layoutPins(outputs);
 
       this.setItemBounds(
         master,
