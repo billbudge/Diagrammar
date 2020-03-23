@@ -462,14 +462,14 @@ const circuitModel = (function() {
       }
     },
 
-    // Call this to update circuitModel to incorporate pending changes.
+    // Update the model to incorporate pending changes.
     update_: function() {
-      const self = this,
-            changeModel = this.model.changeModel;
+      const changeModel = this.model.changeModel;
       if (!changeModel.hasChanges())
         return;
 
-      const removedItems = changeModel.getRemovedItems(),
+      const self = this,
+            removedItems = changeModel.getRemovedItems(),
             insertedItems = changeModel.getInsertedItems(),
             changedItems = changeModel.getChangedItems();
 
@@ -1156,7 +1156,6 @@ const editingModel = (function() {
       group.master = master;
       group.x = x;
       group.y = y;
-      group.frozen = false;
 
       return group;
     },
@@ -1254,14 +1253,14 @@ const editingModel = (function() {
     },
 
     doGroup: function() {
-      let model = this.model;
-      this.reduceSelection();
-      let groups = model.selectionModel.contents().filter(isGroup);
-      model.transactionModel.beginTransaction('group');
-      groups.forEach(function(group) {
-        model.observableModel.changeValue(group, 'frozen', true);
-      });
-      model.transactionModel.endTransaction();
+      // let model = this.model;
+      // this.reduceSelection();
+      // let groups = model.selectionModel.contents().filter(isGroup);
+      // model.transactionModel.beginTransaction('group');
+      // groups.forEach(function(group) {
+      //   model.observableModel.changeValue(group, 'frozen', true);
+      // });
+      // model.transactionModel.endTransaction();
     },
 
     doToggleMaster: function() {
@@ -1872,7 +1871,7 @@ Renderer.prototype.drawGroup = function(group, mode) {
             masterRect = this.getGroupMasterBounds(master, right, bottom);
         ctx.beginPath();
         ctx.rect(masterRect.x, masterRect.y, masterRect.w, masterRect.h);
-        ctx.fillStyle = group.frozen ? theme.altBgColor : theme.bgColor;
+        ctx.fillStyle = theme.altBgColor;
         ctx.fill();
         ctx.strokeStyle = theme.strokeColor;
         ctx.lineWidth = 0.5;
