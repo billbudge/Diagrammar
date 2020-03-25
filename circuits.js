@@ -2482,9 +2482,8 @@ Editor.prototype.onDrag = function(p0, p) {
       if (srcId) {
         observableModel.changeValue(dragItem, 'srcPin', hitInfo.output);
       } else {
-        // TODO remove dummy property change.
-        observableModel.changeValue(dragItem, 'p1', cp);
-        dragItem[_p1] = cp;
+        // Change private property while wire is incomplete.
+        observableModel.changeValue(dragItem, _p1, cp);
       }
       break;
     case connectWireDst:
@@ -2494,9 +2493,8 @@ Editor.prototype.onDrag = function(p0, p) {
       if (dstId) {
         observableModel.changeValue(dragItem, 'dstPin', hitInfo.input);
       } else {
-        // TODO remove dummy property change.
-        observableModel.changeValue(dragItem, 'p2', cp);
-        dragItem[_p2] = cp;
+        // Change private property while wire is incomplete.
+        observableModel.changeValue(dragItem, _p2, cp);
       }
       break;
   }
