@@ -1,11 +1,11 @@
 // Data models and related objects.
 
-const dataModels = (function () {
+const dataModels = (function() {
 'use strict';
 
 //------------------------------------------------------------------------------
 
-const dataModel = (function () {
+const dataModel = (function() {
   const proto = {
     getRoot: function() {
       return this.model.root;
@@ -13,29 +13,29 @@ const dataModel = (function () {
 
     // Returns unique id (number) for an item, to allow references to be
     // resolved. Only items have ids and can be referenced. 0 is an invalid id.
-    getId: function (item) {
+    getId: function(item) {
       return item.id;
     },
 
-    assignId: function (item) {
+    assignId: function(item) {
       // 0 is not a valid id in this model.
       const id = this.nextId++;
       item.id = id;
       return id;
     },
 
-    isItem: function (value) {
+    isItem: function(value) {
       return value && typeof value == 'object';
     },
 
     // Returns true iff. item[attr] is a true property.
-    isProperty: function (item, attr) {
+    isProperty: function(item, attr) {
       return attr != 'id' &&
              item.hasOwnProperty(attr);
     },
 
     // Returns true iff. item[attr] is a property that references an item.
-    isReference: function (item, attr) {
+    isReference: function(item, attr) {
       const attrName = attr.toString(),
             position = attrName.length - 2;
       if (position < 0)
@@ -44,7 +44,7 @@ const dataModel = (function () {
     },
 
     // Visits the item's top level properties.
-    visitProperties: function (item, propFn) {
+    visitProperties: function(item, propFn) {
       if (Array.isArray(item)) {
         // Array item.
         const length = item.length;
@@ -60,18 +60,18 @@ const dataModel = (function () {
     },
 
     // Visits the item's top level reference properties.
-    visitReferences: function (item, refFn) {
+    visitReferences: function(item, refFn) {
       const self = this;
-      this.visitProperties(item, function (item, attr) {
+      this.visitProperties(item, function(item, attr) {
         if (self.isReference(item, attr))
           refFn(item, attr);
       });
     },
 
     // Visits the item's top level properties that are Arrays or child items.
-    visitChildren: function (item, childFn) {
+    visitChildren: function(item, childFn) {
       const self = this;
-      this.visitProperties(item, function (item, attr) {
+      this.visitProperties(item, function(item, attr) {
         const value = item[attr];
         if (!self.isItem(value))
           return;
@@ -83,12 +83,35 @@ const dataModel = (function () {
     },
 
     // Visits the item and all of its descendant items.
-    visitSubtree: function (item, itemFn) {
+    visitSubtree: function(item, itemFn) {
       itemFn(item);
       const self = this;
-      this.visitChildren(item, function (child) {
+      this.visitChildren(item, function(child) {
         self.visitSubtree(child, itemFn);
       });
+    },
+
+    // Strict deep equality (no working up prototype chain.)
+    deepEqual: function(item1, item2) {
+      if (item1 === item2)
+        return true;
+      if ((typeof item1 != "object" || item1 == null) ||
+          (typeof item2 != "object" || item2 == null))
+        return false;
+
+      const keys1 = Object.keys(item1),
+            keys2 = Object.keys(item2);
+      if (keys1.length != keys2.length)
+        return false;
+      for (let k of keys1) {
+        if (k == 'id') continue;  // The id may differ.
+        if (!item2.hasOwnProperty(k) ||
+            !this.deepEqual(item1[k], item2[k])) {
+          return false;
+        }
+      }
+
+      return true;
     },
 
     addInitializer: function(initialize) {
@@ -116,7 +139,7 @@ const dataModel = (function () {
     // Find the maximum id in the model and set nextId to 1 greater.
     const self = this;
     let maxId = 0;
-    instance.visitSubtree(instance.getRoot(), function (item) {
+    instance.visitSubtree(instance.getRoot(), function(item) {
       const id = instance.getId(item);
       if (id)
         maxId = Math.max(maxId, id);
@@ -137,7 +160,7 @@ const dataModel = (function () {
 
 //------------------------------------------------------------------------------
 
-const eventMixin = (function () {
+const eventMixin = (function() {
   function addHandler(event, handler) {
     let list = this[event];
     if (!list)
@@ -178,21 +201,21 @@ const eventMixin = (function () {
 
 //------------------------------------------------------------------------------
 
-const observableModel = (function () {
+const observableModel = (function() {
   const proto = {
     // Notifies observers that the value of a property has changed.
     // Standard formats:
     // 'change': item, attr, oldValue.
     // 'insert': item, attr, index.
     // 'remove': item, attr, index, oldValue.
-    onChanged: function (change) {
+    onChanged: function(change) {
       // console.log(change);
-      this.onEvent('changed', function (handler) {
+      this.onEvent('changed', function(handler) {
         handler(change);
       });
     },
 
-    onValueChanged: function (item, attr, oldValue) {
+    onValueChanged: function(item, attr, oldValue) {
       this.onChanged({
         type: 'change',
         item: item,
@@ -201,7 +224,7 @@ const observableModel = (function () {
       });
     },
 
-    changeValue: function (item, attr, newValue) {
+    changeValue: function(item, attr, newValue) {
       const oldValue = item[attr];
       if (newValue !== oldValue) {
         item[attr] = newValue;
@@ -210,7 +233,7 @@ const observableModel = (function () {
       return oldValue;
     },
 
-    onElementInserted: function (item, attr, index) {
+    onElementInserted: function(item, attr, index) {
       this.onChanged({
         type: 'insert',
         item: item,
@@ -219,13 +242,13 @@ const observableModel = (function () {
       });
     },
 
-    insertElement: function (item, attr, index, newValue) {
+    insertElement: function(item, attr, index, newValue) {
       const array = item[attr];
       array.splice(index, 0, newValue);
       this.onElementInserted(item, attr, index);
     },
 
-    onElementRemoved: function (item, attr, index, oldValue) {
+    onElementRemoved: function(item, attr, index, oldValue) {
       this.onChanged({
         type: 'remove',
         item: item,
@@ -235,7 +258,7 @@ const observableModel = (function () {
       });
     },
 
-    removeElement: function (item, attr, index) {
+    removeElement: function(item, attr, index) {
       const array = item[attr], oldValue = array[index];
       array.splice(index, 1);
       this.onElementRemoved(item, attr, index, oldValue);
@@ -262,9 +285,9 @@ const observableModel = (function () {
 
 //------------------------------------------------------------------------------
 
-const transactionModel = (function () {
+const transactionModel = (function() {
   const opProto = {
-    undo: function () {
+    undo: function() {
       const change = this.change,
             item = change.item, attr = change.attr,
             observableModel = this.observableModel;
@@ -311,7 +334,7 @@ const transactionModel = (function () {
 
   const proto = {
     // Notifies observers that a transaction has started.
-    beginTransaction: function (name) {
+    beginTransaction: function(name) {
       const transaction = {
         name: name,
         ops: [],
@@ -320,7 +343,7 @@ const transactionModel = (function () {
       this.changedItems = new Map();
 
       this.onBeginTransaction(transaction);
-      this.onEvent('transactionBegan', function (handler) {
+      this.onEvent('transactionBegan', function(handler) {
         handler(transaction);
       });
     },
@@ -328,35 +351,35 @@ const transactionModel = (function () {
     // Notifies observers that a transaction is ending. Observers should now
     // do any adjustments to make data valid, or cancel the transaction if
     // the data is in an invalid state.
-    endTransaction: function () {
+    endTransaction: function() {
       const transaction = this.transaction;
       this.onEndTransaction(transaction);
-      this.onEvent('transactionEnding', function (handler) {
+      this.onEvent('transactionEnding', function(handler) {
         handler(transaction);
       });
 
       this.transaction = null;
       this.changedItems = null;
 
-      this.onEvent('transactionEnded', function (handler) {
+      this.onEvent('transactionEnded', function(handler) {
         handler(transaction);
       });
     },
 
     // Notifies observers that a transaction was canceled and its changes
     // rolled back.
-    cancelTransaction: function () {
+    cancelTransaction: function() {
       this.undo(this.transaction);
       const transaction = this.transaction;
       this.transaction = null;
       this.onCancelTransaction(transaction);
-      this.onEvent('transactionCanceled', function (handler) {
+      this.onEvent('transactionCanceled', function(handler) {
         handler(transaction);
       });
     },
 
     // Undoes the changes in the transaction.
-    undo: function (transaction) {
+    undo: function(transaction) {
       // Roll back changes.
       const ops = transaction.ops, length = ops.length;
       for (let i = length - 1; i >= 0; i--) {
@@ -369,7 +392,7 @@ const transactionModel = (function () {
     },
 
     // Redoes the changes in the transaction.
-    redo: function (transaction) {
+    redo: function(transaction) {
       // Roll forward changes.
       const ops = transaction.ops, length = ops.length;
       for (let i = 0; i < length; i++) {
@@ -389,14 +412,14 @@ const transactionModel = (function () {
       return changedItem ? changedItem.snapshot : item;
     },
 
-    onBeginTransaction: function (transaction) {
+    onBeginTransaction: function(transaction) {
       const selectionModel = this.model.selectionModel;
       if (!selectionModel)
         return;
       this.startingSelection = selectionModel.contents();
     },
 
-    onEndTransaction: function (transaction) {
+    onEndTransaction: function(transaction) {
       const selectionModel = this.model.selectionModel;
       if (!selectionModel)
         return;
@@ -416,7 +439,7 @@ const transactionModel = (function () {
       this.startingSelection = null;
     },
 
-    onCancelTransaction: function (transaction) {
+    onCancelTransaction: function(transaction) {
       const selectionModel = this.model.selectionModel;
       if (!selectionModel)
         return;
@@ -430,7 +453,7 @@ const transactionModel = (function () {
       this.transaction.ops.push(op);
     },
 
-    onChanged_: function (change) {
+    onChanged_: function(change) {
       if (!this.transaction)
         return;
 
@@ -475,7 +498,7 @@ const transactionModel = (function () {
     const instance = Object.create(proto);
     instance.model = model;
     eventMixin.extend(instance);
-    model.observableModel.addHandler('changed', function (change) {
+    model.observableModel.addHandler('changed', function(change) {
       instance.onChanged_(change);
     });
 
@@ -490,19 +513,19 @@ const transactionModel = (function () {
 
 //------------------------------------------------------------------------------
 
-const transactionHistory = (function () {
+const transactionHistory = (function() {
   const proto = {
-    getRedo: function () {
+    getRedo: function() {
       const length = this.undone.length;
       return length > 0 ? this.undone[length - 1] : null;
     },
 
-    getUndo: function () {
+    getUndo: function() {
       const length = this.done.length;
       return length > 0 ? this.done[length - 1] : null;
     },
 
-    redo: function () {
+    redo: function() {
       const transaction = this.getRedo();
       if (transaction) {
         this.model.transactionModel.redo(transaction);
@@ -510,7 +533,7 @@ const transactionHistory = (function () {
       }
     },
 
-    undo: function () {
+    undo: function() {
       const transaction = this.getUndo();
       if (transaction) {
         this.model.transactionModel.undo(transaction);
@@ -518,7 +541,7 @@ const transactionHistory = (function () {
       }
     },
 
-    onTransactionEnded_: function (transaction) {
+    onTransactionEnded_: function(transaction) {
       if (this.undone.length)
         this.undone = [];
       this.done.push(transaction);
@@ -535,7 +558,7 @@ const transactionHistory = (function () {
     instance.model = model;
     instance.done = [];
     instance.undone = [];
-    model.transactionModel.addHandler('transactionEnded', function (transaction) {
+    model.transactionModel.addHandler('transactionEnded', function(transaction) {
       instance.onTransactionEnded_(transaction);
     });
 
@@ -552,15 +575,15 @@ const transactionHistory = (function () {
 
 // Referencing model. It tracks reference targets in the data and resolves
 // reference properties from ids to actual references.
-const referencingModel = (function () {
+const referencingModel = (function() {
   const proto = {
     // Gets the object that is referenced by item[attr]. Default is to return
     // item[_attr].
-    getReference: function (item, attr) {
+    getReference: function(item, attr) {
       return item[Symbol.for(attr)] || this.resolveReference(item, attr);
     },
 
-    getReferenceFn: function (attr) {
+    getReferenceFn: function(attr) {
       const self = this, symbol = Symbol.for(attr);
       return function(item) {
         return item[symbol] || self.resolveReference(item, attr);
@@ -568,12 +591,12 @@ const referencingModel = (function () {
     },
 
     // Resolves an id to a target item if possible.
-    resolveId: function (id) {
+    resolveId: function(id) {
       return this.targets_.get(id);
     },
 
     // Resolves a reference to a target item if possible.
-    resolveReference: function (item, attr) {
+    resolveReference: function(item, attr) {
       const newId = item[attr],
             newTarget = this.resolveId(newId);
       item[Symbol.for(attr)] = newTarget;
@@ -582,31 +605,31 @@ const referencingModel = (function () {
 
     // Recursively adds item and sub-items as potential reference targets, and
     // resolves any references they contain.
-    addTargets_: function (item) {
+    addTargets_: function(item) {
       const self = this, dataModel = this.model.dataModel;
-      dataModel.visitSubtree(item, function (item) {
+      dataModel.visitSubtree(item, function(item) {
         const id = dataModel.getId(item);
         if (id)
           self.targets_.set(id, item);
       });
-      dataModel.visitSubtree(item, function (item) {
-        dataModel.visitReferences(item, function (item, attr) {
+      dataModel.visitSubtree(item, function(item) {
+        dataModel.visitReferences(item, function(item, attr) {
           self.resolveReference(item, attr);
         });
       });
     },
 
     // Recursively removes item and sub-items as potential reference targets.
-    removeTargets_: function (item) {
+    removeTargets_: function(item) {
       const self = this, dataModel = this.model.dataModel;
-      dataModel.visitSubtree(item, function (item) {
+      dataModel.visitSubtree(item, function(item) {
         const id = dataModel.getId(item);
         if (id)
           self.targets_.delete(id);
       });
     },
 
-    onChanged_: function (change) {
+    onChanged_: function(change) {
       const dataModel = this.model.dataModel,
             item = change.item,
             attr = change.attr;
@@ -650,7 +673,7 @@ const referencingModel = (function () {
     instance.model = model;
     if (model.observableModel) {
       // Create wrappers here to capture 'instance'.
-      model.observableModel.addHandler('changed', function (change) {
+      model.observableModel.addHandler('changed', function(change) {
         instance.onChanged_(change);
       });
     }
@@ -668,20 +691,20 @@ const referencingModel = (function () {
 
 //------------------------------------------------------------------------------
 
-const referenceValidator = (function () {
+const referenceValidator = (function() {
   const proto = {
-    onDanglingReference: function (item, attr) {
-      this.onEvent('danglingReference', function (handler) {
+    onDanglingReference: function(item, attr) {
+      this.onEvent('danglingReference', function(handler) {
         handler(item, attr);
       });
     },
 
-    onTransactionEnding_: function (transaction) {
+    onTransactionEnding_: function(transaction) {
       const self = this, model = this.model,
             dataModel = tmodel.dataModel,
             referencingModel = model.referencingModel;
-      dataModel.visitSubtree(dataModel.getRoot(), function (item) {
-        dataModel.visitReferences(item, function (item, attr) {
+      dataModel.visitSubtree(dataModel.getRoot(), function(item) {
+        dataModel.visitReferences(item, function(item, attr) {
           if (!referencingModel.resolveId(item[attr]))
             self.onDanglingReference(item, attr);
         });
@@ -700,7 +723,7 @@ const referenceValidator = (function () {
     transactionModel.extend(model);
     referencingModel.extend(model);
     // Create wrappers here to capture 'instance'.
-    model.transactionModel.addHandler('transactionEnding', function (transaction) {
+    model.transactionModel.addHandler('transactionEnding', function(transaction) {
       instance.onTransactionEnding_(transaction);
     });
 
@@ -715,23 +738,23 @@ const referenceValidator = (function () {
 
 //------------------------------------------------------------------------------
 
-const selectionModel = (function () {
+const selectionModel = (function() {
   function iterable(item) { return typeof item[Symbol.iterator] == 'function'; }
 
   const proto = {
-    isEmpty: function () {
+    isEmpty: function() {
       return this.selection.length == 0;
     },
 
-    contains: function (item) {
+    contains: function(item) {
       return this.selection.contains(item);
     },
 
-    lastSelected: function () {
+    lastSelected: function() {
       return this.selection.lastSelected();
     },
 
-    add: function (item) {
+    add: function(item) {
       if (iterable(item)) {
         for (let subItem of item)
           this.selection.add(subItem);
@@ -740,7 +763,7 @@ const selectionModel = (function () {
       }
     },
 
-    remove: function (item) {
+    remove: function(item) {
       if (iterable(item)) {
         for (let subItem of item)
           this.selection.remove(subItem);
@@ -749,7 +772,7 @@ const selectionModel = (function () {
       }
     },
 
-    toggle: function (item) {
+    toggle: function(item) {
       if (iterable(item)) {
         for (let subItem of item)
           this.selection.toggle(subItem);
@@ -758,7 +781,7 @@ const selectionModel = (function () {
       }
     },
 
-    set: function (item) {
+    set: function(item) {
       this.selection.clear();
       if (iterable(item)) {
         for (let subItem of item)
@@ -781,17 +804,17 @@ const selectionModel = (function () {
       }
     },
 
-    clear: function () {
+    clear: function() {
       this.selection.clear();
     },
 
-    forEach: function (itemFn) {
+    forEach: function(itemFn) {
       this.selection.forEach(itemFn);
     },
 
-    contents: function () {
+    contents: function() {
       const result = [];
-      this.selection.forEach(function (item) { result.push(item); });
+      this.selection.forEach(function(item) { result.push(item); });
       return result;
     }
   }
@@ -815,13 +838,13 @@ const selectionModel = (function () {
 
 //------------------------------------------------------------------------------
 
-const instancingModel = (function () {
+const instancingModel = (function() {
   const proto = {
-    canClone: function (item) {
+    canClone: function(item) {
       return true;
     },
 
-    clone: function (item, map) {
+    clone: function(item, map) {
       // Return any primitive values without cloning.
       if (!this.model.dataModel.isItem(item))
         return item;
@@ -829,7 +852,7 @@ const instancingModel = (function () {
       const self = this, dataModel = this.model.dataModel;
       // Use constructor() to properly clone arrays, sets, maps, etc.
       const copy = item.constructor();
-      dataModel.visitProperties(item, function (item, attr) {
+      dataModel.visitProperties(item, function(item, attr) {
         copy[attr] = self.clone(item[attr], map);
       });
       // Assign unique id after cloning all properties.
@@ -844,14 +867,14 @@ const instancingModel = (function () {
       return copy;
     },
 
-    cloneGraph: function (items, map) {
+    cloneGraph: function(items, map) {
       const dataModel = this.model.dataModel,
             copies = [];
-      items.forEach(function (item) {
+      items.forEach(function(item) {
         copies.push(this.clone(item, map));
       }, this);
-      copies.forEach(function (copy) {
-        dataModel.visitSubtree(copy, function (copy) {
+      copies.forEach(function(copy) {
+        dataModel.visitSubtree(copy, function(copy) {
           if (Array.isArray(copy))
             return;
           for (let attr in copy) {
@@ -893,10 +916,10 @@ const instancingModel = (function () {
 // and transaction model. The actual work of copying, deleting, and adding is
 // done by the client.
 
-const copyPasteModel = (function () {
+const copyPasteModel = (function() {
   const proto = {
     // Generic cloning, returning copies and map from item => copy.
-    cloneItems: function (items, map) {
+    cloneItems: function(items, map) {
       const model = this.model,
             dataModel = model.dataModel,
             instancingModel = model.instancingModel,
@@ -907,15 +930,15 @@ const copyPasteModel = (function () {
       return copies;
     },
 
-    getScrap: function () {
+    getScrap: function() {
       return this.scrap_;
     },
 
-    setScrap: function (scrap) {
+    setScrap: function(scrap) {
       this.scrap_ = scrap;
     },
 
-    doDelete: function (deleteItemsFn) {
+    doDelete: function(deleteItemsFn) {
       const model = this.model, selectionModel = model.selectionModel,
             transactionModel = model.transactionModel;
       transactionModel.beginTransaction("Delete selection");
@@ -924,14 +947,14 @@ const copyPasteModel = (function () {
       transactionModel.endTransaction();
     },
 
-    doCopy: function (copyItemsFn) {
+    doCopy: function(copyItemsFn) {
       const map = new Map(),
             copies = copyItemsFn(this.model.selectionModel.contents(), map);
       this.setScrap(copies);
       return copies;
     },
 
-    doPaste: function (copyItemsFn, addItemsFn) {
+    doPaste: function(copyItemsFn, addItemsFn) {
       const model = this.model,
             selectionModel = model.selectionModel,
             transactionModel = model.transactionModel;
@@ -968,30 +991,30 @@ const copyPasteModel = (function () {
 
 //------------------------------------------------------------------------------
 
-const hierarchicalModel = (function () {
+const hierarchicalModel = (function() {
   const _parent = Symbol('parent');
   const proto = {
-    getRoot: function () {
+    getRoot: function() {
       return this.model.dataModel.getRoot();
     },
 
-    getParent: function (item) {
+    getParent: function(item) {
       return item[_parent];
     },
 
-    setParent: function (child, parent) {
+    setParent: function(child, parent) {
       child[_parent] = parent;
     },
 
-    visitChildren: function (item, childFn) {
-      this.model.dataModel.visitChildren(item, function (child) {
+    visitChildren: function(item, childFn) {
+      this.model.dataModel.visitChildren(item, function(child) {
         childFn(child, item);
       });
     },
 
-    visitDescendants: function (item, childFn) {
+    visitDescendants: function(item, childFn) {
       const self = this;
-      this.visitChildren(item, function (child) {
+      this.visitChildren(item, function(child) {
         childFn(child, item);
         self.visitDescendants(child, childFn);
       });
@@ -1010,11 +1033,11 @@ const hierarchicalModel = (function () {
 
     // Reduces the selection to the roots of the current selection. Thus, a
     // parent and child can't be simultaneously selected.
-    reduceSelection: function () {
+    reduceSelection: function() {
       const self = this,
             selectionModel = this.model.selectionModel,
             roots = [];
-      selectionModel.forEach(function (item) {
+      selectionModel.forEach(function(item) {
         if (!self.isItemInSelection(self.getParent(item)))
           roots.push(item);
       });
@@ -1060,15 +1083,15 @@ const hierarchicalModel = (function () {
       return result;
     },
 
-    init_: function (item, parent) {
+    init_: function(item, parent) {
       const self = this;
       this.setParent(item, parent);
-      this.visitDescendants(item, function (child, parent) {
+      this.visitDescendants(item, function(child, parent) {
         self.setParent(child, parent);
       });
     },
 
-    onChanged_: function (change) {
+    onChanged_: function(change) {
       const dataModel = this.model.dataModel,
             item = change.item,
             attr = change.attr;
@@ -1108,7 +1131,7 @@ const hierarchicalModel = (function () {
     instance.model = model;
 
     // Create wrappers here to capture 'instance'.
-    model.observableModel.addHandler('changed', function (change) {
+    model.observableModel.addHandler('changed', function(change) {
       instance.onChanged_(change);
     });
 
@@ -1126,7 +1149,7 @@ const hierarchicalModel = (function () {
 //------------------------------------------------------------------------------
 
 // translatableModel maintains absolute positions on a hierarchy of items.
-const translatableModel = (function () {
+const translatableModel = (function() {
   const _x = Symbol('x'), _y = Symbol('y');
   const proto = {
     // Getter functions which determine translation parameters. Override to
@@ -1139,7 +1162,7 @@ const translatableModel = (function () {
       return item.y;
     },
 
-    hasTranslation: function (item) {
+    hasTranslation: function(item) {
       return (typeof this.getX(item) == 'number') &&
              (typeof this.getY(item) == 'number');
     },
@@ -1154,7 +1177,7 @@ const translatableModel = (function () {
 
     // Gets the translation to move an item from its current parent to
     // newParent. Handles the cases where current parent or newParent are null.
-    getToParent: function (item, newParent) {
+    getToParent: function(item, newParent) {
       const oldParent = this.model.hierarchicalModel.getParent(item);
       let dx = 0, dy = 0;
       if (oldParent) {
@@ -1168,7 +1191,7 @@ const translatableModel = (function () {
       return { x: dx, y: dy };
     },
 
-    updateTranslation: function (item) {
+    updateTranslation: function(item) {
       if (!this.hasTranslation(item))
         return;
 
@@ -1187,15 +1210,15 @@ const translatableModel = (function () {
       }
     },
 
-    update: function (item) {
+    update: function(item) {
       const self = this;
       this.updateTranslation(item);
-      this.model.hierarchicalModel.visitDescendants(item, function (child, parent) {
+      this.model.hierarchicalModel.visitDescendants(item, function(child, parent) {
         self.updateTranslation(child);
       });
     },
 
-    onChanged_: function (change) {
+    onChanged_: function(change) {
       const dataModel = this.model.dataModel,
             item = change.item, attr = change.attr;
       switch (change.type) {
@@ -1231,7 +1254,7 @@ const translatableModel = (function () {
 
     if (model.observableModel) {
       // Create wrappers here to capture 'instance'.
-      model.observableModel.addHandler('changed', function (change) {
+      model.observableModel.addHandler('changed', function(change) {
         instance.onChanged_(change);
       });
     }
@@ -1255,7 +1278,7 @@ const translatableModel = (function () {
 // transformableModel maintains transform matrices on a hierarchy of items. It
 // handles 2d transforms with rotation, uniform scaling, and translations. Non-
 // uniform scale transforms don't work well with canvas drawing in general.
-const transformableModel = (function () {
+const transformableModel = (function() {
   const _x = Symbol('x'), _y = Symbol('y'), _scale = Symbol('scale'),
         _ooScale = Symbol('ooScale'), _rotation = Symbol('rotation'),
         _transform = Symbol('transform'),
@@ -1265,7 +1288,7 @@ const transformableModel = (function () {
   const proto = {
     // Getter functions which determine transform parameters. Override if these
     // don't fit your model.
-    hasTransform: function (item) {
+    hasTransform: function(item) {
       return (typeof item.x == 'number') &&
              (typeof item.y == 'number');
     },
@@ -1282,34 +1305,34 @@ const transformableModel = (function () {
       return item.scale || item[_scale] || 1;
     },
 
-    getRotation: function (item) {
+    getRotation: function(item) {
       return item.rotation || item[_rotation] || 0;
     },
 
     // Getter functions for genereated transforms and related information.
-    getLocal: function (item) {
+    getLocal: function(item) {
       return item[_transform];
     },
 
-    getInverseLocal: function (item) {
+    getInverseLocal: function(item) {
       return item[_iTransform];
     },
 
-    getAbsolute: function (item) {
+    getAbsolute: function(item) {
       return item[_aTransform];
     },
 
-    getInverseAbsolute: function (item) {
+    getInverseAbsolute: function(item) {
       return item[_iaTransform];
     },
 
-    getOOScale: function (item) {
+    getOOScale: function(item) {
       return item[_ooScale];
     },
 
     // Gets the matrix to move an item from its current parent to newParent.
     // Handles the cases where current parent or newParent are null.
-    getToParent: function (item, newParent) {
+    getToParent: function(item, newParent) {
       const oldParent = this.model.hierarchicalModel.getParent(item),
             oldTransform = oldParent ? this.getAbsolute(oldParent) : null,
             newInverse = newParent ? this.getInverseAbsolute(newParent) : null;
@@ -1318,7 +1341,7 @@ const transformableModel = (function () {
       return oldTransform || newInverse;
     },
 
-    updateLocal: function (item) {
+    updateLocal: function(item) {
       const tx = this.getX(item), ty = this.getY(item),
             scale = this.getScale(item), ooScale = 1.0 / scale,
             rot = this.getRotation(item),
@@ -1333,7 +1356,7 @@ const transformableModel = (function () {
                            -tx * ooScaleCos + ty * ooScaleSin, -tx * ooScaleSin - ty * ooScaleCos ];
     },
 
-    updateTransforms: function (item) {
+    updateTransforms: function(item) {
       if (!this.hasTransform(item))
         return;
 
@@ -1354,15 +1377,15 @@ const transformableModel = (function () {
       }
     },
 
-    update: function (item) {
+    update: function(item) {
       const self = this, hierarchicalModel = this.model.hierarchicalModel;
       this.updateTransforms(item);
-      hierarchicalModel.visitDescendants(item, function (child, parent) {
+      hierarchicalModel.visitDescendants(item, function(child, parent) {
         self.updateTransforms(child);
       });
     },
 
-    onChanged_: function (change) {
+    onChanged_: function(change) {
       const dataModel = this.model.dataModel,
             item = change.item, attr = change.attr;
       switch (change.type) {
@@ -1398,7 +1421,7 @@ const transformableModel = (function () {
 
     if (model.observableModel) {
       // Create wrappers here to capture 'instance'.
-      model.observableModel.addHandler('changed', function (change) {
+      model.observableModel.addHandler('changed', function(change) {
         instance.onChanged_(change);
       });
     }
@@ -1420,7 +1443,7 @@ const transformableModel = (function () {
 //------------------------------------------------------------------------------
 
 // A model for maintaining a single 'open' item.
-const openingModel = (function () {
+const openingModel = (function() {
   const proto = {
     open: function(item) {
       this.openItem_ = item;
@@ -1431,7 +1454,7 @@ const openingModel = (function () {
     clear: function() {
       this.openItem_ = undefined;
     },
-    onChanged_: function (change) {
+    onChanged_: function(change) {
       const dataModel = this.model.dataModel,
             item = change.item,
             attr = change.attr;
@@ -1455,7 +1478,7 @@ const openingModel = (function () {
 
     const instance = Object.create(proto);
     instance.model = model;
-    model.observableModel.addHandler('changed', function (change) {
+    model.observableModel.addHandler('changed', function(change) {
       instance.onChanged_(change);
     });
 
@@ -1471,7 +1494,7 @@ const openingModel = (function () {
 //------------------------------------------------------------------------------
 
 // A model for tracking which items in the data model have changed.
-const changeModel = (function () {
+const changeModel = (function() {
   const proto = {
     hasChanges: function() {
       return this.has_changes_;
@@ -1497,7 +1520,7 @@ const changeModel = (function () {
       this.has_changes_ = false;
     },
 
-    onChanged_: function (change) {
+    onChanged_: function(change) {
       const dataModel = this.model.dataModel,
             item = change.item,
             attr = change.attr;
@@ -1538,7 +1561,7 @@ const changeModel = (function () {
     instance.removedItems_ = new Set();
     instance.has_changes_ = false;
 
-    model.observableModel.addHandler('changed', function (change) {
+    model.observableModel.addHandler('changed', function(change) {
       instance.onChanged_(change);
     });
 
@@ -1553,9 +1576,9 @@ const changeModel = (function () {
 
 //------------------------------------------------------------------------------
 
-// const myModel = (function () {
+// const myModel = (function() {
 //   const proto = {
-//     foo: function (item) {
+//     foo: function(item) {
 //       return item;
 //     },
 //   }

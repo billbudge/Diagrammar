@@ -2482,7 +2482,7 @@ Editor.prototype.onDrag = function(p0, p) {
       if (srcId) {
         observableModel.changeValue(dragItem, 'srcPin', hitInfo.output);
       } else {
-        // Change private property while wire is incomplete.
+        // Change private property through model to update observers.
         observableModel.changeValue(dragItem, _p1, cp);
       }
       break;
@@ -2493,7 +2493,7 @@ Editor.prototype.onDrag = function(p0, p) {
       if (dstId) {
         observableModel.changeValue(dragItem, 'dstPin', hitInfo.input);
       } else {
-        // Change private property while wire is incomplete.
+        // Change private property through model to update observers.
         observableModel.changeValue(dragItem, _p2, cp);
       }
       break;

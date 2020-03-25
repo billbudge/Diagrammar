@@ -95,6 +95,36 @@ test("dataModel subtrees", function() {
   deepEqual(itemIds, [ 1, 2, 3, 4, 5, 6 ]);
 });
 
+test("dataModel deepEqual", function() {
+  const testData1 = {
+    id: 1,
+    item: { id: 2, },
+    items: [
+      {
+        id: 3,
+        items: [
+          { id: 4, x: 0 },
+          { id: 5, x: 1 },
+        ],
+      },
+      {
+        id: 6,
+        items: [
+          { id: 7, x: 0 },
+          { id: 8, x: 1 },
+        ],
+      },
+      { id: 9, foo: 'bar' },
+    ],
+  }
+  const model = { root: testData1 };
+  const test = dataModels.dataModel.extend(model);
+  const itemIds = [];
+  ok(test.deepEqual(testData1, testData1));
+  ok(test.deepEqual(testData1.items[0], testData1.items[1]));
+  ok(!test.deepEqual(testData1.item, testData1.items[2]));
+});
+
 // Data event mixin unit tests.
 
 test("eventMixin", function() {
