@@ -23,13 +23,12 @@ function isElementOrGroup(item) {
   return isElement(item) || isGroup(item);
 }
 
-function isWire(item) {
-  return item.type == 'wire';
+function isGroupInstance(item) {
+  return isElement(item) && item.items;
 }
 
-function isWireComplete(wire) {
-  return wire.srcId != 0 && wire.dstId != 0 &&
-         wire.srcPin !== undefined && wire.dstPin != undefined;
+function isWire(item) {
+  return item.type == 'wire';
 }
 
 function isLiteral(item) {
@@ -54,10 +53,6 @@ function isInput(item) {
 
 function isOutput(item) {
   return item.elementType == 'output';
-}
-
-function isHoverable(item) {
-  return isElement(item) && item.items;
 }
 
 function isInputPinLabeled(item) {
@@ -430,13 +425,17 @@ const circuitModel = (function() {
     insertWire_: function(wire) {
       this.wires_.add(wire);
       const src = this.getWireSrc(wire),
-            dst = this.getWireDst(wire),
-            outputs = this.outputMap_.get(src),
-            inputs = this.inputMap_.get(dst);
-      if (outputs)
-        outputs[wire.srcPin].push(wire);
-      if (inputs)
-        inputs[wire.dstPin] = wire;
+            dst = this.getWireDst(wire);
+      if (src) {
+        const outputs = this.outputMap_.get(src);
+        if (outputs && wire.srcPin !== undefined)
+          outputs[wire.srcPin].push(wire);
+      }
+      if (dst) {
+        const inputs = this.inputMap_.get(dst);
+        if (inputs && wire.dstPin !== undefined)
+          inputs[wire.dstPin] = wire;
+      }
     },
 
     removeWire_: function(wire) {
@@ -475,7 +474,7 @@ const circuitModel = (function() {
 
       // Remove wires, then elements.
       removedItems.forEach(function(item) {
-        if (isWire(item) && isWireComplete(item)) {
+        if (isWire(item)) {
           self.removeWire_(item);
         } else if (isGroup(item)) {
           visitItem(item, function(wire) {
@@ -503,7 +502,7 @@ const circuitModel = (function() {
         }, isElementOrGroup);
       });
       insertedItems.forEach(function(item) {
-        if (isWire(item) && isWireComplete(item)) {
+        if (isWire(item)) {
           self.insertWire_(item);
         } else if (isGroup(item)) {
           visitItem(item, function(wire) {
@@ -1160,6 +1159,12 @@ const editingModel = (function() {
       return group;
     },
 
+    createGroupInstance: function(group, element) {
+      const items = this.model.copyPasteModel.cloneItems(group.items, new Map());
+      // TODO create master or find existing one, and reference it.
+      element.items = items;
+    },
+
     findSrcType: function(wire) {
       const self = this,
             model = this.model,
@@ -1609,6 +1614,9 @@ const viewModel = (function() {
       } else if (isElement(item)) {
         this.changedElements_.add(item);
         this.addTopLevelGroup_(item);
+        if (item.items) {
+        visitItems(item.items, child => self.update_(child));
+        }
       } else if (isGroup(item)) {
         visitItems(item.items, child => self.update_(child));
       }
@@ -1932,7 +1940,6 @@ Renderer.prototype.hitTestGroup = function(group, p, tol, mode) {
           y: newElementRect.y,
           master: group.master,
           [_master]: master,
-          groupId: this.model.dataModel.getId(group),
           state: 'palette',
         };
       }
@@ -2001,7 +2008,7 @@ Renderer.prototype.drawHoverInfo = function(item, p) {
   let self = this, theme = this.theme,
       x = p.x, y = p.y;
   ctx.fillStyle = theme.hoverColor;
-  if (isHoverable(item)) {
+  if (isGroupInstance(item)) {
     let viewModel = this.viewModel;
     let r = viewModel.getItemRects(item.items);
     ctx.translate(x - r.x, y - r.y);
@@ -2009,7 +2016,6 @@ Renderer.prototype.drawHoverInfo = function(item, p) {
     ctx.fillRect(r.x - border, r.y - border, r.w + 2 * border, r.h + 2 * border);
     ctx.fillStyle = theme.hoverTextColor;
     item.items.forEach(function(item) {
-      self.layout(item);
       self.draw(item, normalMode);
     });
   } else {
@@ -2326,7 +2332,7 @@ Editor.prototype.onClick = function(p) {
   if (mouseHitInfo) {
     let item = mouseHitInfo.item;
     if (mouseHitInfo.newElement) {
-      mouseHitInfo.newElementOrigin = item;
+      mouseHitInfo.newElementSource = item;
       item = mouseHitInfo.item = mouseHitInfo.newElement;
     }
     if (cmdKeyDown || isPaletted(item)) {
@@ -2430,8 +2436,9 @@ Editor.prototype.onBeginDrag = function(p0) {
             renderer = this.renderer,
             map = new Map(),
             copies = editingModel.copyItems(selectionModel.contents(), map);
-        if (drag.isSingleElement && mouseHitInfo.newElementOrigin) {
-          copies[0].groupId = model.dataModel.getId(mouseHitInfo.newElementOrigin);
+        if (drag.isSingleElement && mouseHitInfo.newElementSource) {
+          // Create a new instance of a group.
+          editingModel.createGroupInstance(mouseHitInfo.newElementSource, copies[0]);
         }
         editingModel.addItems(copies);
         selectionModel.set(copies);
@@ -2520,6 +2527,7 @@ Editor.prototype.onEndDrag = function(p) {
       if (drag.isNewWire) {
         if (!dragItem.srcId) {
           // Add the appropriate source junction.
+          editingModel.deleteItem(dragItem);
           editingModel.connectInput(editingModel.getWireDst(dragItem), dragItem.dstPin, p);
         } else if (!dragItem.dstId) {
           const src = editingModel.getWireSrc(dragItem),
@@ -2550,6 +2558,7 @@ Editor.prototype.onEndDrag = function(p) {
             editingModel.newItem(wire);
             editingModel.addItem(wire, diagram);
           } else {
+            editingModel.deleteItem(dragItem);
             editingModel.connectOutput(editingModel.getWireSrc(dragItem), dragItem.srcPin, p);
           }
         }
