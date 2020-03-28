@@ -1554,9 +1554,9 @@ Editor.prototype.onKeyDown = function(e) {
 return {
   editingModel: editingModel,
 
-  normalMode: normalMode,
-  highlightMode: highlightMode,
-  hotTrackMode: hotTrackMode,
+  // normalMode: normalMode,
+  // highlightMode: highlightMode,
+  // hotTrackMode: hotTrackMode,
 
   Renderer: Renderer,
 

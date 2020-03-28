@@ -1600,6 +1600,7 @@ Editor.prototype.onKeyDown = function(e) {
 
 return {
   editingModel: editingModel,
+
   Renderer: Renderer,
   Editor: Editor,
 };

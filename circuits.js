@@ -302,6 +302,95 @@ const signatureModel = (function() {
 
 //------------------------------------------------------------------------------
 
+const masteringModel = (function() {
+  const proto = {
+    internalizeMaster: function(newMaster) {
+      const model = this.model,
+            diagram = this.diagram,
+            dataModel = model.dataModel;
+      for (let master of diagram.masters) {
+        if (dataModel.deepEqual(master, newMaster))
+          return master;
+      }
+      dataModel.assignId(newMaster);
+      dataModel.initialize(newMaster);
+      model.observableModel.insertElement(
+          diagram, 'masters', diagram.masters.length, newMaster);
+      this.masterReferences_.set(newMaster, 1);
+      return newMaster;
+    },
+
+    onChange_: function(change) {
+      let master;
+      switch (change.type) {
+        case 'insert':
+          master = this.getMaster_(change.item);
+          if (master) {
+            const map = this.masterReferences_;
+            let count = map.get(master);
+            map.set(master, count++);
+            this.unusedMasters_.remove(master);
+          }
+          break;
+        case 'remove':
+          master = this.getMaster_(change.item);
+          if (master) {
+            const map = this.masterReferences_;
+            let count = map.get(master);
+            map.set(master, count--);
+            if (!count) {
+              this.unusedMasters_.add(master);
+            }
+          }
+          break;
+      }
+    },
+
+    makeConsistent_: function() {
+      const model = this.model,
+            diagram = model.diagram,
+            observableModel = model.observableModel,
+            unusedMasters = this.unusedMasters_;
+      for (let master of unusedMasters) {
+        observableModel.removeElement(diagram, 'masters', diagram.masters.indexOf(master));
+      }
+      unusedMasters.clear();
+    },
+  }
+
+  function extend(model) {
+    dataModels.dataModel.extend(model);
+    dataModels.observableModel.extend(model);
+    dataModels.referencingModel.extend(model);
+    dataModels.transactionModel.extend(model);
+
+    let instance = Object.create(proto);
+    instance.model = model;
+    instance.diagram = model.root;
+    instance.masters_ = diagram.masters;
+    instance.masterReferences_ = new Map();
+    instance.unusedMasters_ = new Set();
+
+    instance.getMaster_ = model.referencingModel.getReferenceFn('groupId');
+
+    // Maintain reference counts for groups.
+    model.observableModel.addHandler('changed',
+                                     change => instance.onChange_(change));
+    // Remove groups with no references.
+    model.transactionModel.addHandler('transactionEnding',
+                                      transaction => instance.makeConsistent());
+
+    model.masteringModel = instance;
+    return instance;
+  }
+
+  return {
+    extend: extend,
+  }
+})();
+
+//------------------------------------------------------------------------------
+
 // Extends dataModels.changeModel to add:
 // - maps from element to connected input and output wires.
 // - information about graphs and subgraphs.
@@ -2705,9 +2794,9 @@ return {
   signatureModel: signatureModel,
   viewModel: viewModel,
 
-  normalMode: normalMode,
-  highlightMode: highlightMode,
-  hotTrackMode: hotTrackMode,
+  // normalMode: normalMode,
+  // highlightMode: highlightMode,
+  // hotTrackMode: hotTrackMode,
 
   Renderer: Renderer,
 
@@ -2726,6 +2815,8 @@ const circuit_data =
   "height": 430,
   "name": "Example",
   "items": [
+  ],
+  "masters": [
   ]
 }
 
