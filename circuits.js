@@ -24,7 +24,7 @@ function isElementOrGroup(item) {
 }
 
 function isGroupInstance(item) {
-  return isElement(item) && item.items;
+  return isElement(item) && item.groupId;
 }
 
 function isWire(item) {
@@ -104,10 +104,15 @@ function reverseVisitItems(items, fn, filter) {
 const inputElementType = '[,*]',
       outputElementType = '[*,]';
 
-const _master = Symbol('master');
+const _master = Symbol('master'),
+      _groupItems = Symbol('groupItems');
 
 function getMaster(item) {
   return item[_master];
+}
+
+function getGroupItems(item) {
+  return item[_groupItems];
 }
 
 //------------------------------------------------------------------------------
@@ -306,9 +311,9 @@ const masteringModel = (function() {
       const model = this.model,
             diagram = this.diagram,
             dataModel = model.dataModel,
-            referencingModel = model.referencingModel;
+            instancingModel = model.instancingModel;
       for (let master of diagram.masters) {
-        if (referencingModel.deepEqual(master, newMaster, new Map()))
+        if (instancingModel.isomorphic(master, newMaster, new Map()))
           return master;
       }
       dataModel.assignId(newMaster);
@@ -329,6 +334,7 @@ const masteringModel = (function() {
             let count = map.get(master) || 0;  // this might be the first instance.
             map.set(master, count++);
             this.unusedMasters_.delete(master);
+            inserted[_groupItems] = master.items;
           }
           break;
         case 'remove':
@@ -341,6 +347,7 @@ const masteringModel = (function() {
             if (!count) {
               this.unusedMasters_.add(master);
             }
+            removed[_groupItems] = null;
           }
           break;
       }
@@ -361,8 +368,9 @@ const masteringModel = (function() {
   function extend(model) {
     dataModels.dataModel.extend(model);
     dataModels.observableModel.extend(model);
-    dataModels.referencingModel.extend(model);
     dataModels.transactionModel.extend(model);
+    dataModels.referencingModel.extend(model);
+    dataModels.instancingModel.extend(model);
 
     let instance = Object.create(proto);
     instance.model = model;
@@ -1253,6 +1261,7 @@ const editingModel = (function() {
             items = model.copyPasteModel.cloneItems(group.items, new Map()),
             newMaster = {
               id: 0,  // Temporary id, so deepEqual will match non-identically.
+              type: 'group',
               items: items,
             };
       const master = model.masteringModel.internalizeMaster(newMaster);
@@ -2097,36 +2106,37 @@ Renderer.prototype.drawHoverInfo = function(item, p) {
       x = p.x, y = p.y;
   ctx.fillStyle = theme.hoverColor;
   if (isGroupInstance(item)) {
-    let viewModel = this.viewModel;
-    let r = viewModel.getItemRects(item.items);
+    const viewModel = this.viewModel,
+          groupItems = getGroupItems(item);
+    let r = viewModel.getItemRects(groupItems);
     ctx.translate(x - r.x, y - r.y);
     let border = 4;
     ctx.fillRect(r.x - border, r.y - border, r.w + 2 * border, r.h + 2 * border);
     ctx.fillStyle = theme.hoverTextColor;
-    item.items.forEach(function(item) {
+    groupItems.forEach(function(item) {
       self.draw(item, normalMode);
     });
   } else {
-    // Just list properties as text.
-    let props = [];
-    this.model.dataModel.visitProperties(item, function(item, attr) {
-      let value = item[attr];
-      if (Array.isArray(value))
-        return;
-      props.push({ name: attr, value: value });
-    });
-    let textSize = theme.fontSize, gap = 16, border = 4,
-        height = textSize * props.length + 2 * border,
-        maxWidth = diagrams.measureNameValuePairs(props, gap, ctx) + 2 * border;
-    ctx.fillRect(x, y, maxWidth, height);
-    ctx.fillStyle = theme.hoverTextColor;
-    props.forEach(function(prop) {
-      ctx.textAlign = 'left';
-      ctx.fillText(prop.name, x + border, y + textSize);
-      ctx.textAlign = 'right';
-      ctx.fillText(prop.value, x + maxWidth - border, y + textSize);
-      y += textSize;
-    });
+    // // Just list properties as text.
+    // let props = [];
+    // this.model.dataModel.visitProperties(item, function(item, attr) {
+    //   let value = item[attr];
+    //   if (Array.isArray(value))
+    //     return;
+    //   props.push({ name: attr, value: value });
+    // });
+    // let textSize = theme.fontSize, gap = 16, border = 4,
+    //     height = textSize * props.length + 2 * border,
+    //     maxWidth = diagrams.measureNameValuePairs(props, gap, ctx) + 2 * border;
+    // ctx.fillRect(x, y, maxWidth, height);
+    // ctx.fillStyle = theme.hoverTextColor;
+    // props.forEach(function(prop) {
+    //   ctx.textAlign = 'left';
+    //   ctx.fillText(prop.name, x + border, y + textSize);
+    //   ctx.textAlign = 'right';
+    //   ctx.fillText(prop.value, x + maxWidth - border, y + textSize);
+    //   y += textSize;
+    // });
   }
 }
 

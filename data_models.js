@@ -578,41 +578,6 @@ const referencingModel = (function() {
       return newTarget;
     },
 
-    // Strict deep equality (no working up prototype chain.)
-    deepEqual: function(item1, item2, equals) {
-      const dataModel = this.model.dataModel;
-      // Equal values.
-      if (item1 === item2)
-        return true;
-      // Non-item values, not equal.
-      if (!dataModel.isItem(item1) || !dataModel.isItem(item2))
-        return false;
-      // Items already compared equal.
-      if (equals.get(item1) === item2)
-        return true;
-
-      const keys1 = Object.keys(item1),
-            keys2 = Object.keys(item2);
-      if (keys1.length !== keys2.length)
-        return false;
-      for (let k of keys1) {
-        if (k == 'id')
-          continue;  // Ignore ids.
-        if (!item2.hasOwnProperty(k))
-          return false;
-        // Check references for equality.
-        if (dataModel.isReference(item1, k) && dataModel.isReference(item2, k) &&
-            !this.deepEqual(this.getReference(item1, k), this.getReference(item2, k), equals)) {
-          return false;
-        }
-        if (!this.deepEqual(item1[k], item2[k], equals)) {
-          return false;
-        }
-      }
-      equals.set(item1, item2);
-      return true;
-    },
-
     // Recursively adds item and sub-items as potential reference targets, and
     // resolves any references they contain.
     addTargets_: function(item) {
@@ -897,6 +862,71 @@ const instancingModel = (function() {
         });
       }, this);
       return copies;
+    },
+
+    // Strict deep equality (no working up prototype chain.)
+    isomorphic: function(item1, item2, map) {
+      const dataModel = this.model.dataModel;
+
+      // The first pass matches all items and properties except references. It
+      // builds the id mapping for the second pass.
+      function firstPass(item1, item2) {
+        if (!dataModel.isItem(item1) || !dataModel.isItem(item2))
+          return item1 === item2;
+
+        const keys1 = Object.keys(item1),
+              keys2 = Object.keys(item2);
+        if (keys1.length !== keys2.length)
+          return false;
+        for (let k of keys1) {
+          if (!item2.hasOwnProperty(k))
+            return false;
+          // Skip id's.
+          if (k === 'id')
+            continue;
+          // Skip reference properties.
+          if (dataModel.isReference(item1, k) &&
+              dataModel.isReference(item2, k)) {
+            continue;
+          }
+          if (!firstPass(item1[k], item2[k])) {
+            return false;
+          }
+        }
+
+        // Add item1 -> item2 id mapping.
+        const id1 = dataModel.getId(item1),
+              id2 = dataModel.getId(item2);
+        if (id1 && id2)
+          map.set(id1, id2);
+
+        return true;
+      }
+
+      // The second pass makes sure all reference properties of items are
+      // to the same item, or isomorphic items.
+      function secondPass(item1, item2) {
+        if (dataModel.isItem(item1) && dataModel.isItem(item2)) {
+          const keys1 = Object.keys(item1),
+                keys2 = Object.keys(item2);
+          for (let k of keys1) {
+            // Check reference properties.
+            if (dataModel.isReference(item1, k) &&
+                dataModel.isReference(item2, k)) {
+              // Check for the same external reference, or to an isomorphic
+              // internal reference.
+              if (item1[k] !== item2[k] &&
+                  map.get(item1[k]) !== item2[k]) {
+                return false;
+              }
+            }
+          }
+        }
+        return true;
+      }
+
+      return firstPass(item1, item2) &&
+             secondPass(item1, item2);
     },
   }
 

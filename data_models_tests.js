@@ -334,7 +334,9 @@ test("referencingModel", function() {
   deepEqual(model.referencingModel.resolveId(child2.refId), undefined);
 });
 
-test("referencingModel deepEqual", function() {
+// Instancing model unit tests.
+
+test("instancingModel deepEqual", function() {
   const testData = {
     id: 1,
     item: { id: 2, },
@@ -357,11 +359,11 @@ test("referencingModel deepEqual", function() {
     ],
   }
   const model = { root: testData };
-  const test = dataModels.referencingModel.extend(model);
+  const test = dataModels.instancingModel.extend(model);
   const itemIds = [];
-  ok(test.deepEqual(testData, testData, new Map()));
-  ok(test.deepEqual(testData.items[0], testData.items[1], new Map()));
-  ok(!test.deepEqual(testData.item, testData.items[2], new Map()));
+  ok(test.isomorphic(testData, testData, new Map()));
+  ok(test.isomorphic(testData.items[0], testData.items[1], new Map()));
+  ok(!test.isomorphic(testData.item, testData.items[2], new Map()));
 });
 
 // Hierarchical model unit tests.
