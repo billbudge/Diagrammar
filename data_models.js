@@ -91,29 +91,6 @@ const dataModel = (function() {
       });
     },
 
-    // Strict deep equality (no working up prototype chain.)
-    deepEqual: function(item1, item2) {
-      if (item1 === item2)
-        return true;
-      if ((typeof item1 != "object" || item1 == null) ||
-          (typeof item2 != "object" || item2 == null))
-        return false;
-
-      const keys1 = Object.keys(item1),
-            keys2 = Object.keys(item2);
-      if (keys1.length != keys2.length)
-        return false;
-      for (let k of keys1) {
-        if (k == 'id') continue;  // The id may differ.
-        if (!item2.hasOwnProperty(k) ||
-            !this.deepEqual(item1[k], item2[k])) {
-          return false;
-        }
-      }
-
-      return true;
-    },
-
     addInitializer: function(initialize) {
       this.initializers.push(initialize);
     },
@@ -498,9 +475,8 @@ const transactionModel = (function() {
     const instance = Object.create(proto);
     instance.model = model;
     eventMixin.extend(instance);
-    model.observableModel.addHandler('changed', function(change) {
-      instance.onChanged_(change);
-    });
+    model.observableModel.addHandler('changed',
+                                     change => instance.onChanged_(change));
 
     model.transactionModel = instance;
     return instance;
@@ -558,9 +534,8 @@ const transactionHistory = (function() {
     instance.model = model;
     instance.done = [];
     instance.undone = [];
-    model.transactionModel.addHandler('transactionEnded', function(transaction) {
-      instance.onTransactionEnded_(transaction);
-    });
+    model.transactionModel.addHandler('transactionEnded',
+                                      transaction => instance.onTransactionEnded_(transaction));
 
     model.transactionHistory = instance;
     return instance;
@@ -601,6 +576,41 @@ const referencingModel = (function() {
             newTarget = this.resolveId(newId);
       item[Symbol.for(attr)] = newTarget;
       return newTarget;
+    },
+
+    // Strict deep equality (no working up prototype chain.)
+    deepEqual: function(item1, item2, equals) {
+      const dataModel = this.model.dataModel;
+      // Equal values.
+      if (item1 === item2)
+        return true;
+      // Non-item values, not equal.
+      if (!dataModel.isItem(item1) || !dataModel.isItem(item2))
+        return false;
+      // Items already compared equal.
+      if (equals.get(item1) === item2)
+        return true;
+
+      const keys1 = Object.keys(item1),
+            keys2 = Object.keys(item2);
+      if (keys1.length !== keys2.length)
+        return false;
+      for (let k of keys1) {
+        if (k == 'id')
+          continue;  // Ignore ids.
+        if (!item2.hasOwnProperty(k))
+          return false;
+        // Check references for equality.
+        if (dataModel.isReference(item1, k) && dataModel.isReference(item2, k) &&
+            !this.deepEqual(this.getReference(item1, k), this.getReference(item2, k), equals)) {
+          return false;
+        }
+        if (!this.deepEqual(item1[k], item2[k], equals)) {
+          return false;
+        }
+      }
+      equals.set(item1, item2);
+      return true;
     },
 
     // Recursively adds item and sub-items as potential reference targets, and
@@ -672,10 +682,8 @@ const referencingModel = (function() {
     const instance = Object.create(proto);
     instance.model = model;
     if (model.observableModel) {
-      // Create wrappers here to capture 'instance'.
-      model.observableModel.addHandler('changed', function(change) {
-        instance.onChanged_(change);
-      });
+      model.observableModel.addHandler('changed',
+                                       change => instance.onChanged_(change));
     }
     instance.targets_ = new Map();
     instance.addTargets_(model.dataModel.getRoot());
@@ -722,10 +730,9 @@ const referenceValidator = (function() {
     dataModel.extend(model);
     transactionModel.extend(model);
     referencingModel.extend(model);
-    // Create wrappers here to capture 'instance'.
-    model.transactionModel.addHandler('transactionEnding', function(transaction) {
-      instance.onTransactionEnding_(transaction);
-    });
+
+    model.transactionModel.addHandler('transactionEnding',
+                                      transaction => instance.onTransactionEnding_(transaction));
 
     model.referenceValidator = instance;
     return instance;
@@ -1130,10 +1137,8 @@ const hierarchicalModel = (function() {
     const instance = Object.create(proto);
     instance.model = model;
 
-    // Create wrappers here to capture 'instance'.
-    model.observableModel.addHandler('changed', function(change) {
-      instance.onChanged_(change);
-    });
+    model.observableModel.addHandler('changed',
+                                     change => instance.onChanged_(change));
 
     instance.init_(model.dataModel.getRoot(), null);
 
@@ -1253,10 +1258,8 @@ const translatableModel = (function() {
     instance.model = model;
 
     if (model.observableModel) {
-      // Create wrappers here to capture 'instance'.
-      model.observableModel.addHandler('changed', function(change) {
-        instance.onChanged_(change);
-      });
+      model.observableModel.addHandler('changed',
+                                       change => instance.onChanged_(change));
     }
 
     // Make sure new items have translations.
@@ -1420,10 +1423,8 @@ const transformableModel = (function() {
     instance.model = model;
 
     if (model.observableModel) {
-      // Create wrappers here to capture 'instance'.
-      model.observableModel.addHandler('changed', function(change) {
-        instance.onChanged_(change);
-      });
+      model.observableModel.addHandler('changed',
+                                       change => instance.onChanged_(change));
     }
 
     // Make sure new objects have transforms.
@@ -1478,9 +1479,8 @@ const openingModel = (function() {
 
     const instance = Object.create(proto);
     instance.model = model;
-    model.observableModel.addHandler('changed', function(change) {
-      instance.onChanged_(change);
-    });
+    model.observableModel.addHandler('changed',
+                                      change => instance.onChanged_(change));
 
     model.openingModel = instance;
     return instance;
@@ -1561,9 +1561,8 @@ const changeModel = (function() {
     instance.removedItems_ = new Set();
     instance.has_changes_ = false;
 
-    model.observableModel.addHandler('changed', function(change) {
-      instance.onChanged_(change);
-    });
+    model.observableModel.addHandler('changed',
+                                     change => instance.onChanged_(change));
 
     model.changeModel = instance;
     return instance;

@@ -279,9 +279,7 @@ const signatureModel = (function() {
     dataModels.eventMixin.extend(instance);
 
     // Make sure new elements have masters.
-    model.dataModel.addInitializer(function(item) {
-      instance.initialize(item);
-    });
+    model.dataModel.addInitializer(item => instance.initialize(item));
     // Make sure elements are remastered if their master type changes.
     model.observableModel.addHandler('changed', function (change) {
       if (isElementOrGroup(change.item)) {
@@ -307,16 +305,16 @@ const masteringModel = (function() {
     internalizeMaster: function(newMaster) {
       const model = this.model,
             diagram = this.diagram,
-            dataModel = model.dataModel;
+            dataModel = model.dataModel,
+            referencingModel = model.referencingModel;
       for (let master of diagram.masters) {
-        if (dataModel.deepEqual(master, newMaster))
+        if (referencingModel.deepEqual(master, newMaster, new Map()))
           return master;
       }
       dataModel.assignId(newMaster);
       dataModel.initialize(newMaster);
       model.observableModel.insertElement(
           diagram, 'masters', diagram.masters.length, newMaster);
-      this.masterReferences_.set(newMaster, 1);
       return newMaster;
     },
 
@@ -324,16 +322,18 @@ const masteringModel = (function() {
       let master;
       switch (change.type) {
         case 'insert':
-          master = this.getMaster_(change.item);
+          const inserted = change.item[change.attr][change.index];
+          master = this.getMaster_(inserted);
           if (master) {
             const map = this.masterReferences_;
-            let count = map.get(master);
+            let count = map.get(master) || 0;  // this might be the first instance.
             map.set(master, count++);
-            this.unusedMasters_.remove(master);
+            this.unusedMasters_.delete(master);
           }
           break;
         case 'remove':
-          master = this.getMaster_(change.item);
+          const removed = change.oldValue;
+          master = this.getMaster_(removed);
           if (master) {
             const map = this.masterReferences_;
             let count = map.get(master);
@@ -367,7 +367,7 @@ const masteringModel = (function() {
     let instance = Object.create(proto);
     instance.model = model;
     instance.diagram = model.root;
-    instance.masters_ = diagram.masters;
+    instance.masters_ = instance.diagram.masters;
     instance.masterReferences_ = new Map();
     instance.unusedMasters_ = new Set();
 
@@ -378,7 +378,7 @@ const masteringModel = (function() {
                                      change => instance.onChange_(change));
     // Remove groups with no references.
     model.transactionModel.addHandler('transactionEnding',
-                                      transaction => instance.makeConsistent());
+                                      transaction => instance.makeConsistent_());
 
     model.masteringModel = instance;
     return instance;
@@ -463,8 +463,8 @@ const circuitModel = (function() {
       visitItems(items, function(item) {
         function addWire(wire) {
           wires.add(wire);
-          const src = self.getWireSrc(wire),
-                dst = self.getWireDst(wire),
+          const src = self.getWireSrc_(wire),
+                dst = self.getWireDst_(wire),
                 srcInside = elementsAndGroups.has(src),
                 dstInside = elementsAndGroups.has(dst);
           if (srcInside) {
@@ -513,8 +513,8 @@ const circuitModel = (function() {
 
     insertWire_: function(wire) {
       this.wires_.add(wire);
-      const src = this.getWireSrc(wire),
-            dst = this.getWireDst(wire);
+      const src = this.getWireSrc_(wire),
+            dst = this.getWireDst_(wire);
       if (src) {
         const outputs = this.outputMap_.get(src);
         if (outputs && wire.srcPin !== undefined)
@@ -529,8 +529,8 @@ const circuitModel = (function() {
 
     removeWire_: function(wire) {
       this.wires_.delete(wire);
-      const src = this.getWireSrc(wire),
-            dst = this.getWireDst(wire);
+      const src = this.getWireSrc_(wire),
+            dst = this.getWireDst_(wire);
       // remove wire from output array.
       if (src && wire.srcPin !== undefined) {
         const outputArrays = this.outputMap_.get(src);
@@ -629,8 +629,8 @@ const circuitModel = (function() {
     instance.elementsAndGroups_ = new Set();
     instance.wires_ = new Set();
 
-    instance.getWireSrc = model.referencingModel.getReferenceFn('srcId');
-    instance.getWireDst = model.referencingModel.getReferenceFn('dstId');
+    instance.getWireSrc_ = model.referencingModel.getReferenceFn('srcId');
+    instance.getWireDst_ = model.referencingModel.getReferenceFn('dstId');
 
     // Initialize elements and wires.
     visitItem(instance.circuit, function(element) {
@@ -1249,9 +1249,14 @@ const editingModel = (function() {
     },
 
     createGroupInstance: function(group, element) {
-      const items = this.model.copyPasteModel.cloneItems(group.items, new Map());
-      // TODO create master or find existing one, and reference it.
-      element.items = items;
+      const model = this.model,
+            items = model.copyPasteModel.cloneItems(group.items, new Map()),
+            newMaster = {
+              id: 0,  // Temporary id, so deepEqual will match non-identically.
+              items: items,
+            };
+      const master = model.masteringModel.internalizeMaster(newMaster);
+      element.groupId = model.dataModel.getId(master);
     },
 
     findSrcType: function(wire) {
@@ -1452,13 +1457,9 @@ const editingModel = (function() {
 
     instance.getWireSrc = model.referencingModel.getReferenceFn('srcId');
     instance.getWireDst = model.referencingModel.getReferenceFn('dstId');
-    instance.getGroup = model.referencingModel.getReferenceFn('groupId');
 
-    function makeConsistent(transaction) {
-      instance.makeConsistent();
-    }
-    const transactionModel = model.transactionModel;
-    transactionModel.addHandler('transactionEnding', makeConsistent);
+    model.transactionModel.addHandler('transactionEnding',
+                                      transaction => instance.makeConsistent());
 
     model.editingModel = instance;
     return instance;
@@ -1742,13 +1743,11 @@ const viewModel = (function() {
     let instance = Object.create(proto);
     instance.model = model;
 
-    model.observableModel.addHandler('changed', function (change) {
-      instance.onChanged_(change);
-    });
+    model.observableModel.addHandler('changed',
+                                     change => instance.onChanged_(change));
 
-    model.signatureModel.addHandler('masterInserted', function(type, master) {
-      instance.layoutMaster_(master);
-    });
+    model.signatureModel.addHandler('masterInserted',
+                                    (type, master) => instance.layoutMaster_(master));
 
     instance.wiredElements_ = new Map();
     instance.changedWires_ = new Set();
@@ -2213,8 +2212,9 @@ function Editor(model, textInputController) {
 
   this.primitives = primitives;
 
-  editingModel.extend(model);
   signatureModel.extend(model);
+  masteringModel.extend(model);
+  editingModel.extend(model);
   viewModel.extend(model);
 
   function update() {
@@ -2789,9 +2789,10 @@ Editor.prototype.onKeyDown = function(e) {
 }
 
 return {
+  signatureModel: signatureModel,
+  masteringModel: masteringModel,
   circuitModel: circuitModel,
   editingModel: editingModel,
-  signatureModel: signatureModel,
   viewModel: viewModel,
 
   // normalMode: normalMode,
