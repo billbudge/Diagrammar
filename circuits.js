@@ -4,19 +4,19 @@ const circuits = (function() {
 'use strict';
 
 function isCircuit(item) {
-  return item.type == 'circuit';
+  return item.type === 'circuit';
 }
 
 function isContainer(item) {
-  return item.type == 'circuit' || item.type == 'group';
+  return item.type === 'circuit' || item.type === 'group';
 }
 
 function isElement(item) {
-  return item.type == 'element';
+  return item.type === 'element';
 }
 
 function isGroup(item) {
-  return item.type == 'group';
+  return item.type === 'group';
 }
 
 function isElementOrGroup(item) {
@@ -28,31 +28,31 @@ function isGroupInstance(item) {
 }
 
 function isWire(item) {
-  return item.type == 'wire';
+  return item.type === 'wire';
 }
 
 function isLiteral(item) {
-  return item.elementType == 'literal';
+  return item.elementType === 'literal';
 }
 
 function isJunction(item) {
-  return item.elementType == 'input' || item.elementType == 'output';
+  return item.elementType === 'input' || item.elementType === 'output';
 }
 
 function isClosed(item) {
-  return item.elementType == 'closed';
+  return item.elementType === 'closed';
 }
 
 function isAbstract(item) {
-  return item.elementType == 'abstract';
+  return item.elementType === 'abstract';
 }
 
 function isInput(item) {
-  return item.elementType == 'input';
+  return item.elementType === 'input';
 }
 
 function isOutput(item) {
-  return item.elementType == 'output';
+  return item.elementType === 'output';
 }
 
 function isInputPinLabeled(item) {
@@ -64,11 +64,11 @@ function isOutputPinLabeled(item) {
 }
 
 function isPaletted(item) {
-  return item.state == 'palette';
+  return item.state === 'palette';
 }
 
 function isFunctionType(type) {
-  return type[0] == '[';
+  return type[0] === '[';
 }
 
 // Visits in pre-order.
@@ -1797,347 +1797,344 @@ function Renderer(ctx, theme) {
   this.theme = theme || diagrams.theme.create();
 }
 
-Renderer.prototype.begin = function(model) {
-  let viewModel = model.viewModel;
-  this.model = model;
-  this.viewModel = viewModel;
+Renderer.prototype = {
+  begin: function(model) {
+    this.model = model;
+    this.viewModel = model.viewModel;
 
-  ctx.save();
-  ctx.font = this.theme.font;
+    ctx.save();
+    ctx.font = this.theme.font;
 
-  viewModel.updateLayout();
-}
+    model.viewModel.updateLayout();
+  },
 
-Renderer.prototype.end = function() {
-  this.ctx.restore();
-  this.model = null;
-}
+  end: function() {
+    this.ctx.restore();
+    this.model = this.viewModel = null;
+  },
 
-Renderer.prototype.drawMaster = function(master, x, y) {
-  let self = this, ctx = this.ctx, theme = this.theme,
-      textSize = theme.fontSize, name = master.name,
-      w = master[_width], h = master[_height],
-      right = x + w;
-  ctx.lineWidth = 0.5;
-  ctx.fillStyle = theme.textColor;
-  ctx.textBaseline = 'bottom';
-  if (name) {
-    ctx.textAlign = 'center';
-    ctx.fillText(name, x + w / 2, y + textSize + spacing / 2);
-  }
-  master.inputs.forEach(function(pin, i) {
-    let name = pin.name;
-    self.drawPin(pin, x, y + pin[_y]);
+  drawMaster: function(master, x, y) {
+    const self = this, ctx = this.ctx, theme = this.theme,
+          textSize = theme.fontSize, name = master.name,
+          w = master[_width], h = master[_height],
+          right = x + w;
+    ctx.lineWidth = 0.5;
+    ctx.fillStyle = theme.textColor;
+    ctx.textBaseline = 'bottom';
     if (name) {
-      ctx.textAlign = 'left';
-      ctx.fillText(name, x + pin[_width] + spacing, y + pin[_baseline]);
+      ctx.textAlign = 'center';
+      ctx.fillText(name, x + w / 2, y + textSize + spacing / 2);
     }
-  });
-  master.outputs.forEach(function(pin) {
-    let name = pin.name,
-        pinLeft = right - pin[_width];
-    self.drawPin(pin, pinLeft, y + pin[_y]);
-    if (name) {
-      ctx.textAlign = 'right';
-      ctx.fillText(name, pinLeft - spacing, y + pin[_baseline]);
-    }
-  });
-}
+    master.inputs.forEach(function(pin, i) {
+      const name = pin.name;
+      self.drawPin(pin, x, y + pin[_y]);
+      if (name) {
+        ctx.textAlign = 'left';
+        ctx.fillText(name, x + pin[_width] + spacing, y + pin[_baseline]);
+      }
+    });
+    master.outputs.forEach(function(pin) {
+      const name = pin.name,
+            pinLeft = right - pin[_width];
+      self.drawPin(pin, pinLeft, y + pin[_y]);
+      if (name) {
+        ctx.textAlign = 'right';
+        ctx.fillText(name, pinLeft - spacing, y + pin[_baseline]);
+      }
+    });
+  },
 
-Renderer.prototype.drawPin = function(pin, x, y) {
-  ctx.strokeStyle = theme.strokeColor;
-  if (pin.type == 'v' || pin.type == '*') {
-    let r = knobbyRadius;
-    ctx.beginPath();
-    if (pin.type == 'v') {
-      let d = 2 * r;
-      ctx.rect(x, y, d, d);
+  drawPin: function(pin, x, y) {
+    ctx.strokeStyle = theme.strokeColor;
+    if (pin.type == 'v' || pin.type == '*') {
+      const r = knobbyRadius;
+      ctx.beginPath();
+      if (pin.type == 'v') {
+        const d = 2 * r;
+        ctx.rect(x, y, d, d);
+      } else {
+        ctx.arc(x + r, y + r, r, 0, Math.PI * 2, true);
+      }
+      ctx.stroke();
     } else {
-      ctx.arc(x + r, y + r, r, 0, Math.PI * 2, true);
-    }
-    ctx.stroke();
-  } else {
-    let master = getMaster(pin),
-        width = master[_width], height = master[_height];
-    this.ctx.scale(shrink, shrink);
-    x *= inv_shrink; y *= inv_shrink;
+      const master = getMaster(pin),
+            width = master[_width], height = master[_height];
+      this.ctx.scale(shrink, shrink);
+      x *= inv_shrink;
+      y *= inv_shrink;
       ctx.beginPath();
-    ctx.rect(x, y, width, height);
-    ctx.stroke();
-    this.drawMaster(master, x, y);
-    this.ctx.scale(inv_shrink, inv_shrink);
-  }
-}
-
-function makePath(elementType, x, y, w, h, ctx) {
-  switch (elementType) {
-    case 'input':
-      diagrams.inFlagPath(x, y, w, h, spacing, ctx);
-      break;
-    case 'output':
-      diagrams.outFlagPath(x, y, w, h, spacing, ctx);
-      break;
-    default:
-      ctx.beginPath();
-      ctx.rect(x, y, w, h);
-      break;
-  }
-}
-
-Renderer.prototype.drawElement = function(element, mode) {
-  let ctx = this.ctx, theme = this.theme,
-      rect = this.viewModel.getItemRect(element),
-      x = rect.x, y = rect.y, w = rect.w, h = rect.h,
-      right = x + w, bottom = y + h;
-
-  makePath(element.elementType, x, y, w, h, ctx);
-
-  switch (mode) {
-    case normalMode:
-      ctx.fillStyle = element.state == 'palette' ? theme.altBgColor : theme.bgColor;
-      ctx.fill();
-      ctx.strokeStyle = theme.strokeColor;
-      ctx.lineWidth = 0.5;
+      ctx.rect(x, y, width, height);
       ctx.stroke();
-      let master = getMaster(element);
       this.drawMaster(master, x, y);
-      break;
-    case highlightMode:
-      ctx.strokeStyle = theme.highlightColor;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      break;
-    case hotTrackMode:
-      ctx.strokeStyle = theme.hotTrackColor;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      break;
-  }
-}
+      this.ctx.scale(inv_shrink, inv_shrink);
+    }
+  },
 
-Renderer.prototype.drawElementPin = function(element, input, output, mode) {
-  let ctx = this.ctx,
-      rect = this.viewModel.getItemRect(element),
-      x = rect.x, y = rect.y, w = rect.w, h = rect.h,
-      right = x + w,
-      master = getMaster(element),
-      pin;
+  drawElement: function(element, mode) {
+    const ctx = this.ctx, theme = this.theme,
+          rect = this.viewModel.getItemRect(element),
+          x = rect.x, y = rect.y, w = rect.w, h = rect.h,
+          right = x + w, bottom = y + h;
 
-  if (input !== undefined) {
-    pin = master.inputs[input];
-  } else if (output != undefined) {
-    pin = master.outputs[output];
-    x = right - pin[_width];
-  }
-  ctx.beginPath();
-  ctx.rect(x, y + pin[_y], pin[_width], pin[_height]);
-
-  switch (mode) {
-    case normalMode:
-      ctx.strokeStyle = theme.strokeColor;
-      ctx.lineWidth = 1;
-      break;
-    case highlightMode:
-      ctx.strokeStyle = theme.highlightColor;
-      ctx.lineWidth = 2;
-      break;
-    case hotTrackMode:
-      ctx.strokeStyle = theme.hotTrackColor;
-      ctx.lineWidth = 2;
-      break;
-  }
-  ctx.stroke();
-}
-
-Renderer.prototype.getGroupMasterBounds = function(master, groupRight, groupBottom) {
-  let width = master[_width], height = master[_height],
-      x = groupRight - width - spacing, y = groupBottom - height - spacing;
-  return { x: x, y: y, w: width, h: height };
-}
-
-Renderer.prototype.drawGroup = function(group, mode) {
-  let ctx = this.ctx, theme = this.theme,
-      rect = this.viewModel.getItemRect(group),
-      x = rect.x, y = rect.y, w = rect.w , h = rect.h,
-      right = x + w, bottom = y + h;
-  diagrams.roundRectPath(x, y, w, h, spacing, ctx);
-  switch (mode) {
-    case normalMode:
-      ctx.fillStyle = theme.bgColor;
-      ctx.fill();
-      ctx.strokeStyle = theme.strokeColor;
-      ctx.lineWidth = 0.5;
-      ctx.setLineDash([6,3]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      if (group.master) {
-        let master = getMaster(group),
-            masterRect = this.getGroupMasterBounds(master, right, bottom);
+    switch (element.elementType) {
+      case 'input':
+        diagrams.inFlagPath(x, y, w, h, spacing, ctx);
+        break;
+      case 'output':
+        diagrams.outFlagPath(x, y, w, h, spacing, ctx);
+        break;
+      default:
         ctx.beginPath();
-        ctx.rect(masterRect.x, masterRect.y, masterRect.w, masterRect.h);
-        ctx.fillStyle = theme.altBgColor;
+        ctx.rect(x, y, w, h);
+        break;
+    }
+
+    switch (mode) {
+      case normalMode:
+        ctx.fillStyle = element.state == 'palette' ? theme.altBgColor : theme.bgColor;
         ctx.fill();
         ctx.strokeStyle = theme.strokeColor;
         ctx.lineWidth = 0.5;
         ctx.stroke();
-        this.drawMaster(master, masterRect.x, masterRect.y);
-      }
-      break;
-    case highlightMode:
-      ctx.strokeStyle = theme.highlightColor;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      break;
-    case hotTrackMode:
-      ctx.strokeStyle = theme.hotTrackColor;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      break;
-  }
-}
+        let master = getMaster(element);
+        this.drawMaster(master, x, y);
+        break;
+      case highlightMode:
+        ctx.strokeStyle = theme.highlightColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        break;
+      case hotTrackMode:
+        ctx.strokeStyle = theme.hotTrackColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        break;
+    }
+  },
 
-Renderer.prototype.hitTestElement = function(element, p, tol, mode) {
-  let rect = this.viewModel.getItemRect(element),
-      x = rect.x, y = rect.y, width = rect.w, height = rect.h,
-      hitInfo = diagrams.hitTestRect(x, y, width, height, p, tol);
-  if (hitInfo) {
-    let master = getMaster(element),
-        inputs = master.inputs, outputs = master.outputs,
-        self = this;
-    inputs.forEach(function(input, i) {
-      if (diagrams.hitTestRect(x, y + input[_y],
-                               input[_width], input[_height], p, 0)) {
-        hitInfo.input = i;
-      }
-    });
-    outputs.forEach(function(output, i) {
-      if (diagrams.hitTestRect(x + width - output[_width], y + output[_y],
-                               output[_width], output[_height], p, 0)) {
-        hitInfo.output = i;
-      }
-    });
-  }
-  return hitInfo;
-}
+  drawElementPin: function(element, input, output, mode) {
+    const ctx = this.ctx,
+          rect = this.viewModel.getItemRect(element),
+          x = rect.x, y = rect.y, w = rect.w, h = rect.h,
+          right = x + w,
+          master = getMaster(element);
 
-Renderer.prototype.hitTestGroup = function(group, p, tol, mode) {
-  let rect = this.viewModel.getItemRect(group),
-      x = rect.x, y = rect.y, w = rect.w , h = rect.h,
-      hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol);
-  if (hitInfo) {
-    let master = getMaster(group);
-    if (master) {
-      const newElementRect = this.getGroupMasterBounds(master, x + w, y + h);
-      if (diagrams.hitTestRect(newElementRect.x, newElementRect.y,
-                               newElementRect.w, newElementRect.h, p, tol)) {
-        hitInfo.newElement = {
-          type: 'element',
-          x: newElementRect.x,
-          y: newElementRect.y,
-          master: group.master,
-          [_master]: master,
-          state: 'palette',
-        };
+    let pin;
+    if (input !== undefined) {
+      pin = master.inputs[input];
+    } else if (output != undefined) {
+      pin = master.outputs[output];
+      x = right - pin[_width];
+    }
+    ctx.beginPath();
+    ctx.rect(x, y + pin[_y], pin[_width], pin[_height]);
+
+    switch (mode) {
+      case normalMode:
+        ctx.strokeStyle = theme.strokeColor;
+        ctx.lineWidth = 1;
+        break;
+      case highlightMode:
+        ctx.strokeStyle = theme.highlightColor;
+        ctx.lineWidth = 2;
+        break;
+      case hotTrackMode:
+        ctx.strokeStyle = theme.hotTrackColor;
+        ctx.lineWidth = 2;
+        break;
+    }
+    ctx.stroke();
+  },
+
+  getGroupMasterBounds: function(master, groupRight, groupBottom) {
+    const width = master[_width], height = master[_height],
+          x = groupRight - width - spacing, y = groupBottom - height - spacing;
+    return { x: x, y: y, w: width, h: height };
+  },
+
+  drawGroup: function(group, mode) {
+    const ctx = this.ctx, theme = this.theme,
+          rect = this.viewModel.getItemRect(group),
+          x = rect.x, y = rect.y, w = rect.w , h = rect.h,
+          right = x + w, bottom = y + h;
+    diagrams.roundRectPath(x, y, w, h, spacing, ctx);
+    switch (mode) {
+      case normalMode:
+        ctx.fillStyle = theme.bgColor;
+        ctx.fill();
+        ctx.strokeStyle = theme.strokeColor;
+        ctx.lineWidth = 0.5;
+        ctx.setLineDash([6,3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        if (group.master) {
+          let master = getMaster(group),
+              masterRect = this.getGroupMasterBounds(master, right, bottom);
+          ctx.beginPath();
+          ctx.rect(masterRect.x, masterRect.y, masterRect.w, masterRect.h);
+          ctx.fillStyle = theme.altBgColor;
+          ctx.fill();
+          ctx.strokeStyle = theme.strokeColor;
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+          this.drawMaster(master, masterRect.x, masterRect.y);
+        }
+        break;
+      case highlightMode:
+        ctx.strokeStyle = theme.highlightColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        break;
+      case hotTrackMode:
+        ctx.strokeStyle = theme.hotTrackColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        break;
+    }
+  },
+
+  hitTestElement: function(element, p, tol, mode) {
+    const rect = this.viewModel.getItemRect(element),
+          x = rect.x, y = rect.y, width = rect.w, height = rect.h,
+          hitInfo = diagrams.hitTestRect(x, y, width, height, p, tol);
+    if (hitInfo) {
+      const master = getMaster(element);
+      master.inputs.forEach(function(input, i) {
+        if (diagrams.hitTestRect(x, y + input[_y],
+                                 input[_width], input[_height], p, 0)) {
+          hitInfo.input = i;
+        }
+      });
+      master.outputs.forEach(function(output, i) {
+        if (diagrams.hitTestRect(x + width - output[_width], y + output[_y],
+                                 output[_width], output[_height], p, 0)) {
+          hitInfo.output = i;
+        }
+      });
+    }
+    return hitInfo;
+  },
+
+  hitTestGroup: function(group, p, tol, mode) {
+    const rect = this.viewModel.getItemRect(group),
+          x = rect.x, y = rect.y, w = rect.w , h = rect.h,
+          hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol);
+    if (hitInfo) {
+      const master = getMaster(group);
+      if (master) {
+        const newElementRect = this.getGroupMasterBounds(master, x + w, y + h);
+        if (diagrams.hitTestRect(newElementRect.x, newElementRect.y,
+                                 newElementRect.w, newElementRect.h, p, tol)) {
+          // TODO move out of Renderer.
+          hitInfo.newElement = {
+            type: 'element',
+            x: newElementRect.x,
+            y: newElementRect.y,
+            master: group.master,
+            [_master]: master,
+            state: 'palette',
+          };
+        }
       }
     }
-  }
-  return hitInfo;
-}
+    return hitInfo;
+  },
 
-Renderer.prototype.drawWire = function(wire, mode) {
-  let ctx = this.ctx;
-  diagrams.bezierEdgePath(wire[_bezier], ctx, 0);
-  switch (mode) {
-    case normalMode:
-      ctx.strokeStyle = theme.strokeColor;
-      ctx.lineWidth = 1;
-      break;
-    case highlightMode:
-      ctx.strokeStyle = theme.highlightColor;
-      ctx.lineWidth = 2;
-      break;
-    case hotTrackMode:
-      ctx.strokeStyle = theme.hotTrackColor;
-      ctx.lineWidth = 2;
-      break;
-  }
-  ctx.stroke();
-}
+  drawWire: function(wire, mode) {
+    const ctx = this.ctx;
+    diagrams.bezierEdgePath(wire[_bezier], ctx, 0);
+    switch (mode) {
+      case normalMode:
+        ctx.strokeStyle = theme.strokeColor;
+        ctx.lineWidth = 1;
+        break;
+      case highlightMode:
+        ctx.strokeStyle = theme.highlightColor;
+        ctx.lineWidth = 2;
+        break;
+      case hotTrackMode:
+        ctx.strokeStyle = theme.hotTrackColor;
+        ctx.lineWidth = 2;
+        break;
+    }
+    ctx.stroke();
+  },
 
-Renderer.prototype.hitTestWire = function(wire, p, tol, mode) {
-  return diagrams.hitTestBezier(wire[_bezier], p, tol);
-}
+  hitTestWire: function(wire, p, tol, mode) {
+    return diagrams.hitTestBezier(wire[_bezier], p, tol);
+  },
 
-Renderer.prototype.draw = function(item, mode) {
-  switch (item.type) {
-    case 'element':
-      this.drawElement(item, mode);
-      break;
-    case 'group':
-      this.drawGroup(item, mode);
-      break;
-    case 'wire':
-      this.drawWire(item, mode);
-      break;
-  }
-}
+  draw: function(item, mode) {
+    switch (item.type) {
+      case 'element':
+        this.drawElement(item, mode);
+        break;
+      case 'group':
+        this.drawGroup(item, mode);
+        break;
+      case 'wire':
+        this.drawWire(item, mode);
+        break;
+    }
+  },
 
-Renderer.prototype.hitTest = function(item, p, tol, mode) {
-  let hitInfo, rect;
-  switch (item.type) {
-    case 'element':
-      hitInfo = this.hitTestElement(item, p, tol, mode);
-      break;
-    case 'group':
-      hitInfo = this.hitTestGroup(item, p, tol, mode);
-      break;
-    case 'wire':
-      hitInfo = this.hitTestWire(item, p, tol, mode);
-      break;
-  }
-  if (hitInfo && !hitInfo.item)
-    hitInfo.item = item;
-  return hitInfo;
-}
+  hitTest: function(item, p, tol, mode) {
+    let hitInfo;
+    switch (item.type) {
+      case 'element':
+        hitInfo = this.hitTestElement(item, p, tol, mode);
+        break;
+      case 'group':
+        hitInfo = this.hitTestGroup(item, p, tol, mode);
+        break;
+      case 'wire':
+        hitInfo = this.hitTestWire(item, p, tol, mode);
+        break;
+    }
+    if (hitInfo && !hitInfo.item)
+      hitInfo.item = item;
+    return hitInfo;
+  },
 
-Renderer.prototype.drawHoverInfo = function(item, p) {
-  let self = this, theme = this.theme,
-      x = p.x, y = p.y;
-  ctx.fillStyle = theme.hoverColor;
-  if (isGroupInstance(item)) {
-    const viewModel = this.viewModel,
-          groupItems = getGroupItems(item);
-    let r = viewModel.getItemRects(groupItems);
-    ctx.translate(x - r.x, y - r.y);
-    let border = 4;
-    ctx.fillRect(r.x - border, r.y - border, r.w + 2 * border, r.h + 2 * border);
-    ctx.fillStyle = theme.hoverTextColor;
-    groupItems.forEach(function(item) {
-      self.draw(item, normalMode);
-    });
-  } else {
-    // // Just list properties as text.
-    // let props = [];
-    // this.model.dataModel.visitProperties(item, function(item, attr) {
-    //   let value = item[attr];
-    //   if (Array.isArray(value))
-    //     return;
-    //   props.push({ name: attr, value: value });
-    // });
-    // let textSize = theme.fontSize, gap = 16, border = 4,
-    //     height = textSize * props.length + 2 * border,
-    //     maxWidth = diagrams.measureNameValuePairs(props, gap, ctx) + 2 * border;
-    // ctx.fillRect(x, y, maxWidth, height);
-    // ctx.fillStyle = theme.hoverTextColor;
-    // props.forEach(function(prop) {
-    //   ctx.textAlign = 'left';
-    //   ctx.fillText(prop.name, x + border, y + textSize);
-    //   ctx.textAlign = 'right';
-    //   ctx.fillText(prop.value, x + maxWidth - border, y + textSize);
-    //   y += textSize;
-    // });
-  }
+  drawHoverInfo: function(item, p) {
+    const self = this, theme = this.theme,
+          x = p.x, y = p.y;
+    ctx.fillStyle = theme.hoverColor;
+    if (isGroupInstance(item)) {
+      const viewModel = this.viewModel,
+            groupItems = getGroupItems(item);
+      let r = viewModel.getItemRects(groupItems);
+      ctx.translate(x - r.x, y - r.y);
+      let border = 4;
+      ctx.fillRect(r.x - border, r.y - border, r.w + 2 * border, r.h + 2 * border);
+      ctx.fillStyle = theme.hoverTextColor;
+      groupItems.forEach(function(item) {
+        self.draw(item, normalMode);
+      });
+    } else {
+      // // Just list properties as text.
+      // let props = [];
+      // this.model.dataModel.visitProperties(item, function(item, attr) {
+      //   let value = item[attr];
+      //   if (Array.isArray(value))
+      //     return;
+      //   props.push({ name: attr, value: value });
+      // });
+      // let textSize = theme.fontSize, gap = 16, border = 4,
+      //     height = textSize * props.length + 2 * border,
+      //     maxWidth = diagrams.measureNameValuePairs(props, gap, ctx) + 2 * border;
+      // ctx.fillRect(x, y, maxWidth, height);
+      // ctx.fillStyle = theme.hoverTextColor;
+      // props.forEach(function(prop) {
+      //   ctx.textAlign = 'left';
+      //   ctx.fillText(prop.name, x + border, y + textSize);
+      //   ctx.textAlign = 'right';
+      //   ctx.fillText(prop.value, x + maxWidth - border, y + textSize);
+      //   y += textSize;
+      // });
+    }
+  },
 }
 
 //------------------------------------------------------------------------------
@@ -2422,12 +2419,12 @@ Editor.prototype.setEditableText = function() {
 }
 
 Editor.prototype.onClick = function(p) {
-  let model = this.model,
-      selectionModel = model.selectionModel,
-      shiftKeyDown = this.canvasController.shiftKeyDown,
-      cmdKeyDown = this.canvasController.cmdKeyDown,
-      hitList = this.hitTest(p),
-      mouseHitInfo = this.mouseHitInfo = this.getFirstHit(hitList, isDraggable);
+  const model = this.model,
+        selectionModel = model.selectionModel,
+        shiftKeyDown = this.canvasController.shiftKeyDown,
+        cmdKeyDown = this.canvasController.cmdKeyDown,
+        hitList = this.hitTest(p),
+        mouseHitInfo = this.mouseHitInfo = this.getFirstHit(hitList, isDraggable);
   if (mouseHitInfo) {
     let item = mouseHitInfo.item;
     if (mouseHitInfo.newElement) {
@@ -2454,20 +2451,20 @@ const connectWireSrc = 1,
       moveCopySelection = 4;
 
 Editor.prototype.onBeginDrag = function(p0) {
-  let mouseHitInfo = this.mouseHitInfo;
+  const mouseHitInfo = this.mouseHitInfo;
   if (!mouseHitInfo)
     return false;
-  let self = this,
-      canvasController = this.canvasController,
-      dragItem = mouseHitInfo.item,
-      model = this.model,
-      selectionModel = model.selectionModel,
-      editingModel = model.editingModel,
-      newWire, drag;
+
+  const model = this.model,
+        selectionModel = model.selectionModel,
+        editingModel = model.editingModel,
+        canvasController = this.canvasController,
+        dragItem = mouseHitInfo.item;
+  let newWire, drag;
   if (mouseHitInfo.input !== undefined) {
     // Wire from input pin.
-    let elementId = model.dataModel.getId(dragItem),
-        cp0 = canvasController.viewToCanvas(p0);
+    const elementId = model.dataModel.getId(dragItem),
+          cp0 = canvasController.viewToCanvas(p0);
     // Start the new wire as connecting the dst element to nothing.
     newWire = {
       type: 'wire',
@@ -2514,6 +2511,7 @@ Editor.prototype.onBeginDrag = function(p0) {
         break;
     }
   }
+
   this.drag = drag;
   if (drag) {
     if (drag.type === moveSelection || drag.type == moveCopySelection) {
@@ -2531,10 +2529,9 @@ Editor.prototype.onBeginDrag = function(p0) {
     } else {
       drag.item = dragItem;
       if (mouseHitInfo.moveCopy) {
-        let model = this.model,
-            renderer = this.renderer,
-            map = new Map(),
-            copies = editingModel.copyItems(selectionModel.contents(), map);
+        const renderer = this.renderer,
+              map = new Map(),
+              copies = editingModel.copyItems(selectionModel.contents(), map);
         if (drag.isSingleElement && mouseHitInfo.newElementSource) {
           // Create a new instance of a group.
           editingModel.createGroupInstance(mouseHitInfo.newElementSource, copies[0]);
@@ -2547,27 +2544,28 @@ Editor.prototype.onBeginDrag = function(p0) {
 }
 
 Editor.prototype.onDrag = function(p0, p) {
-  let drag = this.drag;
+  const drag = this.drag;
   if (!drag)
     return;
-  let dragItem = drag.item,
-      model = this.model,
-      dataModel = model.dataModel,
-      observableModel = model.observableModel,
-      transactionModel = model.transactionModel,
-      selectionModel = model.selectionModel,
-      canvasController = this.canvasController,
-      cp0 = canvasController.viewToCanvas(p0),
-      cp = canvasController.viewToCanvas(p),
-      mouseHitInfo = this.mouseHitInfo,
-      snapshot = transactionModel.getSnapshot(dragItem),
-      hitList = this.hitTest(p), hitInfo;
+  const model = this.model,
+        dataModel = model.dataModel,
+        observableModel = model.observableModel,
+        transactionModel = model.transactionModel,
+        selectionModel = model.selectionModel,
+        canvasController = this.canvasController,
+        cp0 = canvasController.viewToCanvas(p0),
+        cp = canvasController.viewToCanvas(p),
+        mouseHitInfo = this.mouseHitInfo,
+        dragItem = drag.item,
+        snapshot = transactionModel.getSnapshot(dragItem),
+        hitList = this.hitTest(p);
+  let hitInfo;
   switch (drag.type) {
     case moveSelection:
     case moveCopySelection:
       if (isElementOrGroup(dragItem)) {
-        let filter = drag.isSingleElement ?
-                     isContainerTargetOrElementSlot : isContainerTarget;
+        const filter = drag.isSingleElement ?
+                       isContainerTargetOrElementSlot : isContainerTarget;
         hitInfo = this.getFirstHit(hitList, filter);
         selectionModel.forEach(function(item) {
           if (isElementOrGroup(item)) {
@@ -2583,7 +2581,7 @@ Editor.prototype.onDrag = function(p0, p) {
       break;
     case connectWireSrc:
       hitInfo = this.getFirstHit(hitList, isOutputPin);
-      let srcId = hitInfo ? dataModel.getId(hitInfo.item) : 0;  // 0 is invalid id.
+      const srcId = hitInfo ? dataModel.getId(hitInfo.item) : 0;  // 0 is invalid id.
       observableModel.changeValue(dragItem, 'srcId', srcId);
       if (srcId) {
         observableModel.changeValue(dragItem, 'srcPin', hitInfo.output);
@@ -2594,7 +2592,7 @@ Editor.prototype.onDrag = function(p0, p) {
       break;
     case connectWireDst:
       hitInfo = this.getFirstHit(hitList, isInputPin);
-      let dstId = hitInfo ? dataModel.getId(hitInfo.item) : 0;  // 0 is invalid id.
+      const dstId = hitInfo ? dataModel.getId(hitInfo.item) : 0;  // 0 is invalid id.
       observableModel.changeValue(dragItem, 'dstId', dstId);
       if (dstId) {
         observableModel.changeValue(dragItem, 'dstPin', hitInfo.input);
@@ -2667,20 +2665,18 @@ Editor.prototype.onEndDrag = function(p) {
     case moveSelection:
     case moveCopySelection:
       // Find element beneath items.
-      let hitList = this.hitTest(p),
-          filter = drag.isSingleElement ?
-                   isContainerTargetOrElementSlot : isContainerTarget,
-          hitInfo = this.getFirstHit(hitList, filter),
-          parent = hitInfo ? hitInfo.item : diagram;
-      let selection = selectionModel.contents();
-      if (drag.isSingleElement && parent && !isContainer(parent)) {
+      const hitList = this.hitTest(p),
+            filter = drag.isSingleElement ?
+                     isContainerTargetOrElementSlot : isContainerTarget,
+            hitInfo = this.getFirstHit(hitList, filter),
+            parent = hitInfo ? hitInfo.item : diagram,
+            selection = selectionModel.contents();
+      if (drag.isSingleElement && !isContainer(parent)) {
         // Replace parent item.
         editingModel.replaceElement(parent, selection[0]);
       } else {
-        // Reparent existing items.
-        selection.forEach(function(item) {
-          editingModel.addItem(item, parent);
-        });
+        // Reparent selected items.
+        selection.forEach(item => editingModel.addItem(item, parent));
       }
       transactionModel.endTransaction();
       break;
