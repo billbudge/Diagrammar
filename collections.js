@@ -19,105 +19,107 @@ function LinkedList() {
   this.clear();
 }
 
-LinkedList.prototype.empty = function() {
-  return this.length == 0;
-};
+LinkedList.prototype = {
+  empty: function() {
+    return this.length == 0;
+  },
 
-LinkedList.prototype.pushBack = function(value) {
-  return this.insertAfter(value, null);
-};
+  pushBack: function(value) {
+    return this.insertAfter(value, null);
+  },
 
-LinkedList.prototype.pushFront = function(value) {
-  return this.insertBefore(value, null);
-};
+  pushFront: function(value) {
+    return this.insertBefore(value, null);
+  },
 
-LinkedList.prototype.popBack = function() {
-  var node = this.back;
-  return node ? this.remove(node) : null;
-};
+  popBack: function() {
+    const node = this.back;
+    return node ? this.remove(node) : null;
+  },
 
-LinkedList.prototype.popFront = function() {
-  var node = this.front;
-  return node ? this.remove(node) : null;
-};
+  popFront: function() {
+    const node = this.front;
+    return node ? this.remove(node) : null;
+  },
 
-LinkedList.prototype.remove = function(node) {
-  if (node.next)
-    node.next.prev = node.prev;
-  else
-    this.back = node.prev;
-  if (node.prev)
-    node.prev.next = node.next;
-  else
-    this.front = node.next;
+  remove: function(node) {
+    if (node.next)
+      node.next.prev = node.prev;
+    else
+      this.back = node.prev;
+    if (node.prev)
+      node.prev.next = node.next;
+    else
+      this.front = node.next;
 
-  node.next = node.prev = null;
-  this.length -= 1;
-  return node;
-};
+    node.next = node.prev = null;
+    this.length -= 1;
+    return node;
+  },
 
-LinkedList.prototype.insertAfter = function(value, prev) {
-  const node = (value instanceof LinkedListNode) ? value : new LinkedListNode(value);
-  if (!prev)
-    prev = this.back;
-  const next = prev ? prev.next : null;
-  this.insert_(node, prev, next);
-  return node;
-};
+  insertAfter: function(value, prev) {
+    const node = (value instanceof LinkedListNode) ? value : new LinkedListNode(value);
+    if (!prev)
+      prev = this.back;
+    const next = prev ? prev.next : null;
+    this.insert_(node, prev, next);
+    return node;
+  },
 
-LinkedList.prototype.insertBefore = function(value, next) {
-  const node = (value instanceof LinkedListNode) ? value : new LinkedListNode(value);
-  if (!next)
-    next = this.front;
-  const prev = next ? next.prev : null;
-  this.insert_(node, prev, next);
-  return node;
-};
+  insertBefore: function(value, next) {
+    const node = (value instanceof LinkedListNode) ? value : new LinkedListNode(value);
+    if (!next)
+      next = this.front;
+    const prev = next ? next.prev : null;
+    this.insert_(node, prev, next);
+    return node;
+  },
 
-LinkedList.prototype.insert_ = function(node, prev, next) {
-  if (prev)
-    prev.next = node;
-  else
-    this.front = node;
-  if (next)
-    next.prev = node;
-  else
-    this.back = node;
-  node.prev = prev;
-  node.next = next;
-  this.length += 1;
-};
+  insert_: function(node, prev, next) {
+    if (prev)
+      prev.next = node;
+    else
+      this.front = node;
+    if (next)
+      next.prev = node;
+    else
+      this.back = node;
+    node.prev = prev;
+    node.next = next;
+    this.length += 1;
+  },
 
-LinkedList.prototype.clear = function() {
-  this.front = this.back = null;
-  this.length = 0;
-};
+  clear: function() {
+    this.front = this.back = null;
+    this.length = 0;
+  },
 
-LinkedList.prototype.forEach = function(fn) {
-  let node = this.front;
-  while (node) {
-    fn(node.value);
-    node = node.next;
-  }
-};
+  forEach: function(fn) {
+    let node = this.front;
+    while (node) {
+      fn(node.value);
+      node = node.next;
+    }
+  },
 
-LinkedList.prototype.forEachReverse = function(fn) {
-  let node = this.back;
-  while (node) {
-    fn(node.value);
-    node = node.prev;
-  }
-};
+  forEachReverse: function(fn) {
+    let node = this.back;
+    while (node) {
+      fn(node.value);
+      node = node.prev;
+    }
+  },
 
-LinkedList.prototype.find = function(value) {
-  let node = this.front;
-  while (node) {
-    if (value === node.value)
-      return node;
-    node = node.next;
-  }
-  return null;
-};
+  find: function(value) {
+    let node = this.front;
+    while (node) {
+      if (value === node.value)
+        return node;
+      node = node.next;
+    }
+    return null;
+  },
+}
 
 //------------------------------------------------------------------------------
 // Queue, a simple queue implementation.

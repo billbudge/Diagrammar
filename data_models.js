@@ -141,16 +141,16 @@ const eventMixin = (function() {
   function addHandler(event, handler) {
     let list = this[event];
     if (!list)
-      list = this[event] = new diagrammar.collections.LinkedList();
-    list.pushBack(handler);
+      list = this[event] = new Array();
+    list.push(handler);
   }
 
   function removeHandler(event, handler) {
     const list = this[event];
     if (list) {
-      const node = list.find(handler);
-      if (node)
-        list.remove(node);
+      const index = list.indexOf(handler);
+      if (index >= 0)
+        list.splice(index, 1);
     }
   }
 

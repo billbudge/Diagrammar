@@ -337,7 +337,8 @@ test("referencingModel", function() {
 // Instancing model unit tests.
 
 test("instancingModel deepEqual", function() {
-  const testData = {
+  // TODO add some references.
+  const test_data = {
     id: 1,
     item: { id: 2, },
     items: [
@@ -358,12 +359,14 @@ test("instancingModel deepEqual", function() {
       { id: 9, foo: 'bar' },
     ],
   }
-  const model = { root: testData };
+  const model = { root: test_data };
   const test = dataModels.instancingModel.extend(model);
   const itemIds = [];
-  ok(test.isomorphic(testData, testData, new Map()));
-  ok(test.isomorphic(testData.items[0], testData.items[1], new Map()));
-  ok(!test.isomorphic(testData.item, testData.items[2], new Map()));
+  ok(test.isomorphic(test_data, test_data, new Map()));
+  const test_data_clone = test.cloneGraph([test_data])[0];
+  ok(test.isomorphic(test_data, test_data_clone, new Map()));
+  ok(test.isomorphic(test_data.items[0], test_data.items[1], new Map()));
+  ok(!test.isomorphic(test_data.item, test_data.items[2], new Map()));
 });
 
 // Hierarchical model unit tests.
