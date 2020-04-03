@@ -332,7 +332,8 @@ const masteringModel = (function() {
           if (master) {
             const map = this.masterReferences_;
             let count = map.get(master) || 0;  // this might be the first instance.
-            map.set(master, count++);
+            count++;
+            map.set(master, count);
             this.unusedMasters_.delete(master);
             inserted[_groupItems] = master.items;
           }
@@ -343,9 +344,12 @@ const masteringModel = (function() {
           if (master) {
             const map = this.masterReferences_;
             let count = map.get(master);
-            map.set(master, count--);
-            if (!count) {
+            count--;
+            if (count) {
+              map.set(master, count);
+            } else {
               this.unusedMasters_.add(master);
+              map.delete(master);
             }
             removed[_groupItems] = null;
           }
@@ -355,8 +359,8 @@ const masteringModel = (function() {
 
     makeConsistent_: function() {
       const model = this.model,
-            diagram = model.diagram,
             observableModel = model.observableModel,
+            diagram = this.diagram,
             unusedMasters = this.unusedMasters_;
       for (let master of unusedMasters) {
         observableModel.removeElement(diagram, 'masters', diagram.masters.indexOf(master));
@@ -658,9 +662,6 @@ const circuitModel = (function() {
 })();
 
 //------------------------------------------------------------------------------
-
-const _index = Symbol('index'),
-      _passThroughs = Symbol('passThroughs');
 
 const editingModel = (function() {
   const proto = {
@@ -1173,12 +1174,12 @@ const editingModel = (function() {
       let master = '[';
       inputs.forEach(function(input, i) {
         master += input.type;
-        input.item[_index] = i;
+        input.item.index = i;
       });
       master += ',';
       outputs.forEach(function(output, i) {
         master += output.type;
-        output.item[_index] = i;
+        output.item.index = i;
       });
       master += ']';
 
@@ -1190,16 +1191,16 @@ const editingModel = (function() {
         // Trace wires, starting at input junctions.
         if (!isInput(src) || srcPin.type != '*')
           return;
-        let srcPinIndex = src[_index],
+        let srcPinIndex = src.index,
             activeWires = [wire];
         while (activeWires.length) {
           wire = activeWires.pop();
           let dst = self.getWireDst(wire),
               dstPin = getMaster(dst).inputs[wire.dstPin];
           if (isOutput(dst) && dstPin.type == '*') {
-            passThroughs.add([srcPinIndex, dst[_index]]);
-          } else if (dst[_passThroughs]) {
-            dst[_passThroughs].forEach(function(passThrough) {
+            passThroughs.add([srcPinIndex, dst.index]);
+          } else if (dst.passThroughs) {
+            dst.passThroughs.forEach(function(passThrough) {
               if (passThrough[0] == wire.dstPin) {
                 let outgoingWires = graphInfo.outputMap.get(dst)[passThrough[1]];
                 outgoingWires.forEach(wire => activeWires.push(wire));
@@ -1210,7 +1211,7 @@ const editingModel = (function() {
       });
       if (passThroughs.size) {
         console.log(passThroughs);
-        group[_passThroughs] = Array.from(passThroughs);
+        group.passThroughs = Array.from(passThroughs);
       }
 
       return master;
@@ -1273,7 +1274,7 @@ const editingModel = (function() {
             model = this.model,
             graphInfo = model.circuitModel.getGraphInfo(),
             activeWires = [wire];
-      // TODO get rid of array and while, there can be only one pass through.
+      // TODO eliminate array and while; there can be only one pass through.
       while (activeWires.length) {
         wire = activeWires.pop();
         let src = this.getWireSrc(wire),
@@ -1282,16 +1283,18 @@ const editingModel = (function() {
             dstPin = getMaster(dst).inputs[wire.dstPin];
         if (srcPin.type != '*')
           return srcPin.type;
-        if (src[_passThroughs]) {
-          src[_passThroughs].forEach(function(passThrough) {
-            console.log(src, graphInfo);
-            if (passThrough[1] == wire.srcPin) {
-              srcPin = getMaster(src).inputs[passThrough[0]];
-              let incomingWire = graphInfo.inputMap.get(src)[passThrough[0]];
-              if (incomingWire)
-                activeWires.push(incomingWire);
-            }
-          });
+        if (isGroupInstance(src)) {
+          const group = this.getGroupMaster_(src);
+          if (group.passThroughs) {
+            group.passThroughs.forEach(function(passThrough) {
+              if (passThrough[1] == wire.srcPin) {
+                srcPin = group.inputs[passThrough[0]];
+                let incomingWire = graphInfo.inputMap.get(src)[passThrough[0]];
+                if (incomingWire)
+                  activeWires.push(incomingWire);
+              }
+            });
+          }
         }
       }
       return '*';
@@ -1310,14 +1313,17 @@ const editingModel = (function() {
             dstPin = getMaster(dst).inputs[wire.dstPin];
         if (dstPin.type != '*')
           return dstPin.type;
-        if (dst[_passThroughs]) {
-          dst[_passThroughs].forEach(function(passThrough) {
-            if (passThrough[0] == wire.dstPin) {
-              dstPin = getMaster(dst).outputs[passThrough[1]];
-              let outgoingWires = graphInfo.outputMap.get(dst)[passThrough[1]];
-              outgoingWires.forEach(wire => activeWires.push(wire));
-            }
-          });
+        if (isGroupInstance(dst)) {
+          const group = this.getGroupMaster_(src);
+          if (group.passThroughs) {
+            group.passThroughs.forEach(function(passThrough) {
+              if (passThrough[0] == wire.dstPin) {
+                dstPin = group.outputs[passThrough[1]];
+                let outgoingWires = graphInfo.outputMap.get(dst)[passThrough[1]];
+                outgoingWires.forEach(wire => activeWires.push(wire));
+              }
+            });
+          }
         }
       }
       return '*';
@@ -1466,6 +1472,7 @@ const editingModel = (function() {
 
     instance.getWireSrc = model.referencingModel.getReferenceFn('srcId');
     instance.getWireDst = model.referencingModel.getReferenceFn('dstId');
+    instance.getGroupMaster_ = model.referencingModel.getReferenceFn('groupId');
 
     model.transactionModel.addHandler('transactionEnding',
                                       transaction => instance.makeConsistent());
@@ -1915,11 +1922,11 @@ Renderer.prototype = {
   drawElementPin: function(element, input, output, mode) {
     const ctx = this.ctx,
           rect = this.viewModel.getItemRect(element),
-          x = rect.x, y = rect.y, w = rect.w, h = rect.h,
-          right = x + w,
           master = getMaster(element);
+    let x = rect.x, y = rect.y, w = rect.w, h = rect.h,
+        right = x + w,
+        pin;
 
-    let pin;
     if (input !== undefined) {
       pin = master.inputs[input];
     } else if (output != undefined) {
@@ -1946,7 +1953,8 @@ Renderer.prototype = {
     ctx.stroke();
   },
 
-  getGroupMasterBounds: function(master, groupRight, groupBottom) {
+  // Gets the bounding rect for the group instancing element.
+  getGroupInstanceBounds: function(master, groupRight, groupBottom) {
     const width = master[_width], height = master[_height],
           x = groupRight - width - spacing, y = groupBottom - height - spacing;
     return { x: x, y: y, w: width, h: height };
@@ -1970,15 +1978,15 @@ Renderer.prototype = {
 
         if (group.master) {
           let master = getMaster(group),
-              masterRect = this.getGroupMasterBounds(master, right, bottom);
+              instanceRect = this.getGroupInstanceBounds(master, right, bottom);
           ctx.beginPath();
-          ctx.rect(masterRect.x, masterRect.y, masterRect.w, masterRect.h);
+          ctx.rect(instanceRect.x, instanceRect.y, instanceRect.w, instanceRect.h);
           ctx.fillStyle = theme.altBgColor;
           ctx.fill();
           ctx.strokeStyle = theme.strokeColor;
           ctx.lineWidth = 0.5;
           ctx.stroke();
-          this.drawMaster(master, masterRect.x, masterRect.y);
+          this.drawMaster(master, instanceRect.x, instanceRect.y);
         }
         break;
       case highlightMode:
@@ -2023,17 +2031,12 @@ Renderer.prototype = {
     if (hitInfo) {
       const master = getMaster(group);
       if (master) {
-        const newElementRect = this.getGroupMasterBounds(master, x + w, y + h);
-        if (diagrams.hitTestRect(newElementRect.x, newElementRect.y,
-                                 newElementRect.w, newElementRect.h, p, tol)) {
-          // TODO move out of Renderer.
-          hitInfo.newElement = {
-            type: 'element',
-            x: newElementRect.x,
-            y: newElementRect.y,
-            master: group.master,
-            [_master]: master,
-            state: 'palette',
+        const instanceRect = this.getGroupInstanceBounds(master, x + w, y + h);
+        if (diagrams.hitTestRect(instanceRect.x, instanceRect.y,
+                                 instanceRect.w, instanceRect.h, p, tol)) {
+          hitInfo.newGroupInstanceInfo = {
+            x: instanceRect.x,
+            y: instanceRect.y,
           };
         }
       }
@@ -2427,9 +2430,19 @@ Editor.prototype.onClick = function(p) {
         mouseHitInfo = this.mouseHitInfo = this.getFirstHit(hitList, isDraggable);
   if (mouseHitInfo) {
     let item = mouseHitInfo.item;
-    if (mouseHitInfo.newElement) {
-      mouseHitInfo.newElementSource = item;
-      item = mouseHitInfo.item = mouseHitInfo.newElement;
+    if (mouseHitInfo.newGroupInstanceInfo) {
+      // Create a temporary palette element that will create the new instance.
+      const group = mouseHitInfo.item,
+            newGroupInstanceInfo = mouseHitInfo.newGroupInstanceInfo;
+      mouseHitInfo.group = item;
+      item = mouseHitInfo.item = {
+        type: 'element',
+        x: newGroupInstanceInfo.x,
+        y: newGroupInstanceInfo.y,
+        master: group.master,
+        [_master]: getMaster(group),
+        state: 'palette',
+      };
     }
     if (cmdKeyDown || isPaletted(item)) {
       mouseHitInfo.moveCopy = true;
@@ -2532,9 +2545,8 @@ Editor.prototype.onBeginDrag = function(p0) {
         const renderer = this.renderer,
               map = new Map(),
               copies = editingModel.copyItems(selectionModel.contents(), map);
-        if (drag.isSingleElement && mouseHitInfo.newElementSource) {
-          // Create a new instance of a group.
-          editingModel.createGroupInstance(mouseHitInfo.newElementSource, copies[0]);
+        if (drag.isSingleElement && mouseHitInfo.newGroupInstanceInfo) {
+          editingModel.createGroupInstance(mouseHitInfo.group, copies[0]);
         }
         editingModel.addItems(copies);
         selectionModel.set(copies);
