@@ -949,6 +949,147 @@ const instancingModel = (function() {
 })();
 
 //------------------------------------------------------------------------------
+
+// Tracks references on instances to master objects, maintaining a separate
+// data array to hold the masters. This array is updated as instances are added
+// and removed.
+const masteringModel = (function() {
+  const proto = {
+    getMasters_: function() {
+      return this.root_[this.mastersAttr_];
+    },
+
+    // Converts the master to the canonical one if it is already in the model.
+    // This must be called before adding new instances of the master.
+    internalizeMaster: function(master) {
+      const model = this.model,
+            diagram = this.diagram,
+            dataModel = model.dataModel,
+            instancingModel = model.instancingModel;
+      for (let m of this.masters_) {
+        if (instancingModel.isomorphic(m, master, new Map()))
+          return m;
+      }
+      dataModel.assignId(master);
+      dataModel.initialize(master);
+      model.observableModel.insertElement(
+          this.root_, this.mastersAttr_, this.masters_.length, master);
+      return master;
+    },
+
+    insertItem_: function(item) {
+      function insert(self, item) {
+        const master = self.getMaster(item);
+        if (master) {
+          const map = self.masterReferences_;
+          let count = map.get(master) || 0;  // this might be the first instance.
+          count++;
+          map.set(master, count);
+          self.unusedMasters_.delete(master);
+          self.onInstanceInserted(item, master);
+        }
+      }
+      this.model.dataModel.visitSubtree(item, item => insert(this, item));
+    },
+
+    removeItem_: function(item) {
+      function remove(self, item) {
+        const master = self.getMaster(item);
+        if (master) {
+          const map = self.masterReferences_;
+          let count = map.get(master);
+          count--;
+          if (count) {
+            map.set(master, count);
+          } else {
+            self.unusedMasters_.add(master);
+            map.delete(master);
+          }
+          self.onInstanceRemoved(item, master);
+        }
+      }
+      this.model.dataModel.visitSubtree(item, item => remove(this, item));
+    },
+
+    onChange_: function(change) {
+      const dataModel = this.model.dataModel;
+      switch (change.type) {
+        case 'insert':
+          const inserted = change.item[change.attr][change.index];
+          this.insertItem_(inserted);
+          break;
+        case 'remove':
+          const removed = change.oldValue;
+          this.removeItem_(removed);
+          break;
+      }
+    },
+
+    // Eliminate any unreferenced masters.
+    makeConsistent_: function() {
+      const model = this.model,
+            observableModel = model.observableModel,
+            unusedMasters = this.unusedMasters_;
+      for (let master of unusedMasters) {
+        observableModel.removeElement(
+            this.root_, this.mastersAttr_, this.masters_.indexOf(master));
+      }
+      unusedMasters.clear();
+    },
+
+    // Configure the masters array and master referencing.
+    configure: function(root, mastersAttr, masterRefAttr) {
+      this.root_ = root;
+      this.mastersAttr_ = mastersAttr;
+      this.masters_ = root[mastersAttr] || new Array();
+      this.masterRefAttr_ = masterRefAttr;
+      const refFn = this.model.referencingModel.getReferenceFn(masterRefAttr);
+      this.getMaster = function(item) {
+        if (!item.hasOwnProperty(masterRefAttr))
+          return undefined;
+        return refFn(item);
+      };
+
+      // Build the reference map for the entire model.
+      this.masterReferences_ = new Map();
+      this.insertItem_(this.root_);
+    },
+
+    onInstanceInserted: function(instance, master) {},
+
+    onInstanceRemoved: function(instance, master) {},
+  }
+
+  function extend(model) {
+    dataModels.dataModel.extend(model);
+    dataModels.observableModel.extend(model);
+    dataModels.transactionModel.extend(model);
+    dataModels.referencingModel.extend(model);
+    dataModels.instancingModel.extend(model);
+
+    let instance = Object.create(proto);
+    instance.model = model;
+    instance.unusedMasters_ = new Set();
+
+    instance.configure(model.dataModel.getRoot(), 'masters', 'masterId');
+
+    // Maintain reference counts for groups.
+    model.observableModel.addHandler('changed',
+                                     change => instance.onChange_(change));
+    // Remove groups with no references.
+    model.transactionModel.addHandler('transactionEnding',
+                                      transaction => instance.makeConsistent_());
+
+    model.masteringModel = instance;
+    return instance;
+  }
+
+  return {
+    extend: extend,
+  }
+})();
+
+//------------------------------------------------------------------------------
 // A model to add cut/copy/paste/delete behavior with a selection, instancing,
 // and transaction model. The actual work of copying, deleting, and adding is
 // done by the client.
@@ -1649,6 +1790,7 @@ const changeModel = (function() {
     referenceValidator: referenceValidator,
     selectionModel: selectionModel,
     instancingModel: instancingModel,
+    masteringModel: masteringModel,
     copyPasteModel: copyPasteModel,
     hierarchicalModel: hierarchicalModel,
     translatableModel: translatableModel,

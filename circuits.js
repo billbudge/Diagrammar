@@ -24,7 +24,7 @@ function isElementOrGroup(item) {
 }
 
 function isGroupInstance(item) {
-  return isElement(item) && item.groupId;
+  return isElement(item) && item.masterId;
 }
 
 function isWire(item) {
@@ -295,104 +295,6 @@ const signatureModel = (function() {
     });
 
     model.signatureModel = instance;
-    return instance;
-  }
-
-  return {
-    extend: extend,
-  }
-})();
-
-//------------------------------------------------------------------------------
-
-const masteringModel = (function() {
-  const proto = {
-    internalizeMaster: function(newMaster) {
-      const model = this.model,
-            diagram = this.diagram,
-            dataModel = model.dataModel,
-            instancingModel = model.instancingModel;
-      for (let master of diagram.masters) {
-        if (instancingModel.isomorphic(master, newMaster, new Map()))
-          return master;
-      }
-      dataModel.assignId(newMaster);
-      dataModel.initialize(newMaster);
-      model.observableModel.insertElement(
-          diagram, 'masters', diagram.masters.length, newMaster);
-      return newMaster;
-    },
-
-    onChange_: function(change) {
-      let master;
-      switch (change.type) {
-        case 'insert':
-          const inserted = change.item[change.attr][change.index];
-          master = this.getMaster_(inserted);
-          if (master) {
-            const map = this.masterReferences_;
-            let count = map.get(master) || 0;  // this might be the first instance.
-            count++;
-            map.set(master, count);
-            this.unusedMasters_.delete(master);
-            inserted[_groupItems] = master.items;
-          }
-          break;
-        case 'remove':
-          const removed = change.oldValue;
-          master = this.getMaster_(removed);
-          if (master) {
-            const map = this.masterReferences_;
-            let count = map.get(master);
-            count--;
-            if (count) {
-              map.set(master, count);
-            } else {
-              this.unusedMasters_.add(master);
-              map.delete(master);
-            }
-            removed[_groupItems] = null;
-          }
-          break;
-      }
-    },
-
-    makeConsistent_: function() {
-      const model = this.model,
-            observableModel = model.observableModel,
-            diagram = this.diagram,
-            unusedMasters = this.unusedMasters_;
-      for (let master of unusedMasters) {
-        observableModel.removeElement(diagram, 'masters', diagram.masters.indexOf(master));
-      }
-      unusedMasters.clear();
-    },
-  }
-
-  function extend(model) {
-    dataModels.dataModel.extend(model);
-    dataModels.observableModel.extend(model);
-    dataModels.transactionModel.extend(model);
-    dataModels.referencingModel.extend(model);
-    dataModels.instancingModel.extend(model);
-
-    let instance = Object.create(proto);
-    instance.model = model;
-    instance.diagram = model.root;
-    instance.masters_ = instance.diagram.masters;
-    instance.masterReferences_ = new Map();
-    instance.unusedMasters_ = new Set();
-
-    instance.getMaster_ = model.referencingModel.getReferenceFn('groupId');
-
-    // Maintain reference counts for groups.
-    model.observableModel.addHandler('changed',
-                                     change => instance.onChange_(change));
-    // Remove groups with no references.
-    model.transactionModel.addHandler('transactionEnding',
-                                      transaction => instance.makeConsistent_());
-
-    model.masteringModel = instance;
     return instance;
   }
 
@@ -1266,7 +1168,7 @@ const editingModel = (function() {
               items: items,
             };
       const master = model.masteringModel.internalizeMaster(newMaster);
-      element.groupId = model.dataModel.getId(master);
+      element.masterId = model.dataModel.getId(master);
     },
 
     findSrcType: function(wire) {
@@ -1472,7 +1374,7 @@ const editingModel = (function() {
 
     instance.getWireSrc = model.referencingModel.getReferenceFn('srcId');
     instance.getWireDst = model.referencingModel.getReferenceFn('dstId');
-    instance.getGroupMaster_ = model.referencingModel.getReferenceFn('groupId');
+    instance.getGroupMaster_ = model.referencingModel.getReferenceFn('masterId');
 
     model.transactionModel.addHandler('transactionEnding',
                                       transaction => instance.makeConsistent());
@@ -2223,7 +2125,16 @@ function Editor(model, textInputController) {
   this.primitives = primitives;
 
   signatureModel.extend(model);
-  masteringModel.extend(model);
+
+  const masteringModel = dataModels.masteringModel.extend(model);
+
+  masteringModel.onInstanceInserted = function(instance, master) {
+    instance[_groupItems] = master.items;
+  }
+  masteringModel.onInstanceRemoved = function(instance, master) {
+    instance[_groupItems] = null;
+  }
+
   editingModel.extend(model);
   viewModel.extend(model);
 
@@ -2808,7 +2719,6 @@ Editor.prototype.onKeyDown = function(e) {
 
 return {
   signatureModel: signatureModel,
-  masteringModel: masteringModel,
   circuitModel: circuitModel,
   editingModel: editingModel,
   viewModel: viewModel,

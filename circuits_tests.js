@@ -604,17 +604,32 @@ test("circuits.editingModel.wireConsistency", function() {
 //       elem1 = addElement(test, newInputJunction('[,*]')),
 //       elem2 = addElement(test, newOutputJunction('[*,]')),
 //       wire = addWire(test, elem1, 0, elem2, 0),
-//       group = test.build([elem1, elem2]),
-//       elem3 = addElement(test, group),
+//       group = addElement(test, test.build([elem1, elem2])),
+//       elem3 = {
+//         type: 'element',
+//         x: 0,
+//         y: 0,
+//         master: group.master,
+//         [_master]: getMaster(group),
+//       },
 //       expectedType = '[v,v]',
 //       elem4 = addElement(test, newTypedElement('[,' + expectedType + ']')),
 //       elem5 = addElement(test, newOutputJunction('[*,]')),
 //       wire2 = addWire(test, elem4, 0, elem3, 0),
-//       wire3 = addWire(test, elem3, 0, elem5, 0),
-//       actualType = test.findSrcType(wire3);
+//       wire3 = addWire(test, elem3, 0, elem5, 0);
 
+//   test.createGroupInstance(group, elem3);
+//   let actualType = test.findSrcType(wire3)
 //   deepEqual(actualType, expectedType);
 // });
+//       item = mouseHitInfo.item = {
+//         type: 'element',
+//         x: newGroupInstanceInfo.x,
+//         y: newGroupInstanceInfo.y,
+//         master: group.master,
+//         [_master]: getMaster(group),
+//         state: 'palette',
+//       };
 
 // test("circuits.editingModel.findDstType", function() {
 //   let test = newTestEditingModel(),

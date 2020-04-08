@@ -336,7 +336,7 @@ test("referencingModel", function() {
 
 // Instancing model unit tests.
 
-test("instancingModel deepEqual", function() {
+test("instancingModel isomorphic", function() {
   // TODO add some references.
   const test_data = {
     id: 1,
@@ -361,12 +361,61 @@ test("instancingModel deepEqual", function() {
   }
   const model = { root: test_data };
   const test = dataModels.instancingModel.extend(model);
-  const itemIds = [];
   ok(test.isomorphic(test_data, test_data, new Map()));
   const test_data_clone = test.cloneGraph([test_data])[0];
   ok(test.isomorphic(test_data, test_data_clone, new Map()));
   ok(test.isomorphic(test_data.items[0], test_data.items[1], new Map()));
   ok(!test.isomorphic(test_data.item, test_data.items[2], new Map()));
+});
+
+// Mastering model unit tests.
+
+test("masteringModel master tracking", function() {
+  // TODO add some references.
+  const test_data = {
+    id: 1,
+    items: [
+    ],
+    masters: [
+    ],
+  },
+  master1 = {
+    id: 2,
+    items: [
+      { id: 3,
+        prop: 'x',
+      }
+    ]
+  },
+  instance1 = {
+    id: 4,
+    masterId: 2,
+  },
+  instance2 = {
+    id: 5,
+    masterId: 2,
+  }
+
+  const model = { root: test_data };
+  const test = dataModels.masteringModel.extend(model);
+
+  const observableModel = model.observableModel,
+        referencingModel = model.referencingModel,
+        transactionModel = model.transactionModel;
+  ok(observableModel);
+  ok(referencingModel);
+  ok(transactionModel);
+
+  const internal1 = test.internalizeMaster(master1);
+  deepEqual(test_data.masters.length, 1);
+  deepEqual(internal1, master1);
+  deepEqual(test_data.masters[0], internal1);
+
+  observableModel.insertElement(test_data, 'items', 0, instance1);
+  deepEqual(referencingModel.getReference(instance1, 'masterId'), internal1);
+  deepEqual(test_data.masters.length, 1);
+  deepEqual(test_data.masters[0], master1);
+
 });
 
 // Hierarchical model unit tests.
