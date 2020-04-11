@@ -656,7 +656,7 @@ let theme = (function() {
       hoverColor: '#FCF0AD',
       hoverTextColor: '#404040',
 
-      font: '14px sans-serif',
+      font: '14px monospace',
       fontSize: 14,
     },
     blueprint: {
@@ -670,7 +670,7 @@ let theme = (function() {
       hoverColor: '#FCF0AD',
       hoverTextColor: '#404040',
 
-      font: '14px sans-serif',
+      font: '14px monospace',
       fontSize: 14,
     },
   };

@@ -1112,7 +1112,7 @@ const editingModel = (function() {
         }
       });
       if (passThroughs.size) {
-        console.log(passThroughs);
+        // console.log(passThroughs);
         group.passThroughs = Array.from(passThroughs);
       }
 
@@ -1664,8 +1664,16 @@ const viewModel = (function() {
     model.observableModel.addHandler('changed',
                                      change => instance.onChanged_(change));
 
-    model.signatureModel.addHandler('masterInserted',
-                                    (type, master) => instance.layoutMaster_(master));
+    function layoutMaster(type, master) {
+      const ctx = instance.ctx,
+            theme = instance.theme;
+      ctx.save();
+      ctx.font = theme.font;
+      instance.layoutMaster_(master);
+      ctx.restore();
+
+    }
+    model.signatureModel.addHandler('masterInserted', layoutMaster);
 
     instance.wiredElements_ = new Map();
     instance.changedWires_ = new Set();
@@ -2014,9 +2022,8 @@ Renderer.prototype = {
       let border = 4;
       ctx.fillRect(r.x - border, r.y - border, r.w + 2 * border, r.h + 2 * border);
       ctx.fillStyle = theme.hoverTextColor;
-      groupItems.forEach(function(item) {
-        self.draw(item, normalMode);
-      });
+      visitItems(groupItems, item => self.draw(item, normalMode), isElementOrGroup);
+      visitItems(groupItems, wire => self.draw(wire, normalMode), isWire);
     } else {
       // // Just list properties as text.
       // let props = [];

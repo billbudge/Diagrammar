@@ -407,15 +407,26 @@ test("masteringModel master tracking", function() {
   ok(transactionModel);
 
   const internal1 = test.internalizeMaster(master1);
-  deepEqual(test_data.masters.length, 1);
+  ok(test_data.masters.length === 1);
   deepEqual(internal1, master1);
   deepEqual(test_data.masters[0], internal1);
 
   observableModel.insertElement(test_data, 'items', 0, instance1);
   deepEqual(referencingModel.getReference(instance1, 'masterId'), internal1);
-  deepEqual(test_data.masters.length, 1);
+  ok(test_data.masters.length === 1);
   deepEqual(test_data.masters[0], master1);
 
+  observableModel.insertElement(test_data, 'items', 0, instance2);
+  deepEqual(referencingModel.getReference(instance2, 'masterId'), internal1);
+  ok(test_data.masters.length === 1);
+  deepEqual(test_data.masters[0], master1);
+
+  // Remove both instances. Master should also be removed.
+  transactionModel.beginTransaction();
+  observableModel.removeElement(test_data, 'items', 0);
+  observableModel.removeElement(test_data, 'items', 0);
+  transactionModel.endTransaction();
+  ok(test_data.masters.length === 0);
 });
 
 // Hierarchical model unit tests.
