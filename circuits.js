@@ -1412,6 +1412,8 @@ const viewModel = (function() {
     initialize: function(ctx, theme) {
       this.ctx = ctx ||
         {
+          save: function() {},
+          restore: function() {},
           measureText: () => { return { width: 10, height: 10 }},
         };
       this.theme = theme || diagrams.theme.create();
