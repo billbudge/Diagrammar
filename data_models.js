@@ -7,42 +7,6 @@ const dataModels = (function() {
 
 const dataModel = (function() {
   const proto = {
-    getRoot: function() {
-      return this.model.root;
-    },
-
-    // Returns unique id (number) for an item, to allow references to be
-    // resolved. Only items have ids and can be referenced. 0 is an invalid id.
-    getId: function(item) {
-      return item.id;
-    },
-
-    assignId: function(item) {
-      // 0 is not a valid id in this model.
-      const id = this.nextId++;
-      item.id = id;
-      return id;
-    },
-
-    isItem: function(value) {
-      return value && typeof value == 'object';
-    },
-
-    // Returns true iff. item[attr] is a true property.
-    isProperty: function(item, attr) {
-      return attr != 'id' &&
-             item.hasOwnProperty(attr);
-    },
-
-    // Returns true iff. item[attr] is a property that references an item.
-    isReference: function(item, attr) {
-      const attrName = attr.toString(),
-            position = attrName.length - 2;
-      if (position < 0)
-        return false;
-      return attrName.lastIndexOf('Id', position) === position;
-    },
-
     // Visits the item's top level properties.
     visitProperties: function(item, propFn) {
       if (Array.isArray(item)) {
@@ -97,12 +61,26 @@ const dataModel = (function() {
 
     initialize: function(item) {
       const self = this,
-            root = item || this.getRoot();
+            root = item || this.root;
       this.visitSubtree(root, function(item) {
         self.initializers.forEach(function(initializer) {
           initializer(item);
         });
       });
+    },
+
+    // Defines the model, items, and properties.
+    configureModel: function(root, isItem, isProperty) {
+      this.root = root;
+      this.isItem = isItem;
+      this.isProperty = isProperty;
+    },
+
+    // Defines how referencing works.
+    configureReferences: function(getId, assignId, isReference) {
+      this.getId = getId;
+      this.assignId = assignId;
+      this.isReference = isReference;
     },
   }
 
@@ -113,16 +91,51 @@ const dataModel = (function() {
     const instance = Object.create(proto);
     instance.model = model;
 
+    const root = model.root || model;
+
+    function isItem(value) {
+      return value && typeof value == 'object';
+    }
+
+    // Returns true iff. item[attr] is a model property.
+    function isProperty(item, attr) {
+      return attr != 'id' &&
+             item.hasOwnProperty(attr);
+    }
+
+    instance.configureModel(model.root, isItem, isProperty);
+
+    // In default id system, 0 is an invalid id.
+    let nextId = 0;
+
+    function getId(item) {
+      return item.id;
+    }
+
+    function assignId(item) {
+      // 0 is not a valid id in this model.
+      const id = nextId++;
+      item.id = id;
+      return id;
+    }
+
     // Find the maximum id in the model and set nextId to 1 greater.
-    const self = this;
-    let maxId = 0;
-    instance.visitSubtree(instance.getRoot(), function(item) {
-      const id = instance.getId(item);
+    instance.visitSubtree(root, function(item) {
+      const id = getId(item);
       if (id)
-        maxId = Math.max(maxId, id);
+        nextId = Math.max(nextId, id);
     });
-    // Note that this dataModel will never assign an id of 0.
-    instance.nextId = maxId + 1;
+    nextId++;
+
+    // Returns true iff. item[attr] is a property that references an item.
+    function isReference(item, attr) {
+      const attrName = attr.toString(),
+            position = attrName.length - 2;
+      return position >= 0 &&
+             attrName.lastIndexOf('Id', position) == position;
+    }
+
+    instance.configureReferences(getId, assignId, isReference);
 
     instance.initializers = [];
 
@@ -651,7 +664,7 @@ const referencingModel = (function() {
                                        change => instance.onChanged_(change));
     }
     instance.targets_ = new Map();
-    instance.addTargets_(model.dataModel.getRoot());
+    instance.addTargets_(model.dataModel.root);
 
     model.referencingModel = instance;
     return instance;
@@ -676,7 +689,7 @@ const referenceValidator = (function() {
       const self = this, model = this.model,
             dataModel = tmodel.dataModel,
             referencingModel = model.referencingModel;
-      dataModel.visitSubtree(dataModel.getRoot(), function(item) {
+      dataModel.visitSubtree(dataModel.root, function(item) {
         dataModel.visitReferences(item, function(item, attr) {
           if (!referencingModel.resolveId(item[attr]))
             self.onDanglingReference(item, attr);
@@ -1071,7 +1084,7 @@ const masteringModel = (function() {
     instance.model = model;
     instance.unusedMasters_ = new Set();
 
-    instance.configure(model.dataModel.getRoot(), 'masters', 'masterId');
+    instance.configure(model.dataModel.root, 'masters', 'masterId');
 
     // Maintain reference counts for groups.
     model.observableModel.addHandler('changed',
@@ -1173,7 +1186,7 @@ const hierarchicalModel = (function() {
   const _parent = Symbol('parent');
   const proto = {
     getRoot: function() {
-      return this.model.dataModel.getRoot();
+      return this.model.dataModel.root;
     },
 
     getParent: function(item) {
@@ -1311,7 +1324,7 @@ const hierarchicalModel = (function() {
     model.observableModel.addHandler('changed',
                                      change => instance.onChanged_(change));
 
-    instance.init_(model.dataModel.getRoot(), null);
+    instance.init_(model.dataModel.root, null);
 
     model.hierarchicalModel = instance;
     return instance;

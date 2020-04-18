@@ -87,7 +87,7 @@ function addElement(test, element) {
         dataModel = model.dataModel,
         hierarchicalModel = model.hierarchicalModel,
         observableModel = model.observableModel,
-        parent = dataModel.getRoot();
+        parent = dataModel.root;
   dataModel.assignId(element);
   dataModel.initialize(element);
   observableModel.insertElement(parent, 'items', parent.items.length, element);
@@ -98,7 +98,7 @@ function addWire(test, src, srcPin, dst, dstPin) {
   const model = test.model,
         dataModel = model.dataModel,
         observableModel = model.observableModel,
-        parent = dataModel.getRoot();
+        parent = dataModel.root;
   let wire = {
     type: 'wire',
     srcId: dataModel.getId(src),

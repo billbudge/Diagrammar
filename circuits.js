@@ -1685,10 +1685,10 @@ const viewModel = (function() {
     const dataModel = model.dataModel;
     // Initialize items and layout groups.
     // TODO fix this...
-    dataModel.getRoot().items.forEach(function(item) {
+    dataModel.root.items.forEach(function(item) {
       instance.update_(item);
     });
-    dataModel.getRoot().items.forEach(function(item) {
+    dataModel.root.items.forEach(function(item) {
       if (isGroup(item))
         instance.layoutGroup_(item);
     });

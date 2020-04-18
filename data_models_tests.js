@@ -20,12 +20,10 @@ test("dataModel ids", function() {
   const model = { root: testData };
   const test = dataModels.dataModel.extend(model);
   deepEqual(test, model.dataModel);
-  deepEqual(21, test.nextId);
   const item = {};
   const id = test.assignId(item);
-  deepEqual(21, id);
-  deepEqual(21, item.id);
-  deepEqual(22, test.nextId);
+  ok(id != 1 && id != 2 && id != 20);
+  ok(id == item.id)
 });
 
 test("dataModel properties", function() {

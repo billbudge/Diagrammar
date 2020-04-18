@@ -217,7 +217,7 @@ let invalidatingModel = (function () {
       let self = this,
           dataModel = this.model.dataModel,
           invalid = this.invalid_;
-      dataModel.visitSubtree(dataModel.getRoot(), function(item) {
+      dataModel.visitSubtree(dataModel.root, function(item) {
         invalid.add(item);
       });
     },
