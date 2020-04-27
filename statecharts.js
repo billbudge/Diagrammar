@@ -25,19 +25,15 @@ function isContainer(item) {
 }
 
 function isContainable(item) {
-  return item.type != 'transition' && item.type != 'wire';
+  return item.type != 'transition';
 }
 
 function isTransition(item) {
   return item.type == 'transition';
 }
 
-function isWire(item) {
-  return item.type == 'wire';
-}
-
 function isConnection(item) {
-  return item.type == 'transition' || item.type == 'wire';
+  return item.type == 'transition';
 }
 
 let _p1 = Symbol('p1'), _p2 = Symbol('p2'), _master = Symbol('master');
@@ -314,9 +310,6 @@ var editingModel = (function() {
     layoutState: function(state, renderer) {
         if (!isTrueState(state))
         return;
-      // TODO circuits should participate in layout.
-      if (state.type == 'circuit')
-        return;
       var minSize = renderer.getStateMinSize(state);
       this.setAttr(state, 'width', Math.max(state.width || 0, minSize.width));
       this.setAttr(state, 'height', Math.max(state.height || 0, minSize.height));
@@ -438,10 +431,6 @@ Renderer.prototype.getItemRect = function(item) {
     case 'start':
       w = h = 2 * this.radius;
       break;
-    case 'circuit':
-      w = item[_master].width;
-      h = item[_master].height;
-      break;
   }
   return { x: x, y: y, w: w, h: h };
 }
@@ -468,18 +457,13 @@ Renderer.prototype.pinToPoint = function(item, pin, input) {
     var mid = item[_mid];
     return { x: mid.x, y: mid.y };
   }
-  // Otherwise, it's a state or circuit element.
+  // Otherwise, it's a state element.
   var rect = this.getItemRect(item),
       x = rect.x, y = rect.y, w = rect.w, h = rect.h,
       textSize = this.theme.fontSize,
       knobbyRadius = this.knobbyRadius;
   if (isTrueState(item)) {
     y += this.radius + knobbyRadius;
-  } else {
-    // Circuit.
-    y += textSize / 2;
-    if (item[_master].name)
-      y += textSize;
   }
 
   return {
@@ -547,7 +531,7 @@ Renderer.prototype.drawState = function(state, mode) {
       ctx.fillStyle = theme.bgColor;
       ctx.fill();
       ctx.strokeStyle = theme.strokeColor;
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 0.5;
       ctx.stroke();
       ctx.beginPath();
       ctx.moveTo(x, lineBase);
@@ -585,7 +569,7 @@ Renderer.prototype.drawState = function(state, mode) {
       ctx.stroke();
       break;
   }
-  drawPin(this, x + w - knobbyRadius, y + r + knobbyRadius);
+  // drawPin(this, x + w - knobbyRadius, y + r + knobbyRadius);
   drawArrow(this, x + w + this.arrowSize, lineBase);
 }
 
@@ -664,109 +648,6 @@ Renderer.prototype.hitTestStatechart = function(statechart, p, tol, mode) {
   return diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
 }
 
-Renderer.prototype.layoutCircuitMaster = function(master) {
-  var ctx = this.ctx, theme = this.theme,
-      textSize = theme.fontSize, knobbyRadius = this.knobbyRadius,
-      name = master.name, inputs = master.inputs, outputs = master.outputs,
-      inputsLength = inputs.length, outputsLength = outputs.length,
-      rows = Math.max(inputsLength, outputsLength),
-      height = rows * textSize,
-      gutter = 2 * knobbyRadius + 4,
-      maxWidth = 0;
-  if (name) {
-    maxWidth = ctx.measureText(name).width;
-    height += textSize;
-  }
-  for (var i = 0; i < rows; i++) {
-    var inWidth = (i < inputsLength) ? ctx.measureText(inputs[i].name).width : 0,
-        outWidth = (i < outputsLength) ? ctx.measureText(outputs[i].name).width : 0,
-        width = inWidth + 4 + outWidth;
-    maxWidth = Math.max(maxWidth, width);
-  }
-  master.width = gutter + maxWidth + gutter;
-  master.height = 4 + height;
-}
-
-Renderer.prototype.drawCircuit = function(circuit, mode) {
-  var self = this, ctx = this.ctx, theme = this.theme, r = this.radius,
-      master = circuit[_master],
-      rect = this.getItemRect(circuit),
-      x = rect.x, y = rect.y, w = rect.w, h = rect.h;
-  switch (mode) {
-    case normalMode:
-      var textSize = theme.fontSize, knobbyRadius = this.knobbyRadius,
-          name = master.name,
-          inputs = master.inputs, outputs = master.outputs,
-          gutter = 2 * knobbyRadius + 4;
-      ctx.fillStyle = theme.bgColor;
-      ctx.fillRect(x, y, w, h);
-      ctx.strokeStyle = theme.strokeColor;
-      ctx.lineWidth = 0.5;
-      ctx.strokeRect(x, y, w, h);
-      ctx.fillStyle = theme.textColor;
-      var baseLine = y + textSize;
-      if (name) {
-        ctx.textAlign = 'center';
-        ctx.fillText(name, x + w / 2, baseLine);
-        baseLine += textSize;
-      }
-      ctx.textAlign = 'left';
-      inputs.forEach(function(input, i) {
-        var name = input.name, top = baseLine + i * textSize;
-        drawPin(self, x + knobbyRadius, top - textSize / 2);
-        if (name)
-          ctx.fillText(name, x + gutter, top);
-      });
-      ctx.textAlign = 'right';
-      outputs.forEach(function(output, i) {
-        var name = output.name, top = baseLine + i * textSize;;
-        drawPin(self, x + w - knobbyRadius, top - textSize / 2);
-        if (name)
-          ctx.fillText(name, x + w - gutter, top);
-      });
-      ctx.textAlign = 'left';
-      break;
-    case highlightMode:
-      ctx.strokeStyle = theme.highlightColor;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x, y, w, h);
-      break;
-    case hotTrackMode:
-      ctx.strokeStyle = theme.hotTrackColor;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x, y, w, h);
-      break;
-  }
-}
-
-Renderer.prototype.hitTestCircuit = function(circuit, p, tol, mode) {
-  var rect = this.getItemRect(circuit),
-      x = rect.x, y = rect.y, w = rect.w, h = rect.h,
-      hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol);
-  if (hitInfo) {
-    var textSize = this.theme.fontSize,
-        knobbyRadius = this.knobbyRadius,
-        master = circuit[_master],
-        inputs = master.inputs, outputs = master.outputs,
-        self = this;
-    var baseLine = y + textSize;
-    if (master.name)
-      baseLine += textSize;
-    inputs.forEach(function(input, i) {
-      var top = baseLine + i * textSize;
-      if (hitPin(self, x + knobbyRadius, top - textSize / 2, p, tol))
-        hitInfo.input = i;
-      //TODO should return here.
-    });
-    outputs.forEach(function(output, i) {
-      var top = baseLine + i * textSize;;
-      if (hitPin(self, x + w - knobbyRadius, top - textSize / 2, p, tol))
-        hitInfo.output = i;
-    });
-  }
-  return hitInfo;
-}
-
 Renderer.prototype.layoutTransition = function(transition) {
   var referencingModel = this.model.referencingModel,
       v1 = referencingModel.resolveReference(transition, 'srcId'),
@@ -814,50 +695,10 @@ Renderer.prototype.hitTestTransition = function(transition, p, tol, mode) {
   return diagrams.hitTestBezier(transition[_bezier], p, tol);
 }
 
-Renderer.prototype.layoutWire = function(wire) {
-  var referencingModel = this.model.referencingModel,
-      c1 = referencingModel.resolveReference(wire, 'srcId'),
-      c2 = referencingModel.resolveReference(wire, 'dstId'),
-      p1 = wire[_p1], p2 = wire[_p2];
-
-  if (c1)
-    p1 = this.pinToPoint(c1, wire.srcPin, false);
-  if (c2)
-    p2 = this.pinToPoint(c2, wire.dstPin, true);
-  wire[_bezier] = diagrams.getEdgeBezier(p1, p2);
-}
-
-Renderer.prototype.drawWire = function(wire, mode) {
-  var ctx = this.ctx;
-  diagrams.bezierEdgePath(wire[_bezier], ctx, 0);
-  switch (mode) {
-    case normalMode:
-      ctx.strokeStyle = theme.strokeColor;
-      ctx.lineWidth = 1;
-      break;
-    case highlightMode:
-      ctx.strokeStyle = theme.highlightColor;
-      ctx.lineWidth = 2;
-      break;
-    case hotTrackMode:
-      ctx.strokeStyle = theme.hotTrackColor;
-      ctx.lineWidth = 2;
-      break;
-  }
-  ctx.stroke();
-}
-
-Renderer.prototype.hitTestWire = function(wire, p, tol, mode) {
-  return diagrams.hitTestBezier(wire[_bezier], p, tol);
-}
-
 Renderer.prototype.layout = function(item) {
   switch (item.type) {
     case 'transition':
       this.layoutTransition(item);
-      break;
-    case 'wire':
-      this.layoutWire(item);
       break;
   }
 }
@@ -870,14 +711,8 @@ Renderer.prototype.draw = function(item, mode) {
     case 'start':
       this.drawPseudoState(item, mode);
       break;
-    case 'circuit':
-      this.drawCircuit(item, mode);
-      break;
     case 'transition':
       this.drawTransition(item, mode);
-      break;
-    case 'wire':
-      this.drawWire(item, mode);
       break;
     case 'statechart':
       this.drawStatechart(item, mode);
@@ -894,14 +729,8 @@ Renderer.prototype.hitTest = function(item, p, tol, mode) {
     case 'start':
       hitInfo = this.hitTestPseudoState(item, p, tol, mode);
       break;
-    case 'circuit':
-      hitInfo = this.hitTestCircuit(item, p, tol, mode);
-      break;
     case 'transition':
       hitInfo = this.hitTestTransition(item, p, tol, mode);
-      break;
-    case 'wire':
-      hitInfo = this.hitTestWire(item, p, tol, mode);
       break;
     case 'statechart':
       hitInfo = this.hitTestStatechart(item, p, tol, mode);
@@ -947,36 +776,6 @@ function Editor(model, renderer) {
 
   this.hitTolerance = 8;
 
-  var circuitMasters = this.circuitMasters = {
-    // Each event has an un-named guard input and the event name. Make the
-    // event name the input name, since that's how we want to lay it out.
-    event1: {
-      name: 'Item 1',
-      inputs: [
-        { name: 'show', type: 'bool' },
-        { name: 'hide', type: 'bool' },
-        { name: 'anim', type: 'bool' },
-      ],
-      outputs: [
-        { name: 'hit', type: 'bool' },
-      ],
-    },
-    or: {
-      inputs: [
-        { name: '', type: 'bool' },
-        { name: '', type: 'bool' },
-        { name: '', type: 'bool' },
-        { name: '', type: 'bool' },
-      ],
-      outputs: [
-        { name: 'and', type: 'bool' },
-        { name: 'or', type: 'bool' },
-        { name: 'nand', type: 'bool' },
-        { name: 'nor', type: 'bool' },
-      ],
-    },
-  };
-
   var palette = this.palette = {
     root: {
       type: 'palette',
@@ -996,26 +795,14 @@ function Editor(model, renderer) {
           height: 60,
           name: 'New State',
         },
-        {
-          type: 'circuit',
-          x: 32,
-          y: 104,
-          master: 'event1',
-        },
-        {
-          type: 'circuit',
-          x: 32,
-          y: 160,
-          master: 'or',
-        },
       ],
     }
   }
 
   function initialize(item) {
-    if (item.type == 'circuit') {
-      item[_master] = circuitMasters[item.master];
-    }
+    // if (item.type == 'circuit') {
+    //   item[_master] = circuitMasters[item.master];
+    // }
   }
 
   editingModel.extend(model);
@@ -1039,8 +826,6 @@ Editor.prototype.initialize = function(canvasController) {
     this.renderer = new Renderer(canvasController.theme);
   var renderer = this.renderer, ctx = this.ctx;
   renderer.beginDraw(this.palette, ctx);
-  for (var master in this.circuitMasters)
-    renderer.layoutCircuitMaster(this.circuitMasters[master]);
   renderer.endDraw();
 }
 
@@ -1227,22 +1012,6 @@ Editor.prototype.onBeginDrag = function(p0) {
       name: 'Add new transition',
       isNewItem: true,
     };
-  } else if (mouseHitInfo.output !== undefined) {
-    // We can only create a wire from an output pin for now.
-    var circuitId = model.dataModel.getId(dragItem),
-        cp0 = canvasController.viewToCanvas(p0);
-    // Start the new transition as connecting the src state to itself.
-    newItem = {
-      type: 'wire',
-      srcId: circuitId,
-      srcPin: mouseHitInfo.output,
-      _p2: cp0,
-    };
-    drag = {
-      type: 'connectingW2',
-      name: 'Add new wire',
-      isNewItem: true,
-    };
   } else {
     switch (type) {
       case 'state':
@@ -1253,20 +1022,11 @@ Editor.prototype.onBeginDrag = function(p0) {
           drag = { type: 'moveSelection', name: 'Move selection' };
         }
         break;
-      case 'circuit':
-        drag = { type: 'moveSelection', name: 'Move selection' };
-        break;
       case 'transition':
         if (mouseHitInfo.p1)
           drag = { type: 'connectingP1', name: 'Edit transition' };
         else if (mouseHitInfo.p2)
           drag = { type: 'connectingP2', name: 'Edit transition' };
-        break;
-      case 'wire':
-        if (mouseHitInfo.p1)
-          drag = { type: 'connectingW1', name: 'Edit wire' };
-        else if (mouseHitInfo.p2)
-          drag = { type: 'connectingW2', name: 'Edit wire' };
         break;
     }
   }
@@ -1455,11 +1215,6 @@ Editor.prototype.onEndDrag = function(p) {
       editingModel.deleteItem(dragItem);
       selectionModel.remove(dragItem);
     }
-  } else if (isWire(dragItem)) {
-    if (!dragItem.srcId || !dragItem.dstId) {
-      editingModel.deleteItem(dragItem);
-      selectionModel.remove(dragItem);
-    }
   }
 
   model.transactionModel.endTransaction();
@@ -1622,13 +1377,6 @@ var statechart_data = {
               "y": 23,
               "id": 1012
             },
-            {
-              "type": "circuit",
-              "x": 225.6317484169972,
-              "y": 119.02496888866085,
-              "master": "or",
-              "id": 1015
-            }
           ]
         }
       ]
@@ -1683,20 +1431,5 @@ var statechart_data = {
       "dstId": 1007,
       "t2": 2.3
     },
-    {
-      "type": "wire",
-      "srcId": 1017,
-      "srcPin": 0,
-      "id": 1019,
-      "dstId": 1008,
-      "dstPin": 0
-    },
-    {
-      "type": "circuit",
-      "x": 294.3640677170017,
-      "y": 362.60454734008107,
-      "master": "event1",
-      "id": 1017
-    }
   ]
 }
