@@ -32,11 +32,9 @@ function isTransition(item) {
   return item.type == 'transition';
 }
 
-function isConnection(item) {
-  return item.type == 'transition';
-}
-
-let _p1 = Symbol('p1'), _p2 = Symbol('p2'), _master = Symbol('master');
+const _p1 = Symbol('p1'),
+      _p2 = Symbol('p2'),
+      _master = Symbol('master');
 
 function visit(item, filterFn, itemFn) {
   if (!filterFn || filterFn(item))
@@ -62,9 +60,13 @@ function reverseVisit(item, filterFn, itemFn) {
     itemFn(item);
 }
 
+// Initialized by editor.
+let getTransitionSrc,
+    getTransitionDst;
+
 //------------------------------------------------------------------------------
 
-var editingModel = (function() {
+const editingModel = (function() {
   var functions = {
     reduceSelection: function () {
       var model = this.model;
@@ -72,8 +74,8 @@ var editingModel = (function() {
     },
 
     getConnectedConnections: function (items, copying) {
-      var model = this.model,
-          getReference = model.referencingModel.getReference,
+      var self = this,
+          model = this.model,
           itemsAndChildren = new Set();
       items.forEach(function(item) {
         visit(item, isContainable, function(item) {
@@ -81,9 +83,9 @@ var editingModel = (function() {
         });
       });
       var connections = [];
-      visit(this.statechart, isConnection, function(item) {
-        var contains1 = itemsAndChildren.has(getReference(item, 'srcId'));
-        var contains2 = itemsAndChildren.has(getReference(item, 'dstId'));
+      visit(this.statechart, isTransition, function(item) {
+        var contains1 = itemsAndChildren.has(getTransitionSrc(item));
+        var contains2 = itemsAndChildren.has(getTransitionDst(item));
         if (copying) {
           if (contains1 && contains2)
             connections.push(item);
@@ -650,30 +652,34 @@ Renderer.prototype.hitTestStatechart = function(statechart, p, tol, mode) {
 
 Renderer.prototype.layoutTransition = function(transition) {
   var referencingModel = this.model.referencingModel,
-      v1 = referencingModel.resolveReference(transition, 'srcId'),
-      v2 = referencingModel.resolveReference(transition, 'dstId'),
+      src = getTransitionSrc(transition),
+      dst = getTransitionDst(transition),
       p1 = transition[_p1], p2 = transition[_p2];
 
-  if (v1)
-    p1 = this.stateParamToPoint(v1, transition.t1);
-  if (v2)
-    p2 = this.stateParamToPoint(v2, transition.t2);
+  if (src)
+    p1 = this.stateParamToPoint(src, transition.t1);
+  if (dst)
+    p2 = this.stateParamToPoint(dst, transition.t2);
 
   var bezier = transition[_bezier] = diagrams.getEdgeBezier(p1, p2);
   transition[_mid] = geometry.evaluateBezier(bezier, 0.5);
 }
 
 Renderer.prototype.drawTransition = function(transition, mode) {
-  var ctx = this.ctx;
-  diagrams.bezierEdgePath(transition[_bezier], ctx, this.arrowSize);
+  var ctx = this.ctx,
+      r = this.knobbyRadius,
+      bezier = transition[_bezier];
+  diagrams.bezierEdgePath(bezier, ctx, this.arrowSize);
   switch (mode) {
     case normalMode:
       ctx.strokeStyle = theme.strokeColor;
       ctx.lineWidth = 1;
       ctx.stroke();
       ctx.lineWidth = 0.25;
-      var mid = transition[_mid];
-      drawJunction(this, mid.x, mid.y);
+      // var mid = transition[_mid];
+      // drawJunction(this, mid.x, mid.y);
+      diagrams.roundRectPath(bezier[0].x - r, bezier[0].y - r, 32, 8, this.radius, ctx);
+      ctx.stroke();
       break;
     case highlightMode:
       ctx.strokeStyle = theme.highlightColor;
@@ -807,6 +813,10 @@ function Editor(model, renderer) {
 
   editingModel.extend(model);
 
+  getTransitionSrc = model.referencingModel.getReferenceFn('srcId');
+  getTransitionDst = model.referencingModel.getReferenceFn('dstId');
+
+
   dataModels.observableModel.extend(palette);
   dataModels.hierarchicalModel.extend(palette);
   dataModels.transformableModel.extend(palette);
@@ -852,14 +862,14 @@ Editor.prototype.draw = function() {
       ctx = this.ctx, canvasController = this.canvasController;
   renderer.beginDraw(model, ctx);
   canvasController.applyTransform();
-  visit(statechart, isConnection, function(item) {
+  visit(statechart, isTransition, function(item) {
     renderer.layout(item);
   });
 
   visit(statechart, isContainable, function(item) {
     renderer.draw(item, normalMode);
   });
-  visit(statechart, isConnection, function(transition) {
+  visit(statechart, isTransition, function(transition) {
     renderer.draw(transition, normalMode);
   });
 
@@ -882,7 +892,7 @@ Editor.prototype.draw = function() {
   if (temporary) {
     renderer.beginDraw(model, ctx);
     canvasController.applyTransform();
-    if (isConnection(temporary))
+    if (isTransition(temporary))
       renderer.layout(temporary);
     renderer.draw(temporary, normalMode);
     renderer.endDraw();
@@ -913,7 +923,7 @@ Editor.prototype.hitTest = function(p) {
     pushInfo(renderer.hitTest(item, p, tol, normalMode));
   });
   // TODO hit test selection first, in highlight, first.
-  reverseVisit(statechart, isConnection, function(transition) {
+  reverseVisit(statechart, isTransition, function(transition) {
     pushInfo(renderer.hitTest(transition, cp, cTol, normalMode));
   });
   reverseVisit(statechart, isContainable, function(item) {

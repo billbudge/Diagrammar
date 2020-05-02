@@ -9,6 +9,7 @@ const diagrams = (function() {
 // Rendering utilities.
 
 function roundRectPath(x, y, width, height, r, ctx) {
+  r = Math.min(r, width * 0.5, height * 0.5);
   let right = x + width, bottom = y + height;
   ctx.beginPath();
   ctx.moveTo(x, y + r);
