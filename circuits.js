@@ -1279,7 +1279,7 @@ const editingModel = (function() {
       // model.transactionModel.endTransaction();
     },
 
-    doToggleMaster: function() {
+    doTogglePalette: function() {
       let model = this.model;
       this.reduceSelection();
       model.transactionModel.beginTransaction('toggle master state');
@@ -2456,7 +2456,7 @@ Editor.prototype.onBeginDrag = function(p0) {
     model.transactionModel.beginTransaction(drag.name);
     if (newWire) {
       drag.item = newWire;
-      model.dataModel.initialize(newWire);
+      editingModel.newItem(newWire);
       editingModel.addItem(newWire);
       selectionModel.set(newWire);
     } else {
@@ -2691,7 +2691,7 @@ Editor.prototype.onKeyDown = function(e) {
         editingModel.doSelectConnectedElements(!shiftKey);
         return true;
       case 72:  // 'h'
-        editingModel.doToggleMaster();
+        editingModel.doTogglePalette();
         return true;
       case 74:  // 'j'
         editingModel.doComplete();
