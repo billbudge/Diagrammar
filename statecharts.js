@@ -136,7 +136,7 @@ const editingModel = (function() {
     copyItems: function(items, map) {
       const model = this.model,
             dataModel = model.dataModel,
-            transformableModel = model.transformableModel,
+            translatableModel = model.translatableModel,
             statechart = this.statechart,
             connected = this.getConnectedConnections(items, true),
             copies = model.copyPasteModel.cloneItems(items.concat(connected), map);
@@ -144,8 +144,9 @@ const editingModel = (function() {
       items.forEach(function(item) {
         const copy = map.get(dataModel.getId(item));
         if (isContainable(copy)) {
-          const toGlobal = transformableModel.getToParent(item, statechart);
-          geometry.matMulPt(copy, toGlobal);
+          const translation = translatableModel.getToParent(item, statechart);
+          copy.x += translation.x;
+          copy.y += translation.y;
         }
       });
       return copies;
@@ -235,9 +236,10 @@ const editingModel = (function() {
             oldParent = hierarchicalModel.getParent(item);
       if (oldParent === parent)
         return;
-      const transformableModel = model.transformableModel,
-            toParent = transformableModel.getToParent(item, parent);
-      geometry.matMulPt(item, toParent);
+      const translatableModel = model.translatableModel,
+            translation = translatableModel.getToParent(item, parent);
+      item.x += translation.x;
+      item.y += translation.y;
       let itemToAdd = item;
       if (isTrueState(parent)) {
         if (!Array.isArray(parent.items))
@@ -376,7 +378,7 @@ const editingModel = (function() {
     dataModels.selectionModel.extend(model);
     dataModels.referencingModel.extend(model);
     dataModels.hierarchicalModel.extend(model);
-    dataModels.transformableModel.extend(model);
+    dataModels.translatableModel.extend(model);
     dataModels.transactionModel.extend(model);
     dataModels.transactionHistory.extend(model);
     dataModels.instancingModel.extend(model);
@@ -425,7 +427,7 @@ function Renderer(theme) {
 
 Renderer.prototype.beginDraw = function(model, ctx) {
   this.model = model;
-  this.transformableModel = model.transformableModel;
+  this.translatableModel = model.translatableModel;
   this.ctx = ctx;
   ctx.save();
   ctx.font = this.theme.font;
@@ -438,8 +440,10 @@ Renderer.prototype.endDraw = function() {
 }
 
 Renderer.prototype.getItemRect = function(item) {
-  const transform = this.transformableModel.getAbsolute(item);
-  let x = transform[4], y = transform[5], w, h;
+  const translatableModel = this.translatableModel,
+        x = translatableModel.globalX(item),
+        y = translatableModel.globalY(item);
+  let w, h;
   switch (item.type) {
     case 'state':
     case 'statechart':
