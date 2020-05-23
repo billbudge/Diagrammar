@@ -931,6 +931,12 @@ Editor.prototype.onClick = function(p) {
   return mouseHitInfo != null;
 }
 
+const connectTransitionSrc = 1,
+      connectTransitionDst = 2,
+      moveSelection = 3,
+      moveCopySelection = 4,
+      resizeState = 5;
+
 Editor.prototype.onBeginDrag = function(p0) {
   const mouseHitInfo = this.mouseHitInfo,
         canvasController = this.canvasController;
@@ -952,7 +958,7 @@ Editor.prototype.onBeginDrag = function(p0) {
       [_p2]: cp0,
     };
     drag = {
-      type: 'connectingP2',
+      type: connectTransitionDst,
       name: 'Add new transition',
       newItem: true,
     };
@@ -961,27 +967,27 @@ Editor.prototype.onBeginDrag = function(p0) {
       case 'state':
       case 'start':
         if (mouseHitInfo.moveCopy) {
-          drag = { type: 'moveCopySelection', name: 'Move copy of selection', newItem: true };
+          drag = { type: moveCopySelection, name: 'Move copy of selection', newItem: true };
         } else {
           if (dragItem.type == 'state' && mouseHitInfo.border) {
-            drag = { type: 'resizeState', name: 'Resize state' };
+            drag = { type: resizeState, name: 'Resize state' };
           } else {
-            drag = { type: 'moveSelection', name: 'Move selection' };
+            drag = { type: moveSelection, name: 'Move selection' };
           }
         }
         break;
       case 'transition':
         if (mouseHitInfo.p1)
-          drag = { type: 'connectingP1', name: 'Edit transition' };
+          drag = { type: connectTransitionSrc, name: 'Edit transition' };
         else if (mouseHitInfo.p2)
-          drag = { type: 'connectingP2', name: 'Edit transition' };
+          drag = { type: connectTransitionDst, name: 'Edit transition' };
         break;
     }
   }
 
   this.drag = drag;
   if (drag) {
-    if (drag.type == 'moveSelection' || drag.type == 'moveCopySelection') {
+    if (drag.type == moveSelection || drag.type == moveCopySelection) {
       editingModel.reduceSelection();
       // let items = selectionModel.contents();
       // drag.isSingleElement = items.length == 1 && isState(items[0]);
@@ -1023,13 +1029,11 @@ Editor.prototype.onDrag = function(p0, p) {
         mouseHitInfo = this.mouseHitInfo,
         snapshot = transactionModel.getSnapshot(dragItem),
         hitList = this.hitTest(p);
-  let hitInfo,
-      src, dst, srcId, dstId, t1, t2;
+  let hitInfo;
   switch (drag.type) {
-    case 'moveCopySelection':
-    case 'moveSelection':
-      if (isContainable(dragItem))
-        hitInfo = this.getFirstHit(hitList, isContainerTarget);
+    case moveCopySelection:
+    case moveSelection:
+      hitInfo = this.getFirstHit(hitList, isStateBorder);
       selectionModel.forEach(function(item) {
         const snapshot = transactionModel.getSnapshot(item);
         if (snapshot) {
@@ -1038,7 +1042,7 @@ Editor.prototype.onDrag = function(p0, p) {
         }
       });
       break;
-    case 'resizeState':
+    case resizeState:
       if (mouseHitInfo.left) {
         observableModel.changeValue(dragItem, 'x', snapshot.x + dx);
         observableModel.changeValue(dragItem, 'width', snapshot.width - dx);
@@ -1052,29 +1056,30 @@ Editor.prototype.onDrag = function(p0, p) {
       if (mouseHitInfo.bottom)
         observableModel.changeValue(dragItem, 'height', snapshot.height + dy);
       break;
-    case 'connectingP1':
+    case connectTransitionSrc:
       hitInfo = this.getFirstHit(hitList, isStateBorder);
-      srcId = hitInfo ? dataModel.getId(hitInfo.item) : 0;  // 0 is invalid id
+      const srcId = hitInfo ? dataModel.getId(hitInfo.item) : 0;  // 0 is invalid id
       observableModel.changeValue(dragItem, 'srcId', srcId);
-      src = getTransitionSrc(dragItem);
+      const src = getTransitionSrc(dragItem);
       if (src) {
-        t1 = renderer.statePointToParam(src, cp);
+        const t1 = renderer.statePointToParam(src, cp);
         observableModel.changeValue(dragItem, 't1', t1);
       } else {
         dragItem[_p1] = cp;
       }
       break;
-    case 'connectingP2':
+    case connectTransitionDst:
+      // Adjust position on src state to track the new transition.
       if (drag.newItem) {
-        src = referencingModel.getReference(dragItem, 'srcId');
+        const src = referencingModel.getReference(dragItem, 'srcId');
         observableModel.changeValue(dragItem, 't1', renderer.statePointToParam(src, cp));
       }
       hitInfo = this.getFirstHit(hitList, isStateBorder);
-      dstId = hitInfo ? dataModel.getId(hitInfo.item) : 0;  // 0 is invalid id
+      const dstId = hitInfo ? dataModel.getId(hitInfo.item) : 0;  // 0 is invalid id
       observableModel.changeValue(dragItem, 'dstId', dstId);
-      dst = getTransitionDst(dragItem);
+      const dst = getTransitionDst(dragItem);
       if (dst) {
-        t2 = renderer.statePointToParam(dst, cp);
+        const t2 = renderer.statePointToParam(dst, cp);
         observableModel.changeValue(dragItem, 't2', t2);
       } else {
         dragItem[_p2] = cp;
@@ -1099,7 +1104,7 @@ Editor.prototype.onEndDrag = function(p) {
         editingModel = model.editingModel;
   if (isTransition(dragItem)) {
     dragItem[_p1] = dragItem[_p2] = undefined;
-  } else if (drag.type == 'moveSelection' || drag.type == 'moveCopySelection') {
+  } else if (drag.type == moveSelection || drag.type == moveCopySelection) {
     // Find state beneath mouse.
     const hitList = this.hitTest(p),
           hitInfo = this.getFirstHit(hitList, isContainerTarget),
@@ -1111,7 +1116,6 @@ Editor.prototype.onEndDrag = function(p) {
       }
     });
   }
-  model.transactionModel.endTransaction();
 
   const renderer = this.renderer;
   renderer.beginDraw(model, this.ctx);
@@ -1127,6 +1131,8 @@ Editor.prototype.onEndDrag = function(p) {
       selectionModel.remove(dragItem);
     }
   }
+
+  model.transactionModel.endTransaction();
 
   this.drag = null;
   this.mouseHitInfo = null;
