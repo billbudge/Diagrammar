@@ -590,6 +590,7 @@ Renderer.prototype.drawPseudoState = function(state, mode) {
       ctx.fill();
       // Render knobbies, faintly.
       ctx.lineWidth = 0.25;
+      ctx.stroke()
       break;
     case highlightMode:
       ctx.strokeStyle = theme.highlightColor;
@@ -690,9 +691,6 @@ Renderer.prototype.drawTransition = function(transition, mode) {
 }
 
 Renderer.prototype.hitTestTransition = function(transition, p, tol, mode) {
-  // TODO fix layout with viewModel
-  if (!transition[_bezier])
-    return;
   return diagrams.hitTestBezier(transition[_bezier], p, tol);
 }
 

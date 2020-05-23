@@ -768,10 +768,10 @@ const editingModel = (function() {
     },
 
     connectInput: function(element, pin, p) {
-      const viewModel = this.model.viewModel,
+      const layoutModel = this.model.layoutModel,
             parent = this.getParent(element),
             dstPin = getMaster(element).inputs[pin],
-            pinPoint = p || viewModel.pinToPoint(element, pin, true);
+            pinPoint = p || layoutModel.pinToPoint(element, pin, true);
 
       const junction = {
         type: 'element',
@@ -795,10 +795,10 @@ const editingModel = (function() {
     },
 
     connectOutput: function(element, pin, p) {
-      const viewModel = this.model.viewModel,
+      const layoutModel = this.model.layoutModel,
             parent = this.getParent(element),
             srcPin = getMaster(element).outputs[pin],
-            pinPoint = p || viewModel.pinToPoint(element, pin, false);
+            pinPoint = p || layoutModel.pinToPoint(element, pin, false);
 
       const junction = {
         type: 'element',
@@ -1017,7 +1017,7 @@ const editingModel = (function() {
       const self = this, model = this.model,
             dataModel = model.dataModel,
             signatureModel = model.signatureModel,
-            viewModel = model.viewModel,
+            layoutModel = model.layoutModel,
             graphInfo = model.circuitModel.getSubgraphInfo(items),
             inputs = [], outputs = [];
 
@@ -1053,10 +1053,10 @@ const editingModel = (function() {
           if (!isElement(item))
             return;
           if (isInput(item)) {
-            const y = viewModel.pinToPoint(item, 0, false).y;
+            const y = layoutModel.pinToPoint(item, 0, false).y;
             inputs.push(makePin(item, getInputType(item), y));
           } else if (isOutput(item)) {
-            const y = viewModel.pinToPoint(item, 0, true).y;
+            const y = layoutModel.pinToPoint(item, 0, true).y;
             outputs.push(makePin(item, getOutputType(item), y));
           } else if (isGroup(item)) {
             addItems(item.items);
@@ -1124,10 +1124,10 @@ const editingModel = (function() {
             dataModel = model.dataModel,
             signatureModel = model.signatureModel,
             observableModel = model.observableModel,
-            viewModel = model.viewModel,
+            layoutModel = model.layoutModel,
             graphInfo = model.circuitModel.getSubgraphInfo(items),
             groupItems = items.concat(Array.from(graphInfo.interiorWires)),
-            extents = viewModel.getItemRects(graphInfo.elementsAndGroups),
+            extents = layoutModel.getItemRects(graphInfo.elementsAndGroups),
             x = extents.x - spacing,
             y = extents.y - spacing;
 
@@ -1143,7 +1143,7 @@ const editingModel = (function() {
 
       group.items = groupItems;
       groupItems.forEach(function(item) {
-        let r = viewModel.getItemRect(item);
+        let r = layoutModel.getItemRect(item);
         if (r) {
           observableModel.changeValue(item, 'x', r.x - x);
           observableModel.changeValue(item, 'y', r.y - y);
@@ -1407,7 +1407,7 @@ const minMasterHeight = 8;
 const knobbyRadius = 4;
 const padding = 8;
 
-const viewModel = (function() {
+const layoutModel = (function() {
   const proto = {
     initialize: function(ctx, theme) {
       this.ctx = ctx ||
@@ -1696,7 +1696,7 @@ const viewModel = (function() {
     instance.getWireSrc = model.referencingModel.getReferenceFn('srcId');
     instance.getWireDst = model.referencingModel.getReferenceFn('dstId');
 
-    model.viewModel = instance;
+    model.layoutModel = instance;
     return instance;
   }
 
@@ -1719,17 +1719,17 @@ function Renderer(ctx, theme) {
 Renderer.prototype = {
   begin: function(model) {
     this.model = model;
-    this.viewModel = model.viewModel;
+    this.layoutModel = model.layoutModel;
 
     ctx.save();
     ctx.font = this.theme.font;
 
-    model.viewModel.updateLayout();
+    model.layoutModel.updateLayout();
   },
 
   end: function() {
     this.ctx.restore();
-    this.model = this.viewModel = null;
+    this.model = this.layoutModel = null;
   },
 
   drawMaster: function(master, x, y) {
@@ -1791,7 +1791,7 @@ Renderer.prototype = {
 
   drawElement: function(element, mode) {
     const ctx = this.ctx, theme = this.theme,
-          rect = this.viewModel.getItemRect(element),
+          rect = this.layoutModel.getItemRect(element),
           x = rect.x, y = rect.y, w = rect.w, h = rect.h,
           right = x + w, bottom = y + h;
 
@@ -1833,7 +1833,7 @@ Renderer.prototype = {
 
   drawElementPin: function(element, input, output, mode) {
     const ctx = this.ctx,
-          rect = this.viewModel.getItemRect(element),
+          rect = this.layoutModel.getItemRect(element),
           master = getMaster(element);
     let x = rect.x, y = rect.y, w = rect.w, h = rect.h,
         right = x + w,
@@ -1874,7 +1874,7 @@ Renderer.prototype = {
 
   drawGroup: function(group, mode) {
     const ctx = this.ctx, theme = this.theme,
-          rect = this.viewModel.getItemRect(group),
+          rect = this.layoutModel.getItemRect(group),
           x = rect.x, y = rect.y, w = rect.w , h = rect.h,
           right = x + w, bottom = y + h;
     diagrams.roundRectPath(x, y, w, h, spacing, ctx);
@@ -1915,7 +1915,7 @@ Renderer.prototype = {
   },
 
   hitTestElement: function(element, p, tol, mode) {
-    const rect = this.viewModel.getItemRect(element),
+    const rect = this.layoutModel.getItemRect(element),
           x = rect.x, y = rect.y, width = rect.w, height = rect.h,
           hitInfo = diagrams.hitTestRect(x, y, width, height, p, tol);
     if (hitInfo) {
@@ -1937,7 +1937,7 @@ Renderer.prototype = {
   },
 
   hitTestGroup: function(group, p, tol, mode) {
-    const rect = this.viewModel.getItemRect(group),
+    const rect = this.layoutModel.getItemRect(group),
           x = rect.x, y = rect.y, w = rect.w , h = rect.h,
           hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol);
     if (hitInfo) {
@@ -2017,9 +2017,9 @@ Renderer.prototype = {
           x = p.x, y = p.y;
     ctx.fillStyle = theme.hoverColor;
     if (isGroupInstance(item)) {
-      const viewModel = this.viewModel,
+      const layoutModel = this.layoutModel,
             groupItems = getGroupItems(item);
-      let r = viewModel.getItemRects(groupItems);
+      let r = layoutModel.getItemRects(groupItems);
       ctx.translate(x - r.x, y - r.y);
       let border = 4;
       ctx.fillRect(r.x - border, r.y - border, r.w + 2 * border, r.h + 2 * border);
@@ -2145,10 +2145,10 @@ function Editor(model, textInputController) {
   }
 
   editingModel.extend(model);
-  viewModel.extend(model);
+  layoutModel.extend(model);
 
   function update() {
-    self.model.viewModel.updateGroupLayout();
+    self.model.layoutModel.updateGroupLayout();
   }
   const transactionModel = model.transactionModel;
   transactionModel.addHandler('transactionEnded', update);
@@ -2166,10 +2166,10 @@ Editor.prototype.initialize = function(canvasController) {
   this.renderer = new Renderer(ctx, theme);
 
   let model = this.model,
-      viewModel = model.viewModel,
+      layoutModel = model.layoutModel,
       renderer = this.renderer;
 
-  viewModel.initialize(ctx, theme);
+  layoutModel.initialize(ctx, theme);
 
   model.dataModel.initialize();
 
@@ -2182,7 +2182,7 @@ Editor.prototype.initialize = function(canvasController) {
     item.state = 'palette';
     model.editingModel.newItem(item);
     model.editingModel.addItem(item);
-    let r = viewModel.getItemRect(item);
+    let r = layoutModel.getItemRect(item);
     x += r.w + spacing;
     h = Math.max(h, r.h);
   });
@@ -2197,7 +2197,7 @@ Editor.prototype.initialize = function(canvasController) {
     item.state = 'palette';
     model.editingModel.newItem(item);
     model.editingModel.addItem(item);
-    let r = viewModel.getItemRect(item);
+    let r = layoutModel.getItemRect(item);
     x += r.w + spacing;
     h = Math.max(h, r.h);
     if (x > 208) {
@@ -2729,7 +2729,7 @@ return {
   signatureModel: signatureModel,
   circuitModel: circuitModel,
   editingModel: editingModel,
-  viewModel: viewModel,
+  layoutModel: layoutModel,
 
   // normalMode: normalMode,
   // highlightMode: highlightMode,
