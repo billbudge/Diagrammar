@@ -32,7 +32,7 @@ function isTransition(item) {
 }
 
 function isPaletted(item) {
-  return item.state === 'palette';
+  return item.state == 'palette';
 }
 
 const _p1 = Symbol('p1'),
@@ -105,7 +105,7 @@ const editingModel = (function() {
         const items = parent.items;
         for (let i = 0; i < items.length; i++) {
           const subItem = items[i];
-          if (subItem === item) {
+          if (subItem == item) {
             model.observableModel.removeElement(parent, 'items', i);
             break;
           }
@@ -144,6 +144,10 @@ const editingModel = (function() {
       items.forEach(function(item) {
         const copy = map.get(dataModel.getId(item));
         if (isContainable(copy)) {
+          if (isState(copy)) {
+            // De-palettize clone.
+            copy.state = 'normal';
+          }
           const translation = translatableModel.getToParent(item, statechart);
           copy.x += translation.x;
           copy.y += translation.y;
@@ -165,17 +169,6 @@ const editingModel = (function() {
     doCut: function() {
       this.doCopy();
       this.doDelete();
-    },
-
-    addItems: function(items) {
-      const model = this.model,
-            statechart = this.statechart,
-            statechartItems = statechart.items;
-      items.forEach(function(item) {
-        statechartItems.push(item);
-        model.selectionModel.add(item);
-        model.observableModel.onElementInserted(statechart, 'items', statechartItems.length - 1);
-      });
     },
 
     doPaste: function() {
@@ -230,45 +223,69 @@ const editingModel = (function() {
       this.model.observableModel.changeValue(item, attr, value);
     },
 
+    newItem: function(item) {
+      const dataModel = this.model.dataModel;
+      dataModel.assignId(item);
+      dataModel.initialize(item);
+    },
+
+    newItems: function(items) {
+      const self = this;
+      items.forEach(item => self.newItem(item));
+    },
+
     addItem: function(item, parent) {
       const model = this.model,
             hierarchicalModel = model.hierarchicalModel,
             oldParent = hierarchicalModel.getParent(item);
-      if (oldParent === parent)
+      if (oldParent == parent)
         return;
-      const translatableModel = model.translatableModel,
-            translation = translatableModel.getToParent(item, parent);
-      item.x += translation.x;
-      item.y += translation.y;
       let itemToAdd = item;
-      if (isTrueState(parent)) {
-        if (!Array.isArray(parent.items))
-          model.observableModel.changeValue(parent, 'items', []);
-        if (parent.items.length == 0) {
+      if (isContainable(item)) {
+        const translatableModel = model.translatableModel,
+              translation = translatableModel.getToParent(item, parent);
+        item.x += translation.x;
+        item.y += translation.y;
+        if (isTrueState(parent)) {
+          if (!Array.isArray(parent.items))
+            model.observableModel.changeValue(parent, 'items', []);
+          if (parent.items.length == 0) {
+            itemToAdd = this.createStatechart(item);
+          } else {
+            parent = parent.items[0];
+            if (!parent.items)
+              parent.items = [];
+          }
+        } else if (isStatechart(parent) &&
+                   !this.canAddItemToStatechart(item, parent)) {
+          parent = hierarchicalModel.getParent(parent);
+          const parentItems = parent.items,
+                lastStatechart = parentItems[parentItems.length - 1];
           itemToAdd = this.createStatechart(item);
-        } else {
-          parent = parent.items[0];
-          if (!parent.items)
-            parent.items = [];
+          this.setAttr(itemToAdd, 'y', lastStatechart.y + lastStatechart.height);
+          this.setAttr(item, 'y', 16);
+          // TODO determine horizontal / vertical flow direction from item
+          // position in statechart.
         }
-      } else if (isStatechart(parent) &&
-                 !this.canAddItemToStatechart(item, parent)) {
-        parent = model.hierarchicalModel.getParent(parent);
-        const parentItems = parent.items,
-              lastStatechart = parentItems[parentItems.length - 1];
-        itemToAdd = this.createStatechart(item);
-        this.setAttr(itemToAdd, 'y', lastStatechart.y + lastStatechart.height);
-        this.setAttr(item, 'y', 16);
-        // TODO determine horizontal / vertical flow direction from item
-        // position in statechart.
       }
-      if (oldParent !== parent) {
+      if (oldParent != parent) {
         if (oldParent)            // if null, it's a new item.
-          this.deleteItem(item);  // notifies observer
+          this.deleteItem(item);  // notifies observers
         parent.items.push(itemToAdd);
         model.observableModel.onElementInserted(parent, 'items', parent.items.length - 1);
       }
       return itemToAdd;
+    },
+
+    addItems: function(items) {
+      const model = this.model,
+            statechart = this.statechart,
+            statechartItems = statechart.items;
+      items.forEach(function(item) {
+        statechartItems.push(item);
+        model.selectionModel.add(item);
+        model.observableModel.onElementInserted(statechart, 'items', statechartItems.length - 1);
+      });
     },
 
     doTogglePalette: function() {
@@ -475,29 +492,6 @@ Renderer.prototype.stateParamToPoint = function(state, t) {
   return diagrams.circleParamToPoint(rect.x + r, rect.y + r, r, t);
 }
 
-Renderer.prototype.pinToPoint = function(item, pin, input) {
-  if (isTransition(item)) {
-    // pin === 0, input === true.
-    const mid = item[_mid];
-    return { x: mid.x, y: mid.y };
-  }
-  // Otherwise, it's a state element.
-  const rect = this.getItemRect(item),
-        textSize = this.theme.fontSize,
-        knobbyRadius = this.knobbyRadiu;
-  let x = rect.x, y = rect.y, w = rect.w, h = rect.hs;
-  if (isTrueState(item)) {
-    y += this.radius + knobbyRadius;
-  }
-
-  return {
-    x: input ? x + knobbyRadius : x + w - knobbyRadius,
-    y: y + pin * textSize,
-    nx: input ? -1 : 1,
-    ny: 0,
-  }
-}
-
 Renderer.prototype.getStateMinSize = function(state) {
   const ctx = this.ctx, theme = this.theme, r = this.radius;
   let width = this.stateMinWidth, height = this.stateMinHeight;
@@ -506,11 +500,6 @@ Renderer.prototype.getStateMinSize = function(state) {
   width = Math.max(width, ctx.measureText(state.name).width + 2 * r);
   height = Math.max(height, theme.fontSize + this.textLeading);
   return { width: width, height: height };
-}
-
-function drawPin(renderer, x, y) {
-  const r = renderer.knobbyRadius, d = 2 * r;
-  renderer.ctx.strokeRect(x - r, y - r, d, d);
 }
 
 function drawArrow(renderer, x, y) {
@@ -575,7 +564,6 @@ Renderer.prototype.drawState = function(state, mode) {
       ctx.stroke();
       break;
   }
-  // drawPin(this, x + w - knobbyRadius, y + r + knobbyRadius);
   drawArrow(this, x + w + this.arrowSize, lineBase);
 }
 
@@ -702,6 +690,9 @@ Renderer.prototype.drawTransition = function(transition, mode) {
 }
 
 Renderer.prototype.hitTestTransition = function(transition, p, tol, mode) {
+  // TODO fix layout with viewModel
+  if (!transition[_bezier])
+    return;
   return diagrams.hitTestBezier(transition[_bezier], p, tol);
 }
 
@@ -836,18 +827,6 @@ Editor.prototype.initialize = function(canvasController) {
   });
 }
 
-Editor.prototype.addTemporaryItem = function(item) {
-  this.model.observableModel.changeValue(this.statechart, 'temporary', item);
-}
-
-Editor.prototype.removeTemporaryItem = function(item) {
-  return this.model.observableModel.changeValue(this.statechart, 'temporary', null);
-}
-
-Editor.prototype.getTemporaryItem = function() {
-  return this.statechart.temporary;
-}
-
 Editor.prototype.draw = function() {
   const renderer = this.renderer, statechart = this.statechart,
         model = this.model,
@@ -871,16 +850,6 @@ Editor.prototype.draw = function() {
   if (this.hotTrackInfo)
     renderer.draw(this.hotTrackInfo.item, hotTrackMode);
   renderer.endDraw();
-
-  const temporary = this.getTemporaryItem();
-  if (temporary) {
-    renderer.beginDraw(model, ctx);
-    canvasController.applyTransform();
-    if (isTransition(temporary))
-      renderer.layout(temporary);
-    renderer.draw(temporary, normalMode);
-    renderer.endDraw();
-  }
 
   const hoverHitInfo = this.hoverHitInfo;
   if (hoverHitInfo) {
@@ -943,17 +912,17 @@ Editor.prototype.onClick = function(p) {
   const model = this.model,
         selectionModel = model.selectionModel,
         shiftKeyDown = this.canvasController.shiftKeyDown,
+        cmdKeyDown = this.canvasController.cmdKeyDown,
         hitList = this.hitTest(p),
         mouseHitInfo = this.mouseHitInfo = this.getFirstHit(hitList, isDraggable);
   if (mouseHitInfo) {
     const item = mouseHitInfo.item;
-    if (isPaletted(item)) {
-      selectionModel.clear();
-    } else if (!selectionModel.contains(item)) {
-      if (!shiftKeyDown)
-        selectionModel.clear();
-      selectionModel.add(item);
+    if (isPaletted(item) || cmdKeyDown) {
+      mouseHitInfo.moveCopy = true;
+      // No transition dragging or state resizing in this mode.
+      mouseHitInfo.arrow = mouseHitInfo.border = undefined;
     }
+    selectionModel.select(item, shiftKeyDown);
   } else {
     if (!shiftKeyDown) {
       selectionModel.clear();
@@ -967,43 +936,38 @@ Editor.prototype.onBeginDrag = function(p0) {
         canvasController = this.canvasController;
   if (!mouseHitInfo)
     return false;
-  const dragItem = mouseHitInfo.item, type = dragItem.type,
-        model = this.model;
-  let newItem, drag;
-  if (isPaletted(dragItem)) {
-    newItem = model.instancingModel.clone(dragItem);
-    newItem.state = 'normal';
-    drag = {
-      type: 'paletteItem',
-      name: 'Add new ' + dragItem.type,
-      isNewItem: true,
-    }
-    const cp = canvasController.viewToCanvas(newItem);
-    newItem.x = cp.x;
-    newItem.y = cp.y;
-  } else if (mouseHitInfo.arrow) {
+  const model = this.model,
+        editingModel = model.editingModel,
+        selectionModel = model.selectionModel,
+        dragItem = mouseHitInfo.item;
+  let drag, newTransition;
+  if (mouseHitInfo.arrow) {
     const stateId = model.dataModel.getId(dragItem),
           cp0 = canvasController.viewToCanvas(p0);
     // Start the new transition as connecting the src state to itself.
-    newItem = {
+    newTransition = {
       type: 'transition',
       srcId: stateId,
       t1: 0,
-      _p2: cp0,
+      [_p2]: cp0,
     };
     drag = {
       type: 'connectingP2',
       name: 'Add new transition',
-      isNewItem: true,
+      newItem: true,
     };
   } else {
-    switch (type) {
+    switch (dragItem.type) {
       case 'state':
       case 'start':
-        if (type == 'state' && mouseHitInfo.border) {
-          drag = { type: 'resizeState', name: 'Resize state' };
+        if (mouseHitInfo.moveCopy) {
+          drag = { type: 'moveCopySelection', name: 'Move copy of selection', newItem: true };
         } else {
-          drag = { type: 'moveSelection', name: 'Move selection' };
+          if (dragItem.type == 'state' && mouseHitInfo.border) {
+            drag = { type: 'resizeState', name: 'Resize state' };
+          } else {
+            drag = { type: 'moveSelection', name: 'Move selection' };
+          }
         }
         break;
       case 'transition':
@@ -1014,17 +978,28 @@ Editor.prototype.onBeginDrag = function(p0) {
         break;
     }
   }
+
   this.drag = drag;
   if (drag) {
-    if (drag.type === 'moveSelection')
-      model.editingModel.reduceSelection();
+    if (drag.type == 'moveSelection' || drag.type == 'moveCopySelection') {
+      editingModel.reduceSelection();
+      // let items = selectionModel.contents();
+      // drag.isSingleElement = items.length == 1 && isState(items[0]);
+    }
     model.transactionModel.beginTransaction(drag.name);
-    if (newItem) {
-      drag.item = newItem;
-      model.dataModel.initialize(newItem);
-      this.addTemporaryItem(newItem);
+    if (newTransition) {
+      drag.item = newTransition;
+      editingModel.newItem(newTransition);
+      editingModel.addItem(newTransition, this.statechart);
+      selectionModel.set(newTransition);
     } else {
       drag.item = dragItem;
+      if (mouseHitInfo.moveCopy) {
+        const map = new Map(),
+              copies = editingModel.copyItems(selectionModel.contents(), map);
+        editingModel.addItems(copies);
+        selectionModel.set(copies);
+      }
     }
   }
 }
@@ -1051,14 +1026,7 @@ Editor.prototype.onDrag = function(p0, p) {
   let hitInfo,
       src, dst, srcId, dstId, t1, t2;
   switch (drag.type) {
-    case 'paletteItem':
-      if (isContainable(dragItem))
-        hitInfo = this.getFirstHit(hitList, isContainerTarget);
-      if (snapshot) {
-        observableModel.changeValue(dragItem, 'x', snapshot.x + dx);
-        observableModel.changeValue(dragItem, 'y', snapshot.y + dy);
-      }
-      break;
+    case 'moveCopySelection':
     case 'moveSelection':
       if (isContainable(dragItem))
         hitInfo = this.getFirstHit(hitList, isContainerTarget);
@@ -1086,9 +1054,9 @@ Editor.prototype.onDrag = function(p0, p) {
       break;
     case 'connectingP1':
       hitInfo = this.getFirstHit(hitList, isStateBorder);
-      srcId = hitInfo ? dataModel.getId(hitInfo.item) : 0;
+      srcId = hitInfo ? dataModel.getId(hitInfo.item) : 0;  // 0 is invalid id
       observableModel.changeValue(dragItem, 'srcId', srcId);
-      src = referencingModel.getReference(dragItem, 'srcId');
+      src = getTransitionSrc(dragItem);
       if (src) {
         t1 = renderer.statePointToParam(src, cp);
         observableModel.changeValue(dragItem, 't1', t1);
@@ -1097,14 +1065,14 @@ Editor.prototype.onDrag = function(p0, p) {
       }
       break;
     case 'connectingP2':
-      if (drag.isNewItem) {
+      if (drag.newItem) {
         src = referencingModel.getReference(dragItem, 'srcId');
         observableModel.changeValue(dragItem, 't1', renderer.statePointToParam(src, cp));
       }
       hitInfo = this.getFirstHit(hitList, isStateBorder);
-      dstId = hitInfo ? dataModel.getId(hitInfo.item) : 0;
+      dstId = hitInfo ? dataModel.getId(hitInfo.item) : 0;  // 0 is invalid id
       observableModel.changeValue(dragItem, 'dstId', dstId);
-      dst = referencingModel.getReference(dragItem, 'dstId');
+      dst = getTransitionDst(dragItem);
       if (dst) {
         t2 = renderer.statePointToParam(dst, cp);
         observableModel.changeValue(dragItem, 't2', t2);
@@ -1114,7 +1082,7 @@ Editor.prototype.onDrag = function(p0, p) {
       break;
   }
 
-  this.hotTrackInfo = (hitInfo && hitInfo.item !== this.statechart) ? hitInfo : null;
+  this.hotTrackInfo = (hitInfo && hitInfo.item != this.statechart) ? hitInfo : null;
 }
 
 Editor.prototype.onEndDrag = function(p) {
@@ -1129,54 +1097,36 @@ Editor.prototype.onEndDrag = function(p) {
         selectionModel = model.selectionModel,
         transactionModel = model.transactionModel,
         editingModel = model.editingModel;
-  let newItem = this.removeTemporaryItem();
-  if (newItem) {
-    // Clone the new item, since we're about to roll back the transaction. We
-    // do this to collapse all of the edits into a single insert operation.
-    newItem = dragItem = model.instancingModel.clone(newItem);
-    model.dataModel.initialize(newItem);
-    transactionModel.cancelTransaction();
-    transactionModel.beginTransaction(drag.name);
-  }
   if (isTransition(dragItem)) {
-    dragItem[_p1] = dragItem[_p2] = null;
-    if (newItem) {
-      observableModel.insertElement(
-          statechart, 'items', statechart.items.length - 1, newItem);
-    }
-  } else if (drag.type == 'moveSelection' || newItem) {
+    dragItem[_p1] = dragItem[_p2] = undefined;
+  } else if (drag.type == 'moveSelection' || drag.type == 'moveCopySelection') {
     // Find state beneath mouse.
     const hitList = this.hitTest(p),
           hitInfo = this.getFirstHit(hitList, isContainerTarget),
           parent = hitInfo ? hitInfo.item : statechart;
-    // Add new items.
-    if (newItem) {
-      editingModel.addItem(newItem, parent);
-      selectionModel.set([newItem]);
-    } else {
-      // Reparent existing items.
-      selectionModel.forEach(function(item) {
-        if (isContainable(item)) {
-          editingModel.addItem(item, parent);
-        }
-      });
-    }
+    // Reparent items.
+    selectionModel.forEach(function(item) {
+      if (isContainable(item)) {
+        editingModel.addItem(item, parent);
+      }
+    });
   }
+  model.transactionModel.endTransaction();
 
   const renderer = this.renderer;
   renderer.beginDraw(model, this.ctx);
+  // TODO viewModel to perform layout automatically.
   editingModel.layout(this.statechart, renderer);
   renderer.endDraw();
 
   // If dragItem is a disconnected transition, delete it.
+  // TODO consistency checking done by editingModel.
   if (isTransition(dragItem)) {
     if (!dragItem.srcId || !dragItem.dstId) {
       editingModel.deleteItem(dragItem);
       selectionModel.remove(dragItem);
     }
   }
-
-  model.transactionModel.endTransaction();
 
   this.drag = null;
   this.mouseHitInfo = null;
@@ -1254,9 +1204,9 @@ Editor.prototype.onKeyDown = function(e) {
         var text = JSON.stringify(
           statechart,
           function(key, value) {
-            if (key.toString().charAt(0) === '_')
+            if (key.toString().charAt(0) == '_')
               return;
-            if (value === undefined || value === null)
+            if (value == undefined || value == null)
               return;
             return value;
           },
