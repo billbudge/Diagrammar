@@ -4,19 +4,19 @@ const circuits = (function() {
 'use strict';
 
 function isCircuit(item) {
-  return item.type == 'circuit';
+  return item.type === 'circuit';
 }
 
 function isContainer(item) {
-  return item.type == 'circuit' || item.type == 'group';
+  return item.type === 'circuit' || item.type === 'group';
 }
 
 function isElement(item) {
-  return item.type == 'element';
+  return item.type === 'element';
 }
 
 function isGroup(item) {
-  return item.type == 'group';
+  return item.type === 'group';
 }
 
 function isElementOrGroup(item) {
@@ -28,31 +28,31 @@ function isGroupInstance(item) {
 }
 
 function isWire(item) {
-  return item.type == 'wire';
+  return item.type === 'wire';
 }
 
 function isLiteral(item) {
-  return item.elementType == 'literal';
+  return item.elementType === 'literal';
 }
 
 function isJunction(item) {
-  return item.elementType == 'input' || item.elementType == 'output';
+  return item.elementType === 'input' || item.elementType === 'output';
 }
 
 function isClosed(item) {
-  return item.elementType == 'closed';
+  return item.elementType === 'closed';
 }
 
 function isAbstract(item) {
-  return item.elementType == 'abstract';
+  return item.elementType === 'abstract';
 }
 
 function isInput(item) {
-  return item.elementType == 'input';
+  return item.elementType === 'input';
 }
 
 function isOutput(item) {
-  return item.elementType == 'output';
+  return item.elementType === 'output';
 }
 
 function isInputPinLabeled(item) {
@@ -64,11 +64,11 @@ function isOutputPinLabeled(item) {
 }
 
 function isPaletted(item) {
-  return item.state == 'palette';
+  return item.state === 'palette';
 }
 
 function isFunctionType(type) {
-  return type[0] == '[';
+  return type[0] === '[';
 }
 
 // Visits in pre-order.
@@ -76,7 +76,7 @@ function visitItem(item, fn, filter) {
   if (!filter || filter(item)) {
     fn(item);
   }
-  if (isContainer(item)) {
+  if (isContainer(item) && item.items) {
     visitItems(item.items, fn, filter);
   }
 }
@@ -87,7 +87,7 @@ function visitItems(items, fn, filter) {
 
 // Visits in post-order.
 function reverseVisitItem(item, fn, filter) {
-  if (isContainer(item)) {
+  if (isContainer(item) && item.items) {
     reverseVisitItems(item.items, fn, filter);
   }
   if (!filter || filter(item)) {
@@ -138,7 +138,7 @@ const signatureModel = (function() {
       // close over j to avoid extra return values.
       function decodeName() {
         let name;
-        if (s[j] == '(') {
+        if (s[j] === '(') {
           let i = j + 1;
           j = s.indexOf(')', i);
           if (j > i)
@@ -158,12 +158,12 @@ const signatureModel = (function() {
       function decodePin() {
         let i = j;
         // value types
-        if (s[j] == 'v') {
+        if (s[j] === 'v') {
           j++;
           return { type: 'v', name: decodeName() };
         }
         // wildcard types
-        if (s[j] == '*') {
+        if (s[j] === '*') {
           j++;
           return { type: '*', name: decodeName() };
         }
@@ -180,14 +180,14 @@ const signatureModel = (function() {
       }
       function decodeFunction() {
         let i = j;
-        if (s[j] == '[') {
+        if (s[j] === '[') {
           j++;
           let inputs = [], outputs = [];
-          while (s[j] != ',') {
+          while (s[j] !== ',') {
             inputs.push(decodePin());
           }
           j++;
-          while (s[j] != ']') {
+          while (s[j] !== ']') {
             outputs.push(decodePin());
           }
           j++;
@@ -214,7 +214,7 @@ const signatureModel = (function() {
 
     // Removes any trailing label. Type may be ill-formed, e.g. '[v(f)'
     unlabelType: function(type) {
-      if (type[type.length - 1] == ')')
+      if (type[type.length - 1] === ')')
         type = type.substring(0, type.lastIndexOf('('));
       return type;
     },
@@ -239,12 +239,12 @@ const signatureModel = (function() {
       let self = this;
       let j = 0, level = 0;
       while (true) {
-        if (s[j] == '[')
+        if (s[j] === '[')
           level++;
-        else if (s[j] == ']')
+        else if (s[j] === ']')
           level--;
-        else if (s[j] == ',')
-          if (level == 1) return j;
+        else if (s[j] === ',')
+          if (level === 1) return j;
         j++;
       }
     },
@@ -288,7 +288,7 @@ const signatureModel = (function() {
     // Make sure elements are remastered if their master type changes.
     model.observableModel.addHandler('changed', function (change) {
       if (isElementOrGroup(change.item)) {
-        if (change.attr == 'master') {
+        if (change.attr === 'master') {
           instance.initialize(change.item);
         }
       }
@@ -431,12 +431,12 @@ const circuitModel = (function() {
             dst = this.getWireDst_(wire);
       if (src) {
         const outputs = this.outputMap_.get(src);
-        if (outputs && wire.srcPin != undefined)
+        if (outputs && wire.srcPin !== undefined)
           outputs[wire.srcPin].push(wire);
       }
       if (dst) {
         const inputs = this.inputMap_.get(dst);
-        if (inputs && wire.dstPin != undefined)
+        if (inputs && wire.dstPin !== undefined)
           inputs[wire.dstPin] = wire;
       }
     },
@@ -446,7 +446,7 @@ const circuitModel = (function() {
       const src = this.getWireSrc_(wire),
             dst = this.getWireDst_(wire);
       // remove wire from output array.
-      if (src && wire.srcPin != undefined) {
+      if (src && wire.srcPin !== undefined) {
         const outputArrays = this.outputMap_.get(src);
         if (outputArrays) {
           const outputs = outputArrays[wire.srcPin];
@@ -457,7 +457,7 @@ const circuitModel = (function() {
         }
       }
       // clear wire from input.
-      if (dst && wire.dstPin != undefined) {
+      if (dst && wire.dstPin !== undefined) {
         const inputs = this.inputMap_.get(dst);
         if (inputs)
           inputs[wire.dstPin] = null;
@@ -690,13 +690,13 @@ const editingModel = (function() {
             oldParent = this.getParent(item);
       if (!parent)
         parent = this.diagram;
-      if (oldParent == parent)
+      if (oldParent === parent)
         return;
       if (isCircuit(parent)) {
         if (!Array.isArray(parent.items))
           model.observableModel.changeValue(parent, 'items', []);
       }
-      if (oldParent != parent) {
+      if (oldParent !== parent) {
         if (isElementOrGroup(item)) {
           let translation = translatableModel.getToParent(item, parent);
           model.observableModel.changeValue(item, 'x', item.x + translation.x);
@@ -742,7 +742,7 @@ const editingModel = (function() {
           return false;
         const type = signatureModel.getSignature(pins[index].type),
               newType = signatureModel.getSignature(newPins[index].type);
-        return type == '*' || type == newType;
+        return type === '*' || type === newType;
       }
       graphInfo.iterators.forInputWires(element, function(wire, pin) {
         if (canRewire(wire.dstPin, master.inputs, newMaster.inputs)) {
@@ -760,7 +760,7 @@ const editingModel = (function() {
       });
       const parent = this.getParent(newElement),
             newParent = this.getParent(element);
-      if (parent != newParent)
+      if (parent !== newParent)
         self.addItem(newElement, newParent);
       observableModel.changeValue(newElement, 'x', element.x);
       observableModel.changeValue(newElement, 'y', element.y);
@@ -835,7 +835,7 @@ const editingModel = (function() {
             self.connectInput(element, pin);
         });
         outputs.forEach(function(wires, pin) {
-          if (wires.length == 0)
+          if (wires.length === 0)
             self.connectOutput(element, pin);
         });
       });
@@ -1091,7 +1091,7 @@ const editingModel = (function() {
         let src = self.getWireSrc(wire),
             srcPin = getMaster(src).outputs[wire.srcPin];
         // Trace wires, starting at input junctions.
-        if (!isInput(src) || srcPin.type != '*')
+        if (!isInput(src) || srcPin.type !== '*')
           return;
         let srcPinIndex = src.index,
             activeWires = [wire];
@@ -1099,11 +1099,11 @@ const editingModel = (function() {
           wire = activeWires.pop();
           let dst = self.getWireDst(wire),
               dstPin = getMaster(dst).inputs[wire.dstPin];
-          if (isOutput(dst) && dstPin.type == '*') {
+          if (isOutput(dst) && dstPin.type === '*') {
             passThroughs.add([srcPinIndex, dst.index]);
           } else if (dst.passThroughs) {
             dst.passThroughs.forEach(function(passThrough) {
-              if (passThrough[0] == wire.dstPin) {
+              if (passThrough[0] === wire.dstPin) {
                 let outgoingWires = graphInfo.outputMap.get(dst)[passThrough[1]];
                 outgoingWires.forEach(wire => activeWires.push(wire));
               }
@@ -1183,13 +1183,13 @@ const editingModel = (function() {
             srcPin = getMaster(src).outputs[wire.srcPin],
             dst = this.getWireDst(wire),
             dstPin = getMaster(dst).inputs[wire.dstPin];
-        if (srcPin.type != '*')
+        if (srcPin.type !== '*')
           return srcPin.type;
         if (isGroupInstance(src)) {
           const group = this.getGroupMaster_(src);
           if (group.passThroughs) {
             group.passThroughs.forEach(function(passThrough) {
-              if (passThrough[1] == wire.srcPin) {
+              if (passThrough[1] === wire.srcPin) {
                 srcPin = group.inputs[passThrough[0]];
                 let incomingWire = graphInfo.inputMap.get(src)[passThrough[0]];
                 if (incomingWire)
@@ -1213,13 +1213,13 @@ const editingModel = (function() {
             dst = this.getWireDst(wire),
             srcPin = getMaster(src).outputs[wire.srcPin],
             dstPin = getMaster(dst).inputs[wire.dstPin];
-        if (dstPin.type != '*')
+        if (dstPin.type !== '*')
           return dstPin.type;
         if (isGroupInstance(dst)) {
           const group = this.getGroupMaster_(src);
           if (group.passThroughs) {
             group.passThroughs.forEach(function(passThrough) {
-              if (passThrough[0] == wire.dstPin) {
+              if (passThrough[0] === wire.dstPin) {
                 dstPin = group.outputs[passThrough[1]];
                 let outgoingWires = graphInfo.outputMap.get(dst)[passThrough[1]];
                 outgoingWires.forEach(wire => activeWires.push(wire));
@@ -1259,7 +1259,7 @@ const editingModel = (function() {
       this.reduceSelection();
       model.transactionModel.beginTransaction('build');
       let items = model.selectionModel.contents().filter(isElementOrGroup),
-          parent = items.length == 1 ?
+          parent = items.length === 1 ?
               null : model.hierarchicalModel.getLowestCommonAncestor(...items),
           group = this.build(items);
       model.dataModel.initialize(group);
@@ -1287,7 +1287,7 @@ const editingModel = (function() {
         if (!isElement(element))
           return;
         model.observableModel.changeValue(element, 'state',
-          (element.state == 'palette') ? 'normal' : 'palette');
+          (element.state === 'palette') ? 'normal' : 'palette');
       })
       model.transactionModel.endTransaction();
     },
@@ -1325,7 +1325,7 @@ const editingModel = (function() {
         }
         // Make sure wires belong to lowest common container (circuit or group).
         const lca = hierarchicalModel.getLowestCommonAncestor(src, dst);
-        if (self.getParent(wire) != lca) {
+        if (self.getParent(wire) !== lca) {
           self.deleteItem(wire);
           self.addItem(wire, lca);
         }
@@ -1333,13 +1333,13 @@ const editingModel = (function() {
 
       // Update group types. Reverse visit so nested groups work correctly.
       reverseVisitItems(diagram.items, function(group) {
-        if (group.items.length == 0) {
+        if (group.items.length === 0) {
           self.deleteItem(group);
           return;
         }
         const newSig = self.setGroupMasterInfo(group, group.items),
               oldSig = signatureModel.unlabelType(group.master);
-        if (oldSig != newSig) {
+        if (oldSig !== newSig) {
           let label = group.master.substring(oldSig.length);
           observableModel.changeValue(group, 'master', newSig + label);
         }
@@ -1348,7 +1348,7 @@ const editingModel = (function() {
       elementsAndGroups.forEach(function(element) {
         if (isGroup(element)) {
           // Delete empty groups.
-          if (element.items.length == 0)
+          if (element.items.length === 0)
             self.deleteItem(element);
         }
       });
@@ -1575,7 +1575,7 @@ const layoutModel = (function() {
     },
 
     layoutPin_: function(pin) {
-      if (pin.type == 'v' || pin.type == '*') {
+      if (pin.type === 'v' || pin.type === '*') {
         pin[_width] = pin[_height] = 2 * knobbyRadius;
       } else {
         let master = getMaster(pin);
@@ -1586,17 +1586,16 @@ const layoutModel = (function() {
     },
 
     layoutWire_: function(wire) {
-      let referencingModel = this.model.referencingModel,
-          src = this.getWireSrc(wire),
+      let src = this.getWireSrc(wire),
           dst = this.getWireDst(wire),
           p1 = wire[_p1],
           p2 = wire[_p2];
       // Since we intercept change events and not transactions, wires may be in
       // an inconsistent state, so check before creating the path.
-      if (src && wire.srcPin != undefined) {
+      if (src && wire.srcPin !== undefined) {
         p1 = this.pinToPoint(src, wire.srcPin, false);
       }
-      if (dst && wire.dstPin != undefined) {
+      if (dst && wire.dstPin !== undefined) {
         p2 = this.pinToPoint(dst, wire.dstPin, true);
       }
       if (p1 && p2) {
@@ -1625,7 +1624,7 @@ const layoutModel = (function() {
         this.changedElements_.add(item);
         this.addTopLevelGroup_(item);
         if (item.items) {
-        visitItems(item.items, child => self.update_(child));
+          visitItems(item.items, child => self.update_(child));
         }
       } else if (isGroup(item)) {
         visitItems(item.items, child => self.update_(child));
@@ -1662,6 +1661,8 @@ const layoutModel = (function() {
 
     let instance = Object.create(proto);
     instance.model = model;
+    const circuit = model.root;
+    instance.circuit = circuit;
 
     model.observableModel.addHandler('changed',
                                      change => instance.onChanged_(change));
@@ -1677,7 +1678,6 @@ const layoutModel = (function() {
     }
     model.signatureModel.addHandler('masterInserted', layoutMaster);
 
-    instance.wiredElements_ = new Map();
     instance.changedWires_ = new Set();
     instance.changedElements_ = new Set();
     instance.changedTopLevelGroups_ = new Set();
@@ -1765,10 +1765,10 @@ Renderer.prototype = {
 
   drawPin: function(pin, x, y) {
     ctx.strokeStyle = theme.strokeColor;
-    if (pin.type == 'v' || pin.type == '*') {
+    if (pin.type === 'v' || pin.type === '*') {
       const r = knobbyRadius;
       ctx.beginPath();
-      if (pin.type == 'v') {
+      if (pin.type === 'v') {
         const d = 2 * r;
         ctx.rect(x, y, d, d);
       } else {
@@ -1810,7 +1810,7 @@ Renderer.prototype = {
 
     switch (mode) {
       case normalMode:
-        ctx.fillStyle = element.state == 'palette' ? theme.altBgColor : theme.bgColor;
+        ctx.fillStyle = element.state === 'palette' ? theme.altBgColor : theme.bgColor;
         ctx.fill();
         ctx.strokeStyle = theme.strokeColor;
         ctx.lineWidth = 0.5;
@@ -1839,9 +1839,9 @@ Renderer.prototype = {
         right = x + w,
         pin;
 
-    if (input != undefined) {
+    if (input !== undefined) {
       pin = master.inputs[input];
-    } else if (output != undefined) {
+    } else if (output !== undefined) {
       pin = master.outputs[output];
       x = right - pin[_width];
     }
@@ -2236,7 +2236,7 @@ Editor.prototype.draw = function() {
         item = hitInfo.item,
         input = hitInfo.input,
         output = hitInfo.output;
-    if (input != undefined || output != undefined) {
+    if (input !== undefined || output !== undefined) {
       renderer.drawElementPin(item, input, output, hotTrackMode);
     } else {
       renderer.draw(item, hotTrackMode);
@@ -2295,11 +2295,11 @@ function isDraggable(hitInfo, model) {
 }
 
 function isInputPin(hitInfo, model) {
-  return hitInfo.input != undefined;
+  return hitInfo.input !== undefined;
 }
 
 function isOutputPin(hitInfo, model) {
-  return hitInfo.output != undefined;
+  return hitInfo.output !== undefined;
 }
 
 function isContainerTarget(hitInfo, model) {
@@ -2329,7 +2329,7 @@ Editor.prototype.setEditableText = function() {
         oldText = editingModel.getLabel(item);
     textInputController.start(oldText, function(newText) {
       let newMaster = editingModel.setLabel(item, newText);
-      if (newMaster != item.master) {
+      if (newMaster !== item.master) {
         model.transactionModel.beginTransaction('rename');
         model.observableModel.changeValue(item, 'master', newMaster);
         model.transactionModel.endTransaction();
@@ -2375,7 +2375,7 @@ Editor.prototype.onClick = function(p) {
       selectionModel.clear();
   }
   this.setEditableText();
-  return mouseHitInfo != null;
+  return mouseHitInfo !== null;
 }
 
 const connectWireSrc = 1,
@@ -2394,7 +2394,7 @@ Editor.prototype.onBeginDrag = function(p0) {
         canvasController = this.canvasController,
         dragItem = mouseHitInfo.item;
   let newWire, drag;
-  if (mouseHitInfo.input != undefined) {
+  if (mouseHitInfo.input !== undefined) {
     // Wire from input pin.
     const elementId = model.dataModel.getId(dragItem),
           cp0 = canvasController.viewToCanvas(p0);
@@ -2410,7 +2410,7 @@ Editor.prototype.onBeginDrag = function(p0) {
       name: 'Add new wire',
       isNewWire: true,
     };
-  } else if (mouseHitInfo.output != undefined) {
+  } else if (mouseHitInfo.output !== undefined) {
     // Wire from output pin.
     const elementId = model.dataModel.getId(dragItem),
           cp0 = canvasController.viewToCanvas(p0);
@@ -2447,11 +2447,11 @@ Editor.prototype.onBeginDrag = function(p0) {
 
   this.drag = drag;
   if (drag) {
-    if (drag.type == moveSelection || drag.type == moveCopySelection) {
+    if (drag.type === moveSelection || drag.type === moveCopySelection) {
       editingModel.selectInteriorWires();
       editingModel.reduceSelection();
       let items = selectionModel.contents();
-      drag.isSingleElement = items.length == 1 && isElement(items[0]);
+      drag.isSingleElement = items.length === 1 && isElement(items[0]);
     }
     model.transactionModel.beginTransaction(drag.name);
     if (newWire) {
@@ -2534,7 +2534,7 @@ Editor.prototype.onDrag = function(p0, p) {
       break;
   }
 
-  this.hotTrackInfo = (hitInfo && hitInfo.item != this.diagram) ? hitInfo : null;
+  this.hotTrackInfo = (hitInfo && hitInfo.item !== this.diagram) ? hitInfo : null;
 }
 
 Editor.prototype.onEndDrag = function(p) {
@@ -2649,7 +2649,7 @@ Editor.prototype.onKeyDown = function(e) {
       cmdKey = e.ctrlKey || e.metaKey,
       shiftKey = e.shiftKey;
 
-  if (keyCode == 8) {  // 'delete'
+  if (keyCode === 8) {  // 'delete'
     editingModel.doDelete();
     return true;
   }
@@ -2711,9 +2711,9 @@ Editor.prototype.onKeyDown = function(e) {
         let text = JSON.stringify(
           diagram,
           function(key, value) {
-            if (key.toString().charAt(0) == '_')
+            if (key.toString().charAt(0) === '_')
               return;
-            if (value == undefined || value == null)
+            if (value === undefined || value === null)
               return;
             return value;
           },

@@ -21,7 +21,7 @@ function LinkedList() {
 
 LinkedList.prototype = {
   empty: function() {
-    return this.length == 0;
+    return this.length === 0;
   },
 
   pushBack: function(value) {
@@ -184,7 +184,7 @@ function PriorityQueue(compareFn, array) {
 
 PriorityQueue.prototype = {
   empty: function() {
-    return this[_array].length == 0;
+    return this[_array].length === 0;
   },
 
   front: function() {
@@ -354,14 +354,14 @@ DisjointSet.prototype = {
    let root1 = this.find(set1),
        root2 = this.find(set2);
 
-   if (root1 == root2)
+   if (root1 === root2)
        return;
 
    if (root1[_rank] < root2[_rank])
      root1, root2 = root2, root1;
 
    root2[_parent] = root1;
-   if (root1[_rank] == root2[_rank])
+   if (root1[_rank] === root2[_rank])
      root1[_rank] += 1;
   },
 };

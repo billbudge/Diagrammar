@@ -22,8 +22,8 @@ test("dataModel ids", function() {
   deepEqual(test, model.dataModel);
   const item = {};
   const id = test.assignId(item);
-  ok(id != 1 && id != 2 && id != 20);
-  ok(id == item.id)
+  ok(id !== 1 && id !== 2 && id !== 20);
+  ok(id === item.id)
 });
 
 test("dataModel properties", function() {

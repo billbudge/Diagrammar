@@ -94,16 +94,16 @@ const dataModel = (function() {
     const root = model.root || model;
 
     function isItem(value) {
-      return value && typeof value == 'object';
+      return value && typeof value === 'object';
     }
 
     // Returns true iff. item[attr] is a model property.
     function isProperty(item, attr) {
-      return attr != 'id' &&
+      return attr !== 'id' &&
              item.hasOwnProperty(attr);
     }
 
-    instance.configureModel(model.root, isItem, isProperty);
+    instance.configureModel(root, isItem, isProperty);
 
     // In default id system, 0 is an invalid id.
     let nextId = 0;
@@ -132,7 +132,7 @@ const dataModel = (function() {
       const attrName = attr.toString(),
             position = attrName.length - 2;
       return position >= 0 &&
-             attrName.lastIndexOf('Id', position) == position;
+             attrName.lastIndexOf('Id', position) === position;
     }
 
     instance.configureReferences(getId, assignId, isReference);
@@ -415,7 +415,7 @@ const transactionModel = (function() {
         return;
       const startingSelection = this.startingSelection;
       let endingSelection = selectionModel.contents();
-      if (startingSelection.length == endingSelection.length &&
+      if (startingSelection.length === endingSelection.length &&
           startingSelection.every(function(element, i) {
             return element === endingSelection[i];
           })) {
@@ -450,7 +450,7 @@ const transactionModel = (function() {
       const dataModel = this.model.dataModel,
             item = change.item, attr = change.attr;
 
-      if (change.type != 'change') {
+      if (change.type !== 'change') {
         // Record insert and remove element changes.
         this.recordChange_(change);
       } else {
@@ -724,11 +724,11 @@ const referenceValidator = (function() {
 //------------------------------------------------------------------------------
 
 const selectionModel = (function() {
-  function iterable(item) { return typeof item[Symbol.iterator] == 'function'; }
+  function iterable(item) { return typeof item[Symbol.iterator] === 'function'; }
 
   const proto = {
     isEmpty: function() {
-      return this.selection.length == 0;
+      return this.selection.length === 0;
     },
 
     contains: function(item) {
@@ -1250,7 +1250,7 @@ const hierarchicalModel = (function() {
         let next_a = this.getParent(a);
         if (next_a === b) return b;
         let next_b = this.getParent(b);
-        if (next_b == a) return a;
+        if (next_b === a) return a;
         return lca(next_a, next_b);
       }
       const items = arguments;
@@ -1352,8 +1352,8 @@ const translatableModel = (function() {
     },
 
     hasTranslation: function(item) {
-      return (typeof this.getX(item) == 'number') &&
-             (typeof this.getY(item) == 'number');
+      return (typeof this.getX(item) === 'number') &&
+             (typeof this.getY(item) === 'number');
     },
 
     globalX: function(item) {
@@ -1476,8 +1476,8 @@ const transformableModel = (function() {
     // Getter functions which determine transform parameters. Override if these
     // don't fit your model.
     hasTransform: function(item) {
-      return (typeof item.x == 'number') &&
-             (typeof item.y == 'number');
+      return (typeof item.x === 'number') &&
+             (typeof item.y === 'number');
     },
 
     getX: function(item) {

@@ -124,9 +124,9 @@ function newTestEditingModel() {
   let test = circuits.editingModel.extend(circuit),
       dataModel = test.model.dataModel;
   circuits.signatureModel.extend(circuit);
-  circuits.viewModel.extend(circuit);
+  circuits.layoutModel.extend(circuit);
   circuit.dataModel.initialize();
-  circuit.viewModel.initialize();
+  circuit.layoutModel.initialize();
   return test;
 }
 

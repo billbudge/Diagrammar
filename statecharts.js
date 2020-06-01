@@ -4,66 +4,326 @@ const statecharts = (function() {
 'use strict';
 
 function isPseudostate(item) {
-  return item.type == 'start';
+  return item.type === 'start';
 }
 
 function isState(item) {
-  return item.type == 'state' || isPseudostate(item);
+  return item.type === 'state' || isPseudostate(item);
 }
 
 function isTrueState(item) {
-  return item.type == 'state';
+  return item.type === 'state';
 }
 
 function isStatechart(item) {
-  return item.type == 'statechart';
+  return item.type === 'statechart';
 }
 
-function isContainer(item) {
-  return item.type == 'state' || item.type == 'statechart';
+function isStateOrStatechart(item) {
+  return item.type === 'statechart' || isState(item);
+}
+
+function isTrueStateOrStatechart(item) {
+  return item.type === 'state' || item.type === 'statechart';
 }
 
 function isContainable(item) {
-  return item.type != 'transition';
+  return item.type !== 'transition';
 }
 
 function isTransition(item) {
-  return item.type == 'transition';
+  return item.type === 'transition';
 }
 
 function isPaletted(item) {
-  return item.state == 'palette';
+  return item.state === 'palette';
 }
 
 const _p1 = Symbol('p1'),
       _p2 = Symbol('p2'),
       _master = Symbol('master');
 
-function visit(item, filterFn, itemFn) {
-  if (!filterFn || filterFn(item))
-    itemFn(item);
-  const items = item.items;
-  if (items) {
-    for (let i = 0; i < items.length; i++) {
-      visit(items[i], filterFn, itemFn);
-    }
+// Visits in pre-order.
+function visitItem(item, fn, filter) {
+  if (!filter || filter(item)) {
+    fn(item);
+  }
+  if (isTrueStateOrStatechart(item) && item.items) {
+    visitItems(item.items, fn, filter);
   }
 }
 
-function reverseVisit(item, filterFn, itemFn) {
-  const items = item.items;
-  if (items) {
-    for (let i = items.length - 1; i >= 0; i--) {
-      reverseVisit(items[i], filterFn, itemFn);
-    }
+function visitItems(items, fn, filter) {
+  items.forEach(item => visitItem(item, fn, filter));
+}
+
+// Visits in post-order.
+function reverseVisitItem(item, fn, filter) {
+  if (isTrueStateOrStatechart(item) && item.items) {
+    reverseVisitItems(item.items, fn, filter);
   }
-  if (!filterFn || filterFn(item))
-    itemFn(item);
+  if (!filter || filter(item)) {
+    fn(item);
+  }
+}
+
+function reverseVisitItems(items, fn, filter) {
+  for (let i = items.length - 1; i >= 0; i--) {
+    reverseVisitItem(items[i], fn, filter);
+  }
 }
 
 // Initialized by editor.
 let getTransitionSrc,
     getTransitionDst;
+
+//------------------------------------------------------------------------------
+
+// Extends dataModels.changeModel to add:
+// - maps from element to connected transitions.
+// - information about graphs and subgraphs.
+// - iterators for walking the graph.
+
+const statechartModel = (function() {
+
+  function iterators(self) {
+
+    function forInTransitions(state, fn) {
+      const inputs = self.inputMap_.get(state);
+      if (!inputs)
+        return;
+      for (let i = 0; i < inputs.length; i++) {
+        fn(inputs[i], i);
+      }
+    }
+
+    function forOutTransitions(state, fn) {
+      const outputs = self.outputMap_.get(state);
+      if (!outputs)
+        return;
+      for (let i = 0; i < outputs.length; i++) {
+        fn(outputs[i], i);
+      }
+    }
+
+    return {
+      forInTransitions: forInTransitions,
+      forOutTransitions: forOutTransitions,
+    }
+  }
+
+  const proto = {
+    getGraphInfo: function() {
+      this.update_();
+
+      return {
+        statesAndStatecharts: this.statesAndStatecharts_,
+        transitions: this.transitions_,
+        inputMap: this.inputMap_,
+        outputMap: this.outputMap_,
+        interiorTransitions: this.transitions_,
+        inTransitions: new diagrammar.collections.EmptySet(),
+        outTransitions: new diagrammar.collections.EmptySet(),
+        iterators: iterators(this),
+      }
+    },
+
+    getSubgraphInfo: function(items) {
+      this.update_();
+
+      const self = this,
+            statesAndStatecharts = new Set(),
+            transitions = new Set(),
+            interiorTransitions = new Set(),
+            inTransitions = new Set(),
+            outTransitions = new Set(),
+            iters = iterators(this);
+      // First collect states and statecharts.
+      visitItems(items, function(item) {
+        statesAndStatecharts.add(item);
+      }, isStateOrStatechart);
+      // Now collect and classify transitions that connect to them.
+      visitItems(items, function(item) {
+        function addTransition(transition) {
+          transitions.add(transition);
+          const src = getTransitionSrc(transition),
+                dst = getTransitionDst(transition),
+                srcInside = statesAndStatecharts.has(src),
+                dstInside = statesAndStatecharts.has(dst);
+          if (srcInside) {
+            if (dstInside) {
+              interiorTransitions.add(transition);
+            } else {
+              outTransitions.add(transition);
+            }
+          }
+          if (dstInside) {
+            if (!srcInside) {
+              inTransitions.add(transition);
+            }
+          }
+        }
+        iters.forInTransitions(item, addTransition);
+        iters.forOutTransitions(item, addTransition);
+      }, isState);
+
+      return {
+        statesAndStatecharts: statesAndStatecharts,
+        transitions: transitions,
+        inputMap: this.inputMap_,
+        outputMap: this.outputMap_,
+        interiorTransitions: interiorTransitions,
+        inTransitions: inTransitions,
+        outTransitions: outTransitions,
+        iterators: iters,
+      }
+    },
+
+    insertState_: function(state) {
+      this.statesAndStatecharts_.add(state);
+      // inputMap_ takes state to array of incoming transitions.
+      this.inputMap_.set(state, new Array());
+      // outputMap_ takes state to array of outgoing transitions.
+      this.outputMap_.set(state, new Array());
+    },
+
+    insertStatechart_: function(state) {
+      this.statesAndStatecharts_.add(state);
+    },
+
+    removeState_: function(state) {
+      this.statesAndStatecharts_.delete(state);
+      this.inputMap_.delete(state);
+      this.outputMap_.delete(state);
+    },
+
+    removeStatechart_: function(state) {
+      this.statesAndStatecharts_.delete(state);
+    },
+
+    insertTransition_: function(transition) {
+      this.transitions_.add(transition);
+      const src = getTransitionSrc(transition),
+            dst = getTransitionDst(transition);
+      if (src) {
+        const outputs = this.outputMap_.get(src);
+        outputs.push(transition);
+      }
+      if (dst) {
+        const inputs = this.inputMap_.get(dst);
+        inputs.push(transition);
+      }
+    },
+
+    removeTransition_: function(transition) {
+      this.transitions_.delete(transition);
+      const src = getTransitionSrc(transition),
+            dst = getTransitionDst(transition);
+      function remove(array, item) {
+        const index = array.indexOf(item);
+        if (index > -1) {
+          array.splice(index, 1);
+        }
+      }
+      if (src) {
+        const outputs = this.outputMap_.get(src);
+        if (outputs)
+          remove(outputs, transition);
+      }
+      if (dst) {
+        const inputs = this.inputMap_.get(dst);
+        if (inputs)
+          remove(inputs, transition);
+      }
+    },
+
+    // Update the model to incorporate pending changes.
+    update_: function() {
+      const changeModel = this.model.changeModel;
+      if (!changeModel.hasChanges())
+        return;
+
+      const self = this,
+            removedItems = changeModel.getRemovedItems(),
+            insertedItems = changeModel.getInsertedItems(),
+            changedItems = changeModel.getChangedItems();
+
+      // Remove transitions, then states.
+      removedItems.forEach(function(item) {
+        if (isTransition(item)) {
+          self.removeTransition_(item);
+        }
+      });
+      removedItems.forEach(function(item) {
+        visitItem(item, function(item) {
+          if (isState(item)) {
+            self.removeState_(item);
+          } else if (isStatechart(item)) {
+            self.removeStatechart_(item);
+          }
+        }, isStateOrStatechart);
+      });
+      // Add states, then transitions.
+      insertedItems.forEach(function(item) {
+        visitItem(item, function(item) {
+          if (isState(item)) {
+            self.insertState_(item);
+          } else if (isStatechart(item)) {
+            self.insertStatechart_(item);
+          }
+        }, isStateOrStatechart);
+      });
+      insertedItems.forEach(function(item) {
+        if (isTransition(item)) {
+          self.insertTransition_(item);
+        }
+      });
+      // For changed wires, remove them and then re-insert them.
+      changedItems.forEach(function(item) {
+        if (isTransition(item)) {
+          self.removeTransition_(item);
+          self.insertTransition_(item);
+        }
+      });
+
+      changeModel.clear();
+    }
+  }
+
+  function extend(model) {
+    if (model.statechartModel)
+      return model.statechartModel;
+
+    dataModels.dataModel.extend(model);
+    dataModels.observableModel.extend(model);
+    dataModels.referencingModel.extend(model);
+    dataModels.changeModel.extend(model);
+
+    let instance = Object.create(proto);
+    instance.model = model;
+    instance.statechart = model.root;
+
+    instance.inputMap_ = new Map();   // state -> incoming transitions
+    instance.outputMap_ = new Map();  // state -> outgoing transitions
+    instance.statesAndStatecharts_ = new Set();
+    instance.transitions_ = new Set();
+
+    // Initialize states and transitions.
+    visitItem(instance.statechart, function(state) {
+      instance.insertState_(state);
+    }, isState);
+    visitItem(instance.statechart, function(transition) {
+      instance.insertTransition_(transition);
+    }, isTransition);
+
+    model.statechartModel = instance;
+    return instance;
+  }
+
+  return {
+    extend: extend,
+  }
+})();
 
 //------------------------------------------------------------------------------
 
@@ -75,26 +335,24 @@ const editingModel = (function() {
     },
 
     getConnectedConnections: function (items, copying) {
-      const self = this,
-            model = this.model,
-            itemsAndChildren = new Set();
-      items.forEach(function(item) {
-        visit(item, isContainable, function(item) {
-          itemsAndChildren.add(item);
-        });
-      });
-      const connections = [];
-      visit(this.statechart, isTransition, function(item) {
-        const contains1 = itemsAndChildren.has(getTransitionSrc(item)),
-              contains2 = itemsAndChildren.has(getTransitionDst(item));
-        if (copying) {
-          if (contains1 && contains2)
-            connections.push(item);
-        } else if (contains1 || contains2) {
-          connections.push(item);
+      const model = this.model,
+            statechartModel = model.statechartModel,
+            graphInfo = statechartModel.getSubgraphInfo(items);
+
+      let result;
+      if (copying) {
+        result = graphInfo.interiorTransitions;
+      } else {
+        function union(to, from) {
+          for (let f of from) {
+            to.add(f);
+          }
         }
-      });
-      return connections;
+        result = new Set(graphInfo.interiorTransitions);
+        union(result, graphInfo.inTransitions);
+        union(result, graphInfo.outTransitions);
+      }
+      return Array.from(result);
     },
 
     deleteItem: function(item) {
@@ -105,13 +363,13 @@ const editingModel = (function() {
         const items = parent.items;
         for (let i = 0; i < items.length; i++) {
           const subItem = items[i];
-          if (subItem == item) {
+          if (subItem === item) {
             model.observableModel.removeElement(parent, 'items', i);
             break;
           }
         }
         // If this leaves an empty statechart (except for the root), delete it.
-        if (isStatechart(parent) && items.length == 0 &&
+        if (isStatechart(parent) && items.length === 0 &&
             hierarchicalModel.getParent(parent)) {
           this.deleteItem(parent);
         }
@@ -190,7 +448,7 @@ const editingModel = (function() {
       function containsType(type) {
         const items = statechart.items;
         for (let i = 0; i < items.length; i++) {
-          if (items[i].type == type)
+          if (items[i].type === type)
             return true;
         }
         return false;
@@ -238,7 +496,7 @@ const editingModel = (function() {
       const model = this.model,
             hierarchicalModel = model.hierarchicalModel,
             oldParent = hierarchicalModel.getParent(item);
-      if (oldParent == parent)
+      if (oldParent === parent)
         return;
       let itemToAdd = item;
       if (isContainable(item)) {
@@ -249,7 +507,7 @@ const editingModel = (function() {
         if (isTrueState(parent)) {
           if (!Array.isArray(parent.items))
             model.observableModel.changeValue(parent, 'items', []);
-          if (parent.items.length == 0) {
+          if (parent.items.length === 0) {
             itemToAdd = this.createStatechart(item);
           } else {
             parent = parent.items[0];
@@ -268,7 +526,7 @@ const editingModel = (function() {
           // position in statechart.
         }
       }
-      if (oldParent != parent) {
+      if (oldParent !== parent) {
         if (oldParent)            // if null, it's a new item.
           this.deleteItem(item);  // notifies observers
         parent.items.push(itemToAdd);
@@ -296,96 +554,9 @@ const editingModel = (function() {
         if (!isState(item))
           return;
         model.observableModel.changeValue(item, 'state',
-          (item.state == 'palette') ? 'normal' : 'palette');
+          (item.state === 'palette') ? 'normal' : 'palette');
       })
       model.transactionModel.endTransaction();
-    },
-
-    // Adjust statechart bounds to contain its child items.
-    layoutStatechart: function(statechart, renderer) {
-      const items = statechart.items;
-      if (items && items.length) {
-        // Get extents of child states.
-        const pseudoStateWidth = 2 * renderer.radius;
-        let xMin = Number.MAX_VALUE,
-            yMin = Number.MAX_VALUE,
-            xMax = Number.MIN_VALUE,
-            yMax = Number.MIN_VALUE;
-        items.forEach(function(item) {
-          if (!isContainable(item))
-            return;
-          const x = item.x, y = item.y, rect = renderer.getItemRect(item);
-          xMin = Math.min(xMin, x);
-          yMin = Math.min(yMin, y);
-          xMax = Math.max(xMax, x + rect.w);
-          yMax = Math.max(yMax, y + rect.h);
-        });
-        const padding = renderer.padding;
-        // Add padding.
-        xMin -= padding;
-        yMin -= padding;
-        xMax += padding;
-        yMax += padding;
-
-        if (xMin < 0) {
-          xMax -= xMin;
-          for (let i = 0; i < items.length; i++)
-            this.setAttr(items[i], 'x', items[i].x - xMin);
-        }
-        if (yMin < 0) {
-          yMax -= yMin;
-          for (let i = 0; i < items.length; i++)
-            this.setAttr(items[i], 'y', items[i].y - yMin);
-        }
-        this.setAttr(statechart, 'x', 0);
-        this.setAttr(statechart, 'y', 0);
-        this.setAttr(statechart, 'width', xMax);
-        this.setAttr(statechart, 'height', yMax);
-      }
-    },
-
-    layoutState: function(state, renderer) {
-      if (!isTrueState(state))
-        return;
-      const minSize = renderer.getStateMinSize(state);
-      this.setAttr(state, 'width', Math.max(state.width || 0, minSize.width));
-      this.setAttr(state, 'height', Math.max(state.height || 0, minSize.height));
-
-      const items = state.items;
-      let statechartOffsetY = 0;
-      if (items && items.length) {
-        // Position the statecharts within the parent state.
-        // TODO handle horizontal flow.
-        let width = 0;
-        items.forEach(function(item) {
-          width = Math.max(width, item.width);
-        });
-        if (state.width < width)
-          this.setAttr(state, 'width', width);
-
-        for (let i = 0; i < items.length; i++) {
-          const statechart = items[i];
-          this.setAttr(statechart, 'y', statechartOffsetY);
-          this.setAttr(statechart, 'width', state.width);
-          statechartOffsetY += statechart.height;
-        }
-
-        if (state.height < statechartOffsetY)
-          this.setAttr(state, 'height', statechartOffsetY);
-        // Expand the last statechart to fill its parent state.
-        const lastItem = items[items.length - 1];
-        this.setAttr(lastItem, 'height', lastItem.height + state.height - statechartOffsetY);
-      }
-    },
-
-    layout: function(statechart, renderer) {
-      const self = this;
-      reverseVisit(statechart, isContainer, function(item) {
-        if (isState(item))
-          self.layoutState(item, renderer);
-        else if (isStatechart(item))
-          self.layoutStatechart(item, renderer);
-      });
     },
   }
 
@@ -420,14 +591,294 @@ const editingModel = (function() {
 
 //------------------------------------------------------------------------------
 
-const normalMode = 1,
-      highlightMode = 2,
-      hotTrackMode = 3;
-
 const stateMinWidth = 100,
       stateMinHeight = 60;
 
-const _mid = Symbol('mid'), _bezier = Symbol('bezier');
+const radius = 8,
+      textIndent = 8,
+      textLeading = 6,
+      arrowSize = 8,
+      knobbyRadius = 4,
+      padding = 8;
+
+const _bezier = Symbol('bezier');
+
+const layoutModel = (function() {
+  const proto = {
+    initialize: function(ctx, theme) {
+      this.ctx = ctx ||
+        {
+          save: function() {},
+          restore: function() {},
+          measureText: () => { return { width: 10, height: 10 }},
+        };
+      this.theme = theme || diagrams.theme.create();
+    },
+
+    getItemRect: function (item) {
+      const translatableModel = this.model.translatableModel,
+            x = translatableModel.globalX(item),
+            y = translatableModel.globalY(item);
+      let w, h;
+      switch (item.type) {
+        case 'state':
+        case 'statechart':
+          w = item.width;
+          h = item.height;
+          break;
+        case 'start':
+          w = h = 2 * radius;
+          break;
+      }
+      return { x: x, y: y, w: w, h: h };
+    },
+
+    setItemBounds: function (item, width, height) {
+      item[_width] = width;
+      item[_height] = height;
+    },
+
+    getItemRects: function(items) {
+      let xMin = Number.POSITIVE_INFINITY, yMin = Number.POSITIVE_INFINITY,
+          xMax = -Number.POSITIVE_INFINITY, yMax = -Number.POSITIVE_INFINITY;
+      for (let item of items) {
+        if (isTransition(item))
+          continue;
+        let rect = this.getItemRect(item);
+        xMin = Math.min(xMin, rect.x);
+        yMin = Math.min(yMin, rect.y);
+        xMax = Math.max(xMax, rect.x + rect.w);
+        yMax = Math.max(yMax, rect.y + rect.h);
+      }
+      return { x: xMin, y: yMin, w: xMax - xMin, h: yMax - yMin };
+    },
+
+    statePointToParam: function(state, p) {
+      const r = radius,
+            rect = this.getItemRect(state);
+      if (isTrueState(state))
+        return diagrams.rectPointToParam(rect.x, rect.y, rect.w, rect.h, p);
+
+      return diagrams.circlePointToParam(rect.x + r, rect.y + r, p);
+    },
+
+    stateParamToPoint: function(state, t) {
+      const r = radius,
+            rect = this.getItemRect(state);
+      if (isTrueState(state))
+        return diagrams.roundRectParamToPoint(rect.x, rect.y, rect.w, rect.h, r, t);
+
+      return diagrams.circleParamToPoint(rect.x + r, rect.y + r, r, t);
+    },
+
+    getStateMinSize: function(state) {
+      const ctx = this.ctx, theme = this.theme, r = radius;
+      let width = this.stateMinWidth, height = this.stateMinHeight;
+      if (state.type !== 'state')
+        return;
+      width = Math.max(width, ctx.measureText(state.name).width + 2 * r);
+      height = Math.max(height, theme.fontSize + this.textLeading);
+      return { width: width, height: height };
+    },
+
+    updateLayout: function() {
+      const self = this,
+            graphInfo = this.model.statechartModel.getGraphInfo();
+      this.changedStates_.forEach(function(state) {
+        function addTransition(transition) {
+          if (transition)
+            self.changedTransitions_.add(transition);
+        }
+        graphInfo.iterators.forInTransitions(state, addTransition);
+        graphInfo.iterators.forOutTransitions(state, addTransition);
+      });
+      this.changedStates_.clear();
+
+      this.changedTransitions_.forEach(
+          transition => self.layoutTransition_(transition));
+      this.changedTransitions_.clear();
+    },
+
+    updateStatechartLayout: function() {
+      const self = this;
+      this.changedTopLevelStates_.forEach(function(state) {
+        reverseVisitItem(state, state => self.layout_(state));
+      });
+      this.changedTopLevelStates_.clear();
+    },
+
+    // Layout a state or statechart.
+    layout_: function(item) {
+      if (isTrueState(item)) {
+        this.layoutState_(item);
+      } else if (isStatechart(item)) {
+        this.layoutStatechart_(item);
+      }
+    },
+
+    // Layout a state.
+    layoutState_: function(state) {
+      const observableModel = this.model.observableModel;
+      let width = Math.max(state.width, stateMinWidth),
+          height = Math.max(state.height, stateMinHeight);
+
+      const statecharts = state.items;
+      let statechartOffsetY = 0;
+      if (statecharts && statecharts.length > 0) {
+        // Position the child statecharts vertically within the parent state.
+        // TODO handle horizontal flow.
+        statecharts.forEach(function(statechart) {
+          width = Math.max(width, statechart.width);
+        });
+        let statechartOffsetY = 0;
+        statecharts.forEach(function(statechart) {
+          observableModel.changeValue(statechart, 'y', statechartOffsetY);
+          observableModel.changeValue(statechart, 'width', state.width);
+          statechartOffsetY += statechart.height;
+        });
+
+        // Expand the last statechart to fill its parent state.
+        const lastStatechart = statecharts[statecharts.length - 1];
+        observableModel.changeValue(lastStatechart, 'height',
+              lastStatechart.height + state.height - statechartOffsetY);
+
+        if (height < statechartOffsetY)
+          height = statechartOffsetY;
+      }
+      width = Math.max(width, state.width);
+      height = Math.max(height, state.height);
+      observableModel.changeValue(state, 'width', width);
+      observableModel.changeValue(state, 'height', height);
+    },
+
+    // Make sure a statechart is big enough to enclose its contents. Statecharts
+    // are always sized automatically.
+    layoutStatechart_: function(statechart) {
+      const items = statechart.items;
+      if (items) {
+        // Get extents of child states.
+        const r = this.getItemRects(items),
+              xMin = r.x - padding, xMax = r.x + r.w + padding,
+              yMin = r.y - padding, yMax = r.y + r.h + padding;
+
+        const observableModel = this.model.observableModel;
+        if (xMin < 0) {
+          xMax -= xMin;
+          for (let i = 0; i < items.length; i++) {
+            observableModel.changeValue(items[i], 'x', items[i].x - xMin);
+          }
+        }
+        if (yMin < 0) {
+          yMax -= yMin;
+          for (let i = 0; i < items.length; i++) {
+            observableModel.changeValue(items[i], 'y', items[i].y - yMin);
+          }
+        }
+        observableModel.changeValue(statechart, 'x', 0);
+        observableModel.changeValue(statechart, 'y', 0);
+        observableModel.changeValue(statechart, 'width', xMax - xMin);
+        observableModel.changeValue(statechart, 'height', yMax - yMin);
+      }
+    },
+
+    layoutTransition_: function(transition) {
+      const src = getTransitionSrc(transition),
+            dst = getTransitionDst(transition),
+            p1 = src ? this.stateParamToPoint(src, transition.t1) : transition[_p1],
+            p2 = dst ? this.stateParamToPoint(dst, transition.t2) : transition[_p2];
+      if (p1 && p2) {
+        transition[_bezier] = diagrams.getEdgeBezier(p1, p2);
+      }
+      // transition[_mid] = geometry.evaluateBezier(bezier, 0.5);
+    },
+
+    addTopLevelState_: function(item) {
+      let hierarchicalModel = this.model.hierarchicalModel,
+          statechart = this.statechart,
+          ancestor = item;
+      do {
+        item = ancestor;
+        ancestor = hierarchicalModel.getParent(ancestor);
+      } while (ancestor && ancestor !== statechart);
+
+      if (ancestor === statechart) {
+        this.changedTopLevelStates_.add(item);
+      }
+    },
+
+    update_: function (item) {
+      const self = this;
+      if (isTransition(item)) {
+        this.changedTransitions_.add(item);
+      } else if (isState(item)) {
+        visitItem(item, function(state) {
+          self.changedStates_.add(state);
+        }, isState);
+        this.addTopLevelState_(item);
+      } else if (isStatechart(item)) {
+        this.addTopLevelState_(item);
+      }
+    },
+
+    onChanged_: function (change) {
+      const item = change.item,
+            attr = change.attr;
+      switch (change.type) {
+        case 'change':
+        case 'remove': {
+          this.update_(item);
+          break;
+        }
+        case 'insert': {
+          const newValue = item[attr][change.index];
+          // this.update_(item);
+          this.update_(newValue);
+          // if (isTrueStateOrStatechart(newValue))
+          //   this.layout_(newValue);
+          break;
+        }
+      }
+    },
+  }
+
+  function extend(model) {
+    dataModels.dataModel.extend(model);
+    dataModels.observableModel.extend(model);
+    dataModels.referencingModel.extend(model);
+    dataModels.hierarchicalModel.extend(model);
+    dataModels.translatableModel.extend(model);
+
+    let instance = Object.create(proto);
+    instance.model = model;
+    const statechart = model.root;
+    instance.statechart = statechart;
+
+    model.observableModel.addHandler('changed',
+                                     change => instance.onChanged_(change));
+
+    instance.changedTransitions_ = new Set();
+    instance.changedStates_ = new Set();
+    instance.changedTopLevelStates_ = new Set();
+
+    // Initialize items and layout statecharts.
+    // TODO fix this...
+    visitItem(statechart, item => instance.update_(item));
+    instance.updateLayout();
+
+    model.layoutModel = instance;
+    return instance;
+  }
+
+  return {
+    extend: extend,
+  }
+})();
+
+//------------------------------------------------------------------------------
+
+const normalMode = 1,
+      highlightMode = 2,
+      hotTrackMode = 3;
 
 function Renderer(theme) {
   this.theme = theme || diagrams.theme.create();
@@ -445,61 +896,18 @@ function Renderer(theme) {
 Renderer.prototype.beginDraw = function(model, ctx) {
   this.model = model;
   this.translatableModel = model.translatableModel;
+  this.layoutModel = model.layoutModel;
   this.ctx = ctx;
   ctx.save();
   ctx.font = this.theme.font;
+
+  this.layoutModel.updateLayout();
 }
 
 Renderer.prototype.endDraw = function() {
   this.ctx.restore();
   this.model = null;
   this.ctx = null;
-}
-
-Renderer.prototype.getItemRect = function(item) {
-  const translatableModel = this.translatableModel,
-        x = translatableModel.globalX(item),
-        y = translatableModel.globalY(item);
-  let w, h;
-  switch (item.type) {
-    case 'state':
-    case 'statechart':
-      w = item.width;
-      h = item.height;
-      break;
-    case 'start':
-      w = h = 2 * this.radius;
-      break;
-  }
-  return { x: x, y: y, w: w, h: h };
-}
-
-Renderer.prototype.statePointToParam = function(state, p) {
-  const r = this.radius,
-        rect = this.getItemRect(state);
-  if (isTrueState(state))
-    return diagrams.rectPointToParam(rect.x, rect.y, rect.w, rect.h, p);
-
-  return diagrams.circlePointToParam(rect.x + r, rect.y + r, p);
-}
-
-Renderer.prototype.stateParamToPoint = function(state, t) {
-  const r = this.radius,
-        rect = this.getItemRect(state);
-  if (isTrueState(state))
-    return diagrams.roundRectParamToPoint(rect.x, rect.y, rect.w, rect.h, r, t);
-
-  return diagrams.circleParamToPoint(rect.x + r, rect.y + r, r, t);
-}
-
-Renderer.prototype.getStateMinSize = function(state) {
-  const ctx = this.ctx, theme = this.theme, r = this.radius;
-  let width = this.stateMinWidth, height = this.stateMinHeight;
-  if (state.type != 'state')
-    return;
-  width = Math.max(width, ctx.measureText(state.name).width + 2 * r);
-  height = Math.max(height, theme.fontSize + this.textLeading);
-  return { width: width, height: height };
 }
 
 function drawArrow(renderer, x, y) {
@@ -516,14 +924,14 @@ function hitArrow(renderer, x, y, p, tol) {
 
 Renderer.prototype.drawState = function(state, mode) {
   const ctx = this.ctx, theme = this.theme, r = this.radius,
-        rect = this.getItemRect(state),
+        rect = this.layoutModel.getItemRect(state),
         x = rect.x, y = rect.y, w = rect.w, h = rect.h,
         knobbyRadius = this.knobbyRadius, textSize = theme.fontSize,
         lineBase = y + textSize + this.textLeading;
   diagrams.roundRectPath(x, y, w, h, r, ctx);
   switch (mode) {
     case normalMode:
-      ctx.fillStyle = state.state == 'palette' ? theme.altBgColor : theme.bgColor;
+      ctx.fillStyle = state.state === 'palette' ? theme.altBgColor : theme.bgColor;
       ctx.fill();
       ctx.strokeStyle = theme.strokeColor;
       ctx.lineWidth = 0.5;
@@ -569,7 +977,7 @@ Renderer.prototype.drawState = function(state, mode) {
 
 Renderer.prototype.hitTestState = function(state, p, tol, mode) {
   const theme = this.theme, r = this.radius,
-        rect = this.getItemRect(state),
+        rect = this.layoutModel.getItemRect(state),
         x = rect.x, y = rect.y, w = rect.w, h = rect.h;
   const lineBase = y + theme.fontSize + this.textLeading,
         knobbyRadius = this.knobbyRadius;
@@ -580,13 +988,13 @@ Renderer.prototype.hitTestState = function(state, p, tol, mode) {
 
 Renderer.prototype.drawPseudoState = function(state, mode) {
   const ctx = this.ctx, theme = this.theme, r = this.radius,
-        rect = this.getItemRect(state),
+        rect = this.layoutModel.getItemRect(state),
         x = rect.x, y = rect.y;
   // TODO handle other psuedo state types.
   diagrams.diskPath(x + r, y + r, r, ctx);
   switch (mode) {
     case normalMode:
-      ctx.fillStyle = state.state == 'palette' ? theme.altBgColor : theme.strokeColor;
+      ctx.fillStyle = state.state === 'palette' ? theme.altBgColor : theme.strokeColor;
       ctx.fill();
       // Render knobbies, faintly.
       ctx.lineWidth = 0.25;
@@ -608,7 +1016,7 @@ Renderer.prototype.drawPseudoState = function(state, mode) {
 
 Renderer.prototype.hitTestPseudoState = function(state, p, tol, mode) {
   const r = this.radius,
-        rect = this.getItemRect(state),
+        rect = this.layoutModel.getItemRect(state),
         x = rect.x, y = rect.y;
   if (hitArrow(this, x + 2 * r + this.arrowSize, y + r, p, tol))
     return { arrow: true };
@@ -624,7 +1032,7 @@ Renderer.prototype.drawStatechart = function(statechart, mode) {
       break;
     case hotTrackMode:
       const ctx = this.ctx, theme = this.theme, r = this.radius,
-            rect = this.getItemRect(statechart),
+            rect = this.layoutModel.getItemRect(statechart),
             x = rect.x, y = rect.y, w = rect.w, h = rect.h;
       diagrams.roundRectPath(x, y, w, h, r, ctx);
       ctx.strokeStyle = theme.hotTrackColor;
@@ -636,24 +1044,9 @@ Renderer.prototype.drawStatechart = function(statechart, mode) {
 
 Renderer.prototype.hitTestStatechart = function(statechart, p, tol, mode) {
   const r = this.radius,
-        rect = this.getItemRect(statechart),
+        rect = this.layoutModel.getItemRect(statechart),
         x = rect.x, y = rect.y, w = rect.w, h = rect.h;
   return diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
-}
-
-Renderer.prototype.layoutTransition = function(transition) {
-  const referencingModel = this.model.referencingModel,
-        src = getTransitionSrc(transition),
-        dst = getTransitionDst(transition);
-  let p1 = transition[_p1], p2 = transition[_p2];
-
-  if (src)
-    p1 = this.stateParamToPoint(src, transition.t1);
-  if (dst)
-    p2 = this.stateParamToPoint(dst, transition.t2);
-
-  const bezier = transition[_bezier] = diagrams.getEdgeBezier(p1, p2);
-  // transition[_mid] = geometry.evaluateBezier(bezier, 0.5);
 }
 
 Renderer.prototype.drawTransition = function(transition, mode) {
@@ -691,15 +1084,10 @@ Renderer.prototype.drawTransition = function(transition, mode) {
 }
 
 Renderer.prototype.hitTestTransition = function(transition, p, tol, mode) {
+  // TODO fix layout with viewModel
+  if (!transition[_bezier])
+    return;
   return diagrams.hitTestBezier(transition[_bezier], p, tol);
-}
-
-Renderer.prototype.layout = function(item) {
-  switch (item.type) {
-    case 'transition':
-      this.layoutTransition(item);
-      break;
-  }
 }
 
 Renderer.prototype.draw = function(item, mode) {
@@ -793,20 +1181,27 @@ function Editor(model, renderer) {
     },
   ]
 
-
-  function initialize(item) {
-    // if (item.type == 'circuit') {
-    //   item[_master] = circuitMasters[item.master];
-    // }
-  }
-
   editingModel.extend(model);
 
   getTransitionSrc = model.referencingModel.getReferenceFn('srcId');
   getTransitionDst = model.referencingModel.getReferenceFn('dstId');
 
-  model.dataModel.addInitializer(initialize);
+  statechartModel.extend(model);
+
   model.dataModel.initialize();
+
+  layoutModel.extend(model);
+
+  function updateLayout() {
+    self.model.layoutModel.updateLayout();
+  }
+  function updateBounds() {
+    self.model.layoutModel.updateStatechartLayout();
+  }
+  const transactionModel = model.transactionModel;
+  transactionModel.addHandler('transactionEnding', updateBounds);
+  transactionModel.addHandler('didUndo', updateLayout);
+  transactionModel.addHandler('didRedo', updateLayout);
 }
 
 Editor.prototype.initialize = function(canvasController) {
@@ -814,12 +1209,16 @@ Editor.prototype.initialize = function(canvasController) {
   this.canvas = canvasController.canvas;
   this.ctx = canvasController.ctx;
 
-  if (!this.renderer)
-    this.renderer = new Renderer(canvasController.theme);
+  this.renderer = new Renderer(canvasController.theme);
 
-  const statechart = this.statechart,
-        model = this.model,
-        editingModel = model.editingModel;
+  const model = this.model,
+        layoutModel = model.layoutModel,
+        ctx = this.ctx,
+        editingModel = model.editingModel,
+        statechart = this.statechart;
+
+  layoutModel.initialize(ctx, theme);
+
   this.items.forEach(function(item) {
     editingModel.addItem(item, statechart);
   });
@@ -831,14 +1230,11 @@ Editor.prototype.draw = function() {
         ctx = this.ctx, canvasController = this.canvasController;
   renderer.beginDraw(model, ctx);
   canvasController.applyTransform();
-  visit(statechart, isTransition, function(item) {
-    renderer.layout(item);
-  });
 
-  visit(statechart, isContainable, function(item) {
+  visitItem(statechart, isContainable, function(item) {
     renderer.draw(item, normalMode);
   });
-  visit(statechart, isTransition, function(transition) {
+  visitItem(statechart, isTransition, function(transition) {
     renderer.draw(transition, normalMode);
   });
 
@@ -871,10 +1267,10 @@ Editor.prototype.hitTest = function(p) {
       hitList.push(info);
   }
   // TODO hit test selection first, in highlight, first.
-  reverseVisit(statechart, isTransition, function(transition) {
+  reverseVisitItem(statechart, isTransition, function(transition) {
     pushInfo(renderer.hitTest(transition, cp, cTol, normalMode));
   });
-  reverseVisit(statechart, isContainable, function(item) {
+  reverseVisitItem(statechart, isContainable, function(item) {
     pushInfo(renderer.hitTest(item, cp, cTol, normalMode));
   });
   return hitList;
@@ -902,7 +1298,7 @@ function isDraggable(hitInfo, model) {
 
 function isContainerTarget(hitInfo, model) {
   const item = hitInfo.item;
-  return isContainer(item) &&
+  return isTrueStateOrStatechart(item) &&
          !model.hierarchicalModel.isItemInSelection(item);
 }
 
@@ -926,7 +1322,7 @@ Editor.prototype.onClick = function(p) {
       selectionModel.clear();
     }
   }
-  return mouseHitInfo != null;
+  return mouseHitInfo !== null;
 }
 
 const connectTransitionSrc = 1,
@@ -967,7 +1363,7 @@ Editor.prototype.onBeginDrag = function(p0) {
         if (mouseHitInfo.moveCopy) {
           drag = { type: moveCopySelection, name: 'Move copy of selection', newItem: true };
         } else {
-          if (dragItem.type == 'state' && mouseHitInfo.border) {
+          if (dragItem.type === 'state' && mouseHitInfo.border) {
             drag = { type: resizeState, name: 'Resize state' };
           } else {
             drag = { type: moveSelection, name: 'Move selection' };
@@ -985,10 +1381,10 @@ Editor.prototype.onBeginDrag = function(p0) {
 
   this.drag = drag;
   if (drag) {
-    if (drag.type == moveSelection || drag.type == moveCopySelection) {
+    if (drag.type === moveSelection || drag.type === moveCopySelection) {
       editingModel.reduceSelection();
       // let items = selectionModel.contents();
-      // drag.isSingleElement = items.length == 1 && isState(items[0]);
+      // drag.isSingleElement = items.length === 1 && isState(items[0]);
     }
     model.transactionModel.beginTransaction(drag.name);
     if (newTransition) {
@@ -1019,6 +1415,7 @@ Editor.prototype.onDrag = function(p0, p) {
         transactionModel = model.transactionModel,
         referencingModel = model.referencingModel,
         selectionModel = model.selectionModel,
+        layoutModel = model.layoutModel,
         renderer = this.renderer,
         canvasController = this.canvasController,
         cp0 = canvasController.viewToCanvas(p0),
@@ -1031,7 +1428,7 @@ Editor.prototype.onDrag = function(p0, p) {
   switch (drag.type) {
     case moveCopySelection:
     case moveSelection:
-      hitInfo = this.getFirstHit(hitList, isStateBorder);
+      hitInfo = this.getFirstHit(hitList, isContainerTarget);
       selectionModel.forEach(function(item) {
         const snapshot = transactionModel.getSnapshot(item);
         if (snapshot) {
@@ -1060,7 +1457,7 @@ Editor.prototype.onDrag = function(p0, p) {
       observableModel.changeValue(dragItem, 'srcId', srcId);
       const src = getTransitionSrc(dragItem);
       if (src) {
-        const t1 = renderer.statePointToParam(src, cp);
+        const t1 = layoutModel.statePointToParam(src, cp);
         observableModel.changeValue(dragItem, 't1', t1);
       } else {
         dragItem[_p1] = cp;
@@ -1070,14 +1467,14 @@ Editor.prototype.onDrag = function(p0, p) {
       // Adjust position on src state to track the new transition.
       if (drag.newItem) {
         const src = referencingModel.getReference(dragItem, 'srcId');
-        observableModel.changeValue(dragItem, 't1', renderer.statePointToParam(src, cp));
+        observableModel.changeValue(dragItem, 't1', layoutModel.statePointToParam(src, cp));
       }
       hitInfo = this.getFirstHit(hitList, isStateBorder);
       const dstId = hitInfo ? dataModel.getId(hitInfo.item) : 0;  // 0 is invalid id
       observableModel.changeValue(dragItem, 'dstId', dstId);
       const dst = getTransitionDst(dragItem);
       if (dst) {
-        const t2 = renderer.statePointToParam(dst, cp);
+        const t2 = layoutModel.statePointToParam(dst, cp);
         observableModel.changeValue(dragItem, 't2', t2);
       } else {
         dragItem[_p2] = cp;
@@ -1085,7 +1482,7 @@ Editor.prototype.onDrag = function(p0, p) {
       break;
   }
 
-  this.hotTrackInfo = (hitInfo && hitInfo.item != this.statechart) ? hitInfo : null;
+  this.hotTrackInfo = (hitInfo && hitInfo.item !== this.statechart) ? hitInfo : null;
 }
 
 Editor.prototype.onEndDrag = function(p) {
@@ -1102,7 +1499,7 @@ Editor.prototype.onEndDrag = function(p) {
         editingModel = model.editingModel;
   if (isTransition(dragItem)) {
     dragItem[_p1] = dragItem[_p2] = undefined;
-  } else if (drag.type == moveSelection || drag.type == moveCopySelection) {
+  } else if (drag.type === moveSelection || drag.type === moveCopySelection) {
     // Find state beneath mouse.
     const hitList = this.hitTest(p),
           hitInfo = this.getFirstHit(hitList, isContainerTarget),
@@ -1114,12 +1511,6 @@ Editor.prototype.onEndDrag = function(p) {
       }
     });
   }
-
-  const renderer = this.renderer;
-  renderer.beginDraw(model, this.ctx);
-  // TODO viewModel to perform layout automatically.
-  editingModel.layout(this.statechart, renderer);
-  renderer.endDraw();
 
   // If dragItem is a disconnected transition, delete it.
   // TODO consistency checking done by editingModel.
@@ -1164,7 +1555,7 @@ Editor.prototype.onKeyDown = function(e) {
         cmdKey = e.ctrlKey || e.metaKey,
         shiftKey = e.shiftKey;
 
-  if (keyCode == 8) {  // 'delete'
+  if (keyCode === 8) {  // 'delete'
     editingModel.doDelete();
     return true;
   }
@@ -1208,9 +1599,9 @@ Editor.prototype.onKeyDown = function(e) {
         var text = JSON.stringify(
           statechart,
           function(key, value) {
-            if (key.toString().charAt(0) == '_')
+            if (key.toString().charAt(0) === '_')
               return;
-            if (value == undefined || value == null)
+            if (value === undefined || value === null)
               return;
             return value;
           },
