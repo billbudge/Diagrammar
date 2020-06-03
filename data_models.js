@@ -68,76 +68,66 @@ const dataModel = (function() {
         });
       });
     },
-
-    // Defines the model, items, and properties.
-    configureModel: function(root, isItem, isProperty) {
-      this.root = root;
-      this.isItem = isItem;
-      this.isProperty = isProperty;
-    },
-
-    // Defines how referencing works.
-    configureReferences: function(getId, assignId, isReference) {
-      this.getId = getId;
-      this.assignId = assignId;
-      this.isReference = isReference;
-    },
   }
 
-  function extend(model) {
-    if (model.dataModel)
-      return model.dataModel;
+  let nextId;
 
-    const instance = Object.create(proto);
-    instance.model = model;
-
-    const root = model.root || model;
-
-    function isItem(value) {
+  const defaultImpl = {
+    // Returns true iff. value is an item in the model.
+    isItem: function(value) {
       return value && typeof value === 'object';
-    }
+    },
 
     // Returns true iff. item[attr] is a model property.
-    function isProperty(item, attr) {
+    isProperty: function(item, attr) {
       return attr !== 'id' &&
              item.hasOwnProperty(attr);
-    }
+    },
 
-    instance.configureModel(root, isItem, isProperty);
-
-    // In default id system, 0 is an invalid id.
-    let nextId = 0;
-
-    function getId(item) {
+    getId: function(item) {
       return item.id;
-    }
+    },
 
-    function assignId(item) {
+    assignId: function(item) {
       // 0 is not a valid id in this model.
       const id = nextId++;
       item.id = id;
       return id;
-    }
-
-    // Find the maximum id in the model and set nextId to 1 greater.
-    instance.visitSubtree(root, function(item) {
-      const id = getId(item);
-      if (id)
-        nextId = Math.max(nextId, id);
-    });
-    nextId++;
+    },
 
     // Returns true iff. item[attr] is a property that references an item.
-    function isReference(item, attr) {
+    isReference: function(item, attr) {
       const attrName = attr.toString(),
             position = attrName.length - 2;
       return position >= 0 &&
              attrName.lastIndexOf('Id', position) === position;
-    }
+    },
 
-    instance.configureReferences(getId, assignId, isReference);
+    configure: function(model) {
+      const self = this,
+            root = model.root || model;
+      this.root = root;
 
-    instance.initializers = [];
+      // Find the maximum id in the model and set nextId to 1 greater.
+      nextId = 0;
+      this.visitSubtree(root, function(item) {
+        const id = self.getId(item);
+        if (id)
+          nextId = Math.max(nextId, id);
+      });
+      nextId++;
+    },
+  }
+
+  function extend(model, impl) {
+    if (model.dataModel)
+      return model.dataModel;
+
+    const instance = Object.assign(Object.create(proto), impl || defaultImpl);
+    instance.model = model;
+    instance.configure(model);
+
+    instance.initializers = new Array();
 
     model.dataModel = instance;
     return instance;
@@ -968,10 +958,6 @@ const instancingModel = (function() {
 // and removed.
 const masteringModel = (function() {
   const proto = {
-    getMasters_: function() {
-      return this.root_[this.mastersAttr_];
-    },
-
     // Converts the master to the canonical one if it is already in the model.
     // This must be called before adding new instances of the master.
     internalizeMaster: function(master) {
@@ -986,7 +972,7 @@ const masteringModel = (function() {
       dataModel.assignId(master);
       dataModel.initialize(master);
       model.observableModel.insertElement(
-          this.root_, this.mastersAttr_, this.masters_.length, master);
+          this.root, this.mastersAttr, this.masters_.length, master);
       return master;
     },
 
@@ -1044,28 +1030,22 @@ const masteringModel = (function() {
             observableModel = model.observableModel,
             unusedMasters = this.unusedMasters_;
       for (let master of unusedMasters) {
-        observableModel.removeElement(
-            this.root_, this.mastersAttr_, this.masters_.indexOf(master));
+        const index = this.masters_.indexOf(master);
+        // If undoing an insert, the master may have already been removed.
+        if (index < 0)
+          continue;
+        observableModel.removeElement(this.root, this.mastersAttr, index);
       }
       unusedMasters.clear();
     },
+  }
 
-    // Configure the masters array and master referencing.
-    configure: function(root, mastersAttr, masterRefAttr) {
-      this.root_ = root;
-      this.mastersAttr_ = mastersAttr;
-      this.masters_ = root[mastersAttr] || new Array();
-      this.masterRefAttr_ = masterRefAttr;
-      const refFn = this.model.referencingModel.getReferenceFn(masterRefAttr);
-      this.getMaster = function(item) {
-        if (!item.hasOwnProperty(masterRefAttr))
-          return undefined;
-        return refFn(item);
-      };
+  const defaultImpl = {
+    mastersAttr: 'masters',
+    masterRefAttr: 'masterId',
 
-      // Build the reference map for the entire model.
-      this.masterReferences_ = new Map();
-      this.insertItem_(this.root_);
+    configure: function(model) {
+      this.root = model.dataModel.root;
     },
 
     onInstanceInserted: function(instance, master) {},
@@ -1073,25 +1053,41 @@ const masteringModel = (function() {
     onInstanceRemoved: function(instance, master) {},
   }
 
-  function extend(model) {
+  function extend(model, impl) {
     dataModels.dataModel.extend(model);
     dataModels.observableModel.extend(model);
     dataModels.transactionModel.extend(model);
     dataModels.referencingModel.extend(model);
     dataModels.instancingModel.extend(model);
 
-    let instance = Object.create(proto);
+    const instance = Object.assign(Object.create(proto), impl || defaultImpl);
     instance.model = model;
+    instance.configure(model);
+
+    const root = instance.root,
+          mastersAttr = instance.mastersAttr,
+          masterRefAttr = instance.masterRefAttr,
+          masterRefFn = model.referencingModel.getReferenceFn(masterRefAttr);
+    instance.getMaster = function(item) {
+      return item.hasOwnProperty(masterRefAttr) ? masterRefFn(item) : undefined;
+    };
     instance.unusedMasters_ = new Set();
+    instance.masters_ = root[mastersAttr];
 
-    instance.configure(model.dataModel.root, 'masters', 'masterId');
+    // Build the reference map for the entire model.
+    instance.masterReferences_ = new Map();
+    instance.insertItem_(root);
 
-    // Maintain reference counts for groups.
+    // Maintain reference counts for masters.
     model.observableModel.addHandler('changed',
                                      change => instance.onChange_(change));
-    // Remove groups with no references.
-    model.transactionModel.addHandler('transactionEnding',
-                                      transaction => instance.makeConsistent_());
+    // Remove masters with no references.
+    // TODO create an event to capture the idea of roll forward/backward for
+    // transactions.
+    function update() {
+      instance.makeConsistent_();
+    }
+    model.transactionModel.addHandler('transactionEnding', update);
 
     model.masteringModel = instance;
     return instance;
