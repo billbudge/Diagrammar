@@ -305,7 +305,7 @@ const signatureModel = (function() {
 
 //------------------------------------------------------------------------------
 
-// Extends dataModels.changeModel to add:
+// Use dataModels.changeAggregator to maintain:
 // - maps from element to connected input and output wires.
 // - information about graphs and subgraphs.
 // - iterators for walking the graph.
@@ -466,14 +466,14 @@ const circuitModel = (function() {
 
     // Update the model to incorporate pending changes.
     update_: function() {
-      const changeModel = this.model.changeModel;
-      if (!changeModel.hasChanges())
+      const changeAggregator = this.model.changeAggregator;
+      if (!changeAggregator.hasChanges())
         return;
 
       const self = this,
-            removedItems = changeModel.getRemovedItems(),
-            insertedItems = changeModel.getInsertedItems(),
-            changedItems = changeModel.getChangedItems();
+            removedItems = changeAggregator.getRemovedItems(),
+            insertedItems = changeAggregator.getInsertedItems(),
+            changedItems = changeAggregator.getChangedItems();
 
       // Remove wires, then elements.
       removedItems.forEach(function(item) {
@@ -521,7 +521,7 @@ const circuitModel = (function() {
         }
       });
 
-      changeModel.clear();
+      changeAggregator.clear();
     }
   }
 
@@ -532,7 +532,7 @@ const circuitModel = (function() {
     dataModels.dataModel.extend(model);
     dataModels.observableModel.extend(model);
     dataModels.referencingModel.extend(model);
-    dataModels.changeModel.extend(model);
+    dataModels.changeAggregator.extend(model);
 
     let instance = Object.create(proto);
     instance.model = model;

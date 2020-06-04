@@ -1082,12 +1082,8 @@ const masteringModel = (function() {
     model.observableModel.addHandler('changed',
                                      change => instance.onChange_(change));
     // Remove masters with no references.
-    // TODO create an event to capture the idea of roll forward/backward for
-    // transactions.
-    function update() {
-      instance.makeConsistent_();
-    }
-    model.transactionModel.addHandler('transactionEnding', update);
+    model.transactionModel.addHandler('transactionEnding',
+                                      () => instance.makeConsistent_());
 
     model.masteringModel = instance;
     return instance;
@@ -1674,7 +1670,7 @@ const openingModel = (function() {
 //------------------------------------------------------------------------------
 
 // A model for tracking which items in the data model have changed.
-const changeModel = (function() {
+const changeAggregator = (function() {
   const proto = {
     hasChanges: function() {
       return this.has_changes_;
@@ -1692,6 +1688,10 @@ const changeModel = (function() {
     getRemovedItems: function() {
       return Array.from(this.removedItems_);
     },
+    // Items which were removed and reinserted.
+    getReparentedItems: function() {
+      return Array.from(this.reparentedItems_);
+    },
 
     clear: function() {
       this.changedItems_.clear();
@@ -1700,27 +1700,46 @@ const changeModel = (function() {
       this.has_changes_ = false;
     },
 
+    insertItem_: function(item) {
+      if (this.removedItems_.has(item)) {
+        this.removedItems_.delete(item);
+        this.reparentedItems_.add(item);
+      } else {
+        this.insertedItems_.add(item);
+      }
+    },
+
+    removeItem_: function(item) {
+      this.removedItems_.add(item);
+
+      this.changedItems_.delete(item);
+      this.insertedItems_.delete(item);
+      this.reparentedItems_.delete(item);
+    },
+
     onChanged_: function(change) {
       const dataModel = this.model.dataModel,
             item = change.item,
             attr = change.attr;
+      // In all cases, the item is considered changed.
       this.changedItems_.add(item);
       this.has_changes_ = true;
       switch (change.type) {
-        case 'change': {
-          break;
-        }
+        // case 'change': {
+        //   break;
+        // }
         case 'insert': {
-          let newValue = item[attr][change.index];
-          this.insertedItems_.add(newValue);
-          this.removedItems_.delete(newValue);
+          const self = this,
+                dataModel = this.model.dataModel,
+                newValue = item[attr][change.index];
+          dataModel.visitSubtree(newValue, item => self.insertItem_(item));
           break;
         }
         case 'remove': {
-          let oldValue = change.oldValue;
-          this.removedItems_.add(oldValue);
-          this.insertedItems_.delete(oldValue);
-          this.changedItems_.delete(oldValue);
+          const self = this,
+                dataModel = this.model.dataModel,
+                oldValue = change.oldValue;
+          dataModel.visitSubtree(oldValue, item => self.removeItem_(item));
           break;
         }
       }
@@ -1728,8 +1747,8 @@ const changeModel = (function() {
   }
 
   function extend(model) {
-    if (model.changeModel)
-      return model.changeModel;
+    if (model.changeAggregator)
+      return model.changeAggregator;
 
     dataModel.extend(model);
     observableModel.extend(model);
@@ -1739,12 +1758,13 @@ const changeModel = (function() {
     instance.changedItems_ = new Set();
     instance.insertedItems_ = new Set();
     instance.removedItems_ = new Set();
+    instance.reparentedItems_ = new Set();
     instance.has_changes_ = false;
 
     model.observableModel.addHandler('changed',
                                      change => instance.onChanged_(change));
 
-    model.changeModel = instance;
+    model.changeAggregator = instance;
     return instance;
   }
 
@@ -1805,6 +1825,6 @@ const changeModel = (function() {
     translatableModel: translatableModel,
     transformableModel: transformableModel,
     openingModel: openingModel,
-    changeModel: changeModel,
+    changeAggregator: changeAggregator,
   }
 })();

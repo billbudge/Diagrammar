@@ -207,7 +207,7 @@ test("circuits.circuitModel.extend", function() {
   ok(test.model.dataModel);
   ok(test.model.observableModel);
   ok(test.model.referencingModel);
-  ok(test.model.changeModel);
+  ok(test.model.changeAggregator);
 });
 
 // TODO circuitModel tests.

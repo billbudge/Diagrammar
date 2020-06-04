@@ -79,7 +79,7 @@ let getTransitionSrc,
 
 //------------------------------------------------------------------------------
 
-// Extends dataModels.changeModel to add:
+// Use dataModels.changeAggregator to maintain:
 // - maps from element to connected transitions.
 // - information about graphs and subgraphs.
 // - iterators for walking the graph.
@@ -182,9 +182,11 @@ const statechartModel = (function() {
     insertState_: function(state) {
       this.statesAndStatecharts_.add(state);
       // inputMap_ takes state to array of incoming transitions.
-      this.inputMap_.set(state, new Array());
+      if (!this.inputMap_.has(state))
+        this.inputMap_.set(state, new Array());
       // outputMap_ takes state to array of outgoing transitions.
-      this.outputMap_.set(state, new Array());
+      if (!this.outputMap_.has(state))
+        this.outputMap_.set(state, new Array());
     },
 
     insertStatechart_: function(state) {
@@ -239,14 +241,14 @@ const statechartModel = (function() {
 
     // Update the model to incorporate pending changes.
     update_: function() {
-      const changeModel = this.model.changeModel;
-      if (!changeModel.hasChanges())
+      const changeAggregator = this.model.changeAggregator;
+      if (!changeAggregator.hasChanges())
         return;
 
       const self = this,
-            removedItems = changeModel.getRemovedItems(),
-            insertedItems = changeModel.getInsertedItems(),
-            changedItems = changeModel.getChangedItems();
+            removedItems = changeAggregator.getRemovedItems(),
+            insertedItems = changeAggregator.getInsertedItems(),
+            changedItems = changeAggregator.getChangedItems();
 
       // Remove transitions, then states.
       removedItems.forEach(function(item) {
@@ -255,23 +257,19 @@ const statechartModel = (function() {
         }
       });
       removedItems.forEach(function(item) {
-        visitItem(item, function(item) {
-          if (isState(item)) {
-            self.removeState_(item);
-          } else if (isStatechart(item)) {
-            self.removeStatechart_(item);
-          }
-        }, isStateOrStatechart);
+        if (isState(item)) {
+          self.removeState_(item);
+        } else if (isStatechart(item)) {
+          self.removeStatechart_(item);
+        }
       });
       // Add states, then transitions.
       insertedItems.forEach(function(item) {
-        visitItem(item, function(item) {
-          if (isState(item)) {
-            self.insertState_(item);
-          } else if (isStatechart(item)) {
-            self.insertStatechart_(item);
-          }
-        }, isStateOrStatechart);
+        if (isState(item)) {
+          self.insertState_(item);
+        } else if (isStatechart(item)) {
+          self.insertStatechart_(item);
+        }
       });
       insertedItems.forEach(function(item) {
         if (isTransition(item)) {
@@ -286,7 +284,7 @@ const statechartModel = (function() {
         }
       });
 
-      changeModel.clear();
+      changeAggregator.clear();
     }
   }
 
@@ -297,7 +295,7 @@ const statechartModel = (function() {
     dataModels.dataModel.extend(model);
     dataModels.observableModel.extend(model);
     dataModels.referencingModel.extend(model);
-    dataModels.changeModel.extend(model);
+    dataModels.changeAggregator.extend(model);
 
     let instance = Object.create(proto);
     instance.model = model;
@@ -494,6 +492,7 @@ const editingModel = (function() {
 
     addItem: function(item, parent) {
       const model = this.model,
+            observableModel = model.observableModel,
             hierarchicalModel = model.hierarchicalModel,
             oldParent = hierarchicalModel.getParent(item);
       if (oldParent === parent)
@@ -506,7 +505,7 @@ const editingModel = (function() {
         item.y += translation.y;
         if (isTrueState(parent)) {
           if (!Array.isArray(parent.items))
-            model.observableModel.changeValue(parent, 'items', []);
+            observableModel.changeValue(parent, 'items', []);
           if (parent.items.length === 0) {
             itemToAdd = this.createStatechart(item);
           } else {
@@ -529,8 +528,7 @@ const editingModel = (function() {
       if (oldParent !== parent) {
         if (oldParent)            // if null, it's a new item.
           this.deleteItem(item);  // notifies observers
-        parent.items.push(itemToAdd);
-        model.observableModel.onElementInserted(parent, 'items', parent.items.length - 1);
+        observableModel.insertElement(parent, 'items', parent.items.length, itemToAdd);
       }
       return itemToAdd;
     },
@@ -686,8 +684,7 @@ const layoutModel = (function() {
             graphInfo = this.model.statechartModel.getGraphInfo();
       this.changedStates_.forEach(function(state) {
         function addTransition(transition) {
-          if (transition)
-            self.changedTransitions_.add(transition);
+          self.changedTransitions_.add(transition);
         }
         graphInfo.iterators.forInTransitions(state, addTransition);
         graphInfo.iterators.forOutTransitions(state, addTransition);
@@ -833,8 +830,6 @@ const layoutModel = (function() {
           const newValue = item[attr][change.index];
           // this.update_(item);
           this.update_(newValue);
-          // if (isTrueStateOrStatechart(newValue))
-          //   this.layout_(newValue);
           break;
         }
       }

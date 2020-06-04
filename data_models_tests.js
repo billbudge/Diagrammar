@@ -554,21 +554,21 @@ test("selectionModel select", function() {
 
 // Change model unit tests.
 
-test("changeModel extend", function() {
+test("changeAggregator extend", function() {
   const model = { root: {} };
-  const test = dataModels.changeModel.extend(model);
-  deepEqual(test, model.changeModel);
+  const test = dataModels.changeAggregator.extend(model);
+  deepEqual(test, model.changeAggregator);
   ok(model.observableModel);
 });
 
-test("changeModel", function() {
+test("changeAggregator", function() {
   const model = {
     root: {
       prop1: 'foo',
       array: [],
     },
   };
-  const test = dataModels.changeModel.extend(model);
+  const test = dataModels.changeAggregator.extend(model);
   deepEqual(test.getChangedItems(), []);
   ok(!test.hasChanges());
 
@@ -609,8 +609,9 @@ test("changeModel", function() {
   model.observableModel.onElementInserted(model.root, 'array', 0);
   ok(test.hasChanges());
   deepEqual(test.getChangedItems(), [model.root]);
-  deepEqual(test.getInsertedItems(), [child]);
+  deepEqual(test.getInsertedItems(), []);
   deepEqual(test.getRemovedItems(), []);
+  deepEqual(test.getReparentedItems(), [child]);
   test.clear();
 
   // multiple changed items
