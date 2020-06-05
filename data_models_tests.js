@@ -556,8 +556,7 @@ test("selectionModel select", function() {
 
 test("changeAggregator extend", function() {
   const model = { root: {} };
-  const test = dataModels.changeAggregator.extend(model);
-  deepEqual(test, model.changeAggregator);
+  const test = dataModels.changeAggregator.attach(model);
   ok(model.observableModel);
 });
 
@@ -568,7 +567,7 @@ test("changeAggregator", function() {
       array: [],
     },
   };
-  const test = dataModels.changeAggregator.extend(model);
+  const test = dataModels.changeAggregator.attach(model);
   deepEqual(test.getChangedItems(), []);
   ok(!test.hasChanges());
 

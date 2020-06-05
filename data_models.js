@@ -1746,10 +1746,7 @@ const changeAggregator = (function() {
     },
   }
 
-  function extend(model) {
-    if (model.changeAggregator)
-      return model.changeAggregator;
-
+  function attach(model) {
     dataModel.extend(model);
     observableModel.extend(model);
 
@@ -1763,13 +1760,11 @@ const changeAggregator = (function() {
 
     model.observableModel.addHandler('changed',
                                      change => instance.onChanged_(change));
-
-    model.changeAggregator = instance;
     return instance;
   }
 
   return {
-    extend: extend,
+    attach: attach,
   };
 })();
 

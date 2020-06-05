@@ -466,7 +466,7 @@ const circuitModel = (function() {
 
     // Update the model to incorporate pending changes.
     update_: function() {
-      const changeAggregator = this.model.changeAggregator;
+      const changeAggregator = this.changeAggregator;
       if (!changeAggregator.hasChanges())
         return;
 
@@ -529,14 +529,13 @@ const circuitModel = (function() {
     if (model.circuitModel)
       return model.circuitModel;
 
-    dataModels.dataModel.extend(model);
     dataModels.observableModel.extend(model);
     dataModels.referencingModel.extend(model);
-    dataModels.changeAggregator.extend(model);
 
     let instance = Object.create(proto);
     instance.model = model;
     instance.circuit = model.root;
+    instance.changeAggregator = dataModels.changeAggregator.attach(model);
 
     instance.inputMap_ = new Map();   // element -> input wires[]
     instance.outputMap_ = new Map();  // element -> output wires[][]
@@ -1661,8 +1660,7 @@ const layoutModel = (function() {
 
     let instance = Object.create(proto);
     instance.model = model;
-    const circuit = model.root;
-    instance.circuit = circuit;
+    instance.circuit = model.root;
 
     model.observableModel.addHandler('changed',
                                      change => instance.onChanged_(change));

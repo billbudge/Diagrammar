@@ -241,7 +241,7 @@ const statechartModel = (function() {
 
     // Update the model to incorporate pending changes.
     update_: function() {
-      const changeAggregator = this.model.changeAggregator;
+      const changeAggregator = this.changeAggregator;
       if (!changeAggregator.hasChanges())
         return;
 
@@ -292,13 +292,13 @@ const statechartModel = (function() {
     if (model.statechartModel)
       return model.statechartModel;
 
-    dataModels.dataModel.extend(model);
     dataModels.observableModel.extend(model);
     dataModels.referencingModel.extend(model);
-    dataModels.changeAggregator.extend(model);
 
     let instance = Object.create(proto);
     instance.model = model;
+    instance.changeAggregator = dataModels.changeAggregator.attach(model);
+
     instance.statechart = model.root;
 
     instance.inputMap_ = new Map();   // state -> incoming transitions
