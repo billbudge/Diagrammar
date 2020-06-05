@@ -297,14 +297,14 @@ const statechartModel = (function() {
 
     let instance = Object.create(proto);
     instance.model = model;
-    instance.changeAggregator = dataModels.changeAggregator.attach(model);
-
     instance.statechart = model.root;
 
     instance.inputMap_ = new Map();   // state -> incoming transitions
     instance.outputMap_ = new Map();  // state -> outgoing transitions
     instance.statesAndStatecharts_ = new Set();
     instance.transitions_ = new Set();
+
+    instance.changeAggregator = dataModels.changeAggregator.attach(model);
 
     // Initialize states and transitions.
     visitItem(instance.statechart, function(state) {
@@ -613,10 +613,7 @@ const layoutModel = (function() {
       this.theme = theme || diagrams.theme.create();
     },
 
-    getItemRect: function (item) {
-      const translatableModel = this.model.translatableModel,
-            x = translatableModel.globalX(item),
-            y = translatableModel.globalY(item);
+    getSize: function(item) {
       let w, h;
       switch (item.type) {
         case 'state':
@@ -628,25 +625,28 @@ const layoutModel = (function() {
           w = h = 2 * radius;
           break;
       }
-      return { x: x, y: y, w: w, h: h };
+      return { w: w, h: h };
     },
 
-    setItemBounds: function (item, width, height) {
-      item[_width] = width;
-      item[_height] = height;
+    getItemRect: function (item) {
+      const size = this.getSize(item),
+            translatableModel = this.model.translatableModel,
+            x = translatableModel.globalX(item),
+            y = translatableModel.globalY(item);
+
+      return { x: x, y: y, w: size.w, h: size.h };
     },
 
-    getItemRects: function(items) {
+    getBounds: function(items) {
       let xMin = Number.POSITIVE_INFINITY, yMin = Number.POSITIVE_INFINITY,
           xMax = -Number.POSITIVE_INFINITY, yMax = -Number.POSITIVE_INFINITY;
       for (let item of items) {
-        if (isTransition(item))
-          continue;
-        let rect = this.getItemRect(item);
-        xMin = Math.min(xMin, rect.x);
-        yMin = Math.min(yMin, rect.y);
-        xMax = Math.max(xMax, rect.x + rect.w);
-        yMax = Math.max(yMax, rect.y + rect.h);
+        const x = item.x, y = item.y,
+              size = this.getSize(item);
+        xMin = Math.min(xMin, x);
+        yMin = Math.min(yMin, y);
+        xMax = Math.max(xMax, x + size.w);
+        yMax = Math.max(yMax, y + size.h);
       }
       return { x: xMin, y: yMin, w: xMax - xMin, h: yMax - yMin };
     },
@@ -722,7 +722,7 @@ const layoutModel = (function() {
       const statecharts = state.items;
       let statechartOffsetY = 0;
       if (statecharts && statecharts.length > 0) {
-        // Position the child statecharts vertically within the parent state.
+        // Layout the child statecharts vertically within the parent state.
         // TODO handle horizontal flow.
         statecharts.forEach(function(statechart) {
           width = Math.max(width, statechart.width);
@@ -730,7 +730,7 @@ const layoutModel = (function() {
         let statechartOffsetY = 0;
         statecharts.forEach(function(statechart) {
           observableModel.changeValue(statechart, 'y', statechartOffsetY);
-          observableModel.changeValue(statechart, 'width', state.width);
+          observableModel.changeValue(statechart, 'width', width);
           statechartOffsetY += statechart.height;
         });
 
@@ -739,8 +739,7 @@ const layoutModel = (function() {
         observableModel.changeValue(lastStatechart, 'height',
               lastStatechart.height + state.height - statechartOffsetY);
 
-        if (height < statechartOffsetY)
-          height = statechartOffsetY;
+        height = Math.max(height, statechartOffsetY);
       }
       width = Math.max(width, state.width);
       height = Math.max(height, state.height);
@@ -754,11 +753,12 @@ const layoutModel = (function() {
       const items = statechart.items;
       if (items) {
         // Get extents of child states.
-        const r = this.getItemRects(items),
-              xMin = r.x - padding, xMax = r.x + r.w + padding,
-              yMin = r.y - padding, yMax = r.y + r.h + padding;
-
-        const observableModel = this.model.observableModel;
+        const r = this.getBounds(items),
+              observableModel = this.model.observableModel;
+        let xMin = Math.min(0, r.x - padding),
+            yMin = Math.min(0, r.y - padding),
+            xMax = r.x + r.w + padding,
+            yMax = r.y + r.h + padding;
         if (xMin < 0) {
           xMax -= xMin;
           for (let i = 0; i < items.length; i++) {
@@ -845,8 +845,7 @@ const layoutModel = (function() {
 
     let instance = Object.create(proto);
     instance.model = model;
-    const statechart = model.root;
-    instance.statechart = statechart;
+    instance.statechart = model.root;
 
     model.observableModel.addHandler('changed',
                                      change => instance.onChanged_(change));
@@ -855,10 +854,8 @@ const layoutModel = (function() {
     instance.changedStates_ = new Set();
     instance.changedTopLevelStates_ = new Set();
 
-    // Initialize items and layout statecharts.
-    // TODO fix this...
-    visitItem(statechart, item => instance.update_(item));
-    instance.updateLayout();
+    // Initialize our data.
+    visitItem(instance.statechart, item => instance.update_(item));
 
     model.layoutModel = instance;
     return instance;
