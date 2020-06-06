@@ -1228,7 +1228,7 @@ const hierarchicalModel = (function() {
     },
 
     getLineage: function(item) {
-      const lineage = [];
+      const lineage = new Array();
       while (item) {
         lineage.push(item);
         item = this.getParent(item);
@@ -1237,33 +1237,41 @@ const hierarchicalModel = (function() {
     },
 
     getLowestCommonAncestor: function() {
-      // LCA is associative, so perform the search pair-wise.
-      function lca(a, b) {
-        let next_a = this.getParent(a);
-        if (next_a === b) return b;
-        let next_b = this.getParent(b);
-        if (next_b === a) return a;
-        return lca(next_a, next_b);
+      const self = this;
+      function height(item) {
+        let height = 0;
+        while (item) {
+          height++;
+          item = self.getParent(item);
+        }
+        return height;
       }
       const items = arguments;
-      let result = arguments[0];
+      let lca = arguments[0];
+      let heightLCA = height(lca);
       for (let i = 1; i < items.length; i++) {
-        let a = result, b = arguments[i];
-        while (a !== b) {
-          const next_a = this.getParent(a),
-                next_b = this.getParent(b);
-          if (next_a === b) {
-            a = next_a;
-          } else if (next_b === a) {
-            b = next_b
-          } else {
-            a = next_a;
-            b = next_b;
+        let next = arguments[i];
+        let nextHeight = height(next);
+        if (heightLCA > nextHeight) {
+          while (heightLCA > nextHeight) {
+            lca = this.getParent(lca);
+            heightLCA--;
+          }
+        } else {
+          while (nextHeight > heightLCA) {
+            next = this.getParent(next);
+            nextHeight--;
           }
         }
-        result = a;
+        while (heightLCA && nextHeight && lca !== next) {
+          lca = this.getParent(lca);
+          next = this.getParent(next);
+          heightLCA--;
+          nextHeight--;
+        }
+        if (heightLCA == 0 || nextHeight == 0) return undefined;
       }
-      return result;
+      return lca;
     },
 
     init_: function(item, parent) {

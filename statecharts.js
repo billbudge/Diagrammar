@@ -327,6 +327,10 @@ const statechartModel = (function() {
 
 const editingModel = (function() {
   const proto = {
+    getParent: function(item) {
+      return this.model.hierarchicalModel.getParent(item);
+    },
+
     reduceSelection: function () {
       const model = this.model;
       model.selectionModel.set(model.hierarchicalModel.reduceSelection());
@@ -363,6 +367,7 @@ const editingModel = (function() {
           const subItem = items[i];
           if (subItem === item) {
             model.observableModel.removeElement(parent, 'items', i);
+            model.selectionModel.remove(item);
             break;
           }
         }
@@ -376,7 +381,8 @@ const editingModel = (function() {
 
     deleteItems: function(items) {
       const self = this;
-      this.getConnectedConnections(items, false).forEach(function(item) {
+      // TODO makeConsistent should
+      this.getConnectedConnections(items, true).forEach(function(item) {
         this.deleteItem(item);
       }, this);
       items.forEach(function(item) {
@@ -556,6 +562,32 @@ const editingModel = (function() {
       })
       model.transactionModel.endTransaction();
     },
+
+    makeConsistent: function () {
+      const self = this, model = this.model,
+            statechart = this.statechart,
+            dataModel = model.dataModel,
+            hierarchicalModel = model.hierarchicalModel,
+            selectionModel = model.selectionModel,
+            observableModel = model.observableModel,
+            graphInfo = model.statechartModel.getGraphInfo(),
+            transitions = graphInfo.transitions;
+      // Eliminate dangling transitions.
+      transitions.forEach(function(transition) {
+        const src = getTransitionSrc(transition),
+              dst = getTransitionDst(transition);
+        if (!src || !dst) {
+          self.deleteItem(transition);
+          return;
+        }
+        // Make sure transitions belong to lowest common statechart.
+        const lca = hierarchicalModel.getLowestCommonAncestor(src, dst);
+        if (self.getParent(transition) !== lca) {
+          self.deleteItem(transition);
+          self.addItem(transition, lca);
+        }
+      });
+    },
   }
 
   function extend(model) {
@@ -577,6 +609,9 @@ const editingModel = (function() {
 
     instance.model = model;
     instance.statechart = model.root;
+
+    model.transactionModel.addHandler('transactionEnding',
+                                      transaction => instance.makeConsistent());
 
     model.editingModel = instance;
     return instance;
@@ -641,6 +676,8 @@ const layoutModel = (function() {
       let xMin = Number.POSITIVE_INFINITY, yMin = Number.POSITIVE_INFINITY,
           xMax = -Number.POSITIVE_INFINITY, yMax = -Number.POSITIVE_INFINITY;
       for (let item of items) {
+        if (isTransition(item))
+          continue;
         const x = item.x, y = item.y,
               size = this.getSize(item);
         xMin = Math.min(xMin, x);
@@ -1504,21 +1541,14 @@ Editor.prototype.onEndDrag = function(p) {
     });
   }
 
-  // If dragItem is a disconnected transition, delete it.
-  // TODO consistency checking done by editingModel.
-  if (isTransition(dragItem)) {
-    if (!dragItem.srcId || !dragItem.dstId) {
-      editingModel.deleteItem(dragItem);
-      selectionModel.remove(dragItem);
-    }
-  }
-
   model.transactionModel.endTransaction();
 
   this.drag = null;
   this.mouseHitInfo = null;
   this.hotTrackInfo = null;
   this.mouseHitInfo = null;
+
+  this.canvasController.draw();
 }
 
 Editor.prototype.onBeginHover = function(p) {
@@ -1624,111 +1654,9 @@ const statechart_data = {
   "id": 1001,
   "x": 0,
   "y": 0,
-  "width": 853,
-  "height": 430.60454734008107,
+  "width": 0,
+  "height": 0,
   "name": "Example",
   "items": [
-    {
-      "type": "start",
-      "id": 1002,
-      "x": 181,
-      "y": 40
-    },
-    {
-      "type": "state",
-      "id": 1003,
-      "x": 207,
-      "y": 81,
-      "width": 326.52224878096933,
-      "height": 200,
-      "name": "State_1",
-      "items": [
-        {
-          "type": "statechart",
-          "id": 1004,
-          "x": 0,
-          "y": 0,
-          "width": 326.52224878096933,
-          "height": 200,
-          "items": [
-            {
-              "type": "state",
-              "id": 1005,
-              "x": 29,
-              "y": 53,
-              "width": 100,
-              "height": 60,
-              "name": "State_3",
-              "items": []
-            },
-            {
-              "type": "state",
-              "id": 1006,
-              "x": 218.52224878096933,
-              "y": 30.539545265991876,
-              "width": 100,
-              "height": 60,
-              "name": "State_4"
-            },
-            {
-              "type": "start",
-              "x": 9,
-              "y": 23,
-              "id": 1012
-            },
-          ]
-        }
-      ]
-    },
-    {
-      "type": "state",
-      "id": 1007,
-      "x": 545,
-      "y": 222,
-      "width": 300,
-      "height": 200,
-      "name": "State_2",
-      "items": []
-    },
-    {
-      "type": "transition",
-      "srcId": 1003,
-      "t1": 0.5975,
-      "id": 1009,
-      "dstId": 1007,
-      "t2": 3.3758169934640523
-    },
-    {
-      "type": "transition",
-      "srcId": 1002,
-      "t1": 0.431442498944115,
-      "id": 1010,
-      "dstId": 1003,
-      "t2": 3.1258503401360542
-    },
-    {
-      "type": "transition",
-      "srcId": 1012,
-      "t1": 0.42955342504544625,
-      "id": 1013,
-      "dstId": 1005,
-      "t2": 3.2636363636363637
-    },
-    {
-      "type": "transition",
-      "srcId": 1005,
-      "t1": 0.584127478385535,
-      "id": 1018,
-      "dstId": 1006,
-      "t2": 2.4502947345221404
-    },
-    {
-      "type": "transition",
-      "id": 1008,
-      "srcId": 1003,
-      "t1": 1.4019607843137254,
-      "dstId": 1007,
-      "t2": 2.3
-    },
   ]
 }

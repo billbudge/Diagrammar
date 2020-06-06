@@ -1660,7 +1660,8 @@ const layoutModel = (function() {
 
     let instance = Object.create(proto);
     instance.model = model;
-    instance.circuit = model.root;
+    const circuit = model.root;
+    instance.circuit = circuit;
 
     model.observableModel.addHandler('changed',
                                      change => instance.onChanged_(change));
@@ -1683,10 +1684,10 @@ const layoutModel = (function() {
     const dataModel = model.dataModel;
     // Initialize items and layout groups.
     // TODO fix this...
-    dataModel.root.items.forEach(function(item) {
+    circuit.items.forEach(function(item) {
       instance.update_(item);
     });
-    dataModel.root.items.forEach(function(item) {
+    circuit.items.forEach(function(item) {
       if (isGroup(item))
         instance.layoutGroup_(item);
     });
