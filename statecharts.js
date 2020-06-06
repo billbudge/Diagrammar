@@ -1223,12 +1223,12 @@ Editor.prototype.draw = function() {
   renderer.beginDraw(model, ctx);
   canvasController.applyTransform();
 
-  visitItem(statechart, isContainable, function(item) {
+  visitItem(statechart, function(item) {
     renderer.draw(item, normalMode);
-  });
-  visitItem(statechart, isTransition, function(transition) {
+  }, isContainable);
+  visitItem(statechart, function(transition) {
     renderer.draw(transition, normalMode);
-  });
+  }, isTransition);
 
   model.selectionModel.forEach(function(item) {
     renderer.draw(item, highlightMode);
