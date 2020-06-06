@@ -1236,22 +1236,22 @@ const hierarchicalModel = (function() {
       return lineage;
     },
 
-    getLowestCommonAncestor: function() {
-      const self = this;
-      function height(item) {
-        let height = 0;
-        while (item) {
-          height++;
-          item = self.getParent(item);
-        }
-        return height;
+    getHeight: function(item) {
+      let height = 0;
+      while (item) {
+        height++;
+        item = this.getParent(item);
       }
+      return height;
+    },
+
+    getLowestCommonAncestor: function() {
       const items = arguments;
       let lca = arguments[0];
-      let heightLCA = height(lca);
+      let heightLCA = this.getHeight(lca);
       for (let i = 1; i < items.length; i++) {
         let next = arguments[i];
-        let nextHeight = height(next);
+        let nextHeight = this.getHeight(next);
         if (heightLCA > nextHeight) {
           while (heightLCA > nextHeight) {
             lca = this.getParent(lca);
