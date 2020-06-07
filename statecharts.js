@@ -74,6 +74,7 @@ function reverseVisitItems(items, fn, filter) {
 }
 
 // Initialized by editor.
+// TODO remove these globals
 let getTransitionSrc,
     getTransitionDst;
 
@@ -146,8 +147,8 @@ const statechartModel = (function() {
       visitItems(items, function(item) {
         function addTransition(transition) {
           transitions.add(transition);
-          const src = getTransitionSrc(transition),
-                dst = getTransitionDst(transition),
+          const src = self.getTransitionSrc(transition),
+                dst = self.getTransitionDst(transition),
                 srcInside = statesAndStatecharts.has(src),
                 dstInside = statesAndStatecharts.has(dst);
           if (srcInside) {
@@ -179,6 +180,17 @@ const statechartModel = (function() {
       }
     },
 
+    getTopLevelState: function(item) {
+      const hierarchicalModel = this.model.hierarchicalModel,
+            topLevelStatechart = this.statechart;
+      let result;
+      do {
+        result = item;
+        item = hierarchicalModel.getParent(item);
+      } while (item && item !== topLevelStatechart);
+      return result;
+    },
+
     insertState_: function(state) {
       this.statesAndStatecharts_.add(state);
       // inputMap_ takes state to array of incoming transitions.
@@ -205,22 +217,24 @@ const statechartModel = (function() {
 
     insertTransition_: function(transition) {
       this.transitions_.add(transition);
-      const src = getTransitionSrc(transition),
-            dst = getTransitionDst(transition);
+      const src = this.getTransitionSrc(transition),
+            dst = this.getTransitionDst(transition);
       if (src) {
         const outputs = this.outputMap_.get(src);
-        outputs.push(transition);
+        if (outputs)
+          outputs.push(transition);
       }
       if (dst) {
         const inputs = this.inputMap_.get(dst);
-        inputs.push(transition);
+        if (inputs)
+          inputs.push(transition);
       }
     },
 
     removeTransition_: function(transition) {
       this.transitions_.delete(transition);
-      const src = getTransitionSrc(transition),
-            dst = getTransitionDst(transition);
+      const src = this.getTransitionSrc(transition),
+            dst = this.getTransitionDst(transition);
       function remove(array, item) {
         const index = array.indexOf(item);
         if (index > -1) {
@@ -306,6 +320,9 @@ const statechartModel = (function() {
 
     instance.changeAggregator = dataModels.changeAggregator.attach(model);
 
+    instance.getTransitionSrc = model.referencingModel.getReferenceFn('srcId');
+    instance.getTransitionDst = model.referencingModel.getReferenceFn('dstId');
+
     // Initialize states and transitions.
     visitItem(instance.statechart, function(state) {
       instance.insertState_(state);
@@ -336,25 +353,11 @@ const editingModel = (function() {
       model.selectionModel.set(model.hierarchicalModel.reduceSelection());
     },
 
-    getConnectedConnections: function (items, copying) {
+    selectInteriorTransitions: function() {
       const model = this.model,
-            statechartModel = model.statechartModel,
-            graphInfo = statechartModel.getSubgraphInfo(items);
-
-      let result;
-      if (copying) {
-        result = graphInfo.interiorTransitions;
-      } else {
-        function union(to, from) {
-          for (let f of from) {
-            to.add(f);
-          }
-        }
-        result = new Set(graphInfo.interiorTransitions);
-        union(result, graphInfo.inTransitions);
-        union(result, graphInfo.outTransitions);
-      }
-      return Array.from(result);
+            selectionModel = model.selectionModel,
+            graphInfo = model.statechartModel.getSubgraphInfo(selectionModel.contents());
+      selectionModel.add(graphInfo.interiorTransitions);
     },
 
     deleteItem: function(item) {
@@ -381,18 +384,13 @@ const editingModel = (function() {
 
     deleteItems: function(items) {
       const self = this;
-      // TODO makeConsistent should
-      this.getConnectedConnections(items, true).forEach(function(item) {
-        this.deleteItem(item);
-      }, this);
+      // // TODO makeConsistent should
+      // this.getConnectedConnections(items, true).forEach(function(item) {
+      //   this.deleteItem(item);
+      // }, this);
       items.forEach(function(item) {
         this.deleteItem(item);
       }, this);
-    },
-
-    doDelete: function() {
-      this.reduceSelection();
-      this.model.copyPasteModel.doDelete(this.deleteItems.bind(this));
     },
 
     copyItems: function(items, map) {
@@ -400,14 +398,13 @@ const editingModel = (function() {
             dataModel = model.dataModel,
             translatableModel = model.translatableModel,
             statechart = this.statechart,
-            connected = this.getConnectedConnections(items, true),
-            copies = model.copyPasteModel.cloneItems(items.concat(connected), map);
+            copies = model.copyPasteModel.cloneItems(items, map);
 
       items.forEach(function(item) {
         const copy = map.get(dataModel.getId(item));
         if (isContainable(copy)) {
           if (isState(copy)) {
-            // De-palettize clone.
+            // De-palettize states.
             copy.state = 'normal';
           }
           const translation = translatableModel.getToParent(item, statechart);
@@ -416,34 +413,6 @@ const editingModel = (function() {
         }
       });
       return copies;
-    },
-
-    doCopy: function() {
-      const selectionModel = this.model.selectionModel;
-      this.reduceSelection();
-      selectionModel.contents().forEach(function(item) {
-        if (!isState(item))
-          selectionModel.remove(item);
-      });
-      this.model.copyPasteModel.doCopy(this.copyItems.bind(this));
-    },
-
-    doCut: function() {
-      this.doCopy();
-      this.doDelete();
-    },
-
-    doPaste: function() {
-      const copyPasteModel = this.model.copyPasteModel;
-      copyPasteModel.getScrap().forEach(function(item) {
-        // Offset pastes so the user can see them.
-        if (isState(item)) {
-          item.x += 16;
-          item.y += 16;
-        }
-      });
-      copyPasteModel.doPaste(this.copyItems.bind(this),
-                             this.addItems.bind(this));
     },
 
     // Returns a value indicating if the item can be added to the state
@@ -507,8 +476,9 @@ const editingModel = (function() {
       if (isContainable(item)) {
         const translatableModel = model.translatableModel,
               translation = translatableModel.getToParent(item, parent);
-        item.x += translation.x;
-        item.y += translation.y;
+        this.setAttr(item, 'x', item.x + translation.x);
+        this.setAttr(item, 'y', item.y + translation.y);
+
         if (isTrueState(parent)) {
           if (!Array.isArray(parent.items))
             observableModel.changeValue(parent, 'items', []);
@@ -550,6 +520,40 @@ const editingModel = (function() {
       });
     },
 
+    doDelete: function() {
+      this.reduceSelection();
+      this.model.copyPasteModel.doDelete(this.deleteItems.bind(this));
+    },
+
+    doCopy: function() {
+      const selectionModel = this.model.selectionModel;
+      selectionModel.contents().forEach(function(item) {
+        if (isTransition(item))
+          selectionModel.remove(item);
+      });
+      this.selectInteriorTransitions();
+      this.reduceSelection();
+      this.model.copyPasteModel.doCopy(this.copyItems.bind(this));
+    },
+
+    doCut: function() {
+      this.doCopy();
+      this.doDelete();
+    },
+
+    doPaste: function() {
+      const copyPasteModel = this.model.copyPasteModel;
+      copyPasteModel.getScrap().forEach(function(item) {
+        // Offset pastes so the user can see them.
+        if (isState(item)) {
+          item.x += 16;
+          item.y += 16;
+        }
+      });
+      copyPasteModel.doPaste(this.copyItems.bind(this),
+                             this.addItems.bind(this));
+    },
+
     doTogglePalette: function() {
       const model = this.model;
       this.reduceSelection();
@@ -574,9 +578,10 @@ const editingModel = (function() {
             transitions = graphInfo.transitions;
       // Eliminate dangling transitions.
       transitions.forEach(function(transition) {
-        const src = getTransitionSrc(transition),
-              dst = getTransitionDst(transition);
-        if (!src || !dst) {
+        const src = self.getTransitionSrc(transition),
+              dst = self.getTransitionDst(transition);
+        if (!src || !graphInfo.statesAndStatecharts.has(src) ||
+            !dst || !graphInfo.statesAndStatecharts.has(dst)) {
           self.deleteItem(transition);
           return;
         }
@@ -609,6 +614,9 @@ const editingModel = (function() {
 
     instance.model = model;
     instance.statechart = model.root;
+
+    instance.getTransitionSrc = model.referencingModel.getReferenceFn('srcId');
+    instance.getTransitionDst = model.referencingModel.getReferenceFn('dstId');
 
     model.transactionModel.addHandler('transactionEnding',
                                       transaction => instance.makeConsistent());
@@ -799,13 +807,17 @@ const layoutModel = (function() {
         if (xMin < 0) {
           xMax -= xMin;
           for (let i = 0; i < items.length; i++) {
-            observableModel.changeValue(items[i], 'x', items[i].x - xMin);
+            const item = items[i];
+            if (isTransition(item)) continue;
+            observableModel.changeValue(items[i], 'x', item.x - xMin);
           }
         }
         if (yMin < 0) {
           yMax -= yMin;
           for (let i = 0; i < items.length; i++) {
-            observableModel.changeValue(items[i], 'y', items[i].y - yMin);
+            const item = items[i];
+            if (isTransition(item)) continue;
+            observableModel.changeValue(items[i], 'y', item.y - yMin);
           }
         }
         observableModel.changeValue(statechart, 'x', 0);
@@ -816,8 +828,8 @@ const layoutModel = (function() {
     },
 
     layoutTransition_: function(transition) {
-      const src = getTransitionSrc(transition),
-            dst = getTransitionDst(transition),
+      const src = this.getTransitionSrc(transition),
+            dst = this.getTransitionDst(transition),
             p1 = src ? this.stateParamToPoint(src, transition.t1) : transition[_p1],
             p2 = dst ? this.stateParamToPoint(dst, transition.t2) : transition[_p2];
       if (p1 && p2) {
@@ -884,12 +896,15 @@ const layoutModel = (function() {
     instance.model = model;
     instance.statechart = model.root;
 
-    model.observableModel.addHandler('changed',
-                                     change => instance.onChanged_(change));
-
     instance.changedTransitions_ = new Set();
     instance.changedStates_ = new Set();
     instance.changedTopLevelStates_ = new Set();
+
+    instance.getTransitionSrc = model.referencingModel.getReferenceFn('srcId');
+    instance.getTransitionDst = model.referencingModel.getReferenceFn('dstId');
+
+    model.observableModel.addHandler('changed',
+                                     change => instance.onChanged_(change));
 
     // Initialize our data.
     visitItem(instance.statechart, item => instance.update_(item));
@@ -1637,6 +1652,8 @@ Editor.prototype.onKeyDown = function(e) {
 
 return {
   editingModel: editingModel,
+  layoutModel: layoutModel,
+  statechartModel: statechartModel,
 
   // normalMode: normalMode,
   // highlightMode: highlightMode,

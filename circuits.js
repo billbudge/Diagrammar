@@ -2725,10 +2725,10 @@ Editor.prototype.onKeyDown = function(e) {
 }
 
 return {
-  signatureModel: signatureModel,
   circuitModel: circuitModel,
   editingModel: editingModel,
   layoutModel: layoutModel,
+  signatureModel: signatureModel,
 
   // normalMode: normalMode,
   // highlightMode: highlightMode,

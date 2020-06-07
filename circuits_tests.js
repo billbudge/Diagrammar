@@ -111,22 +111,20 @@ function addWire(test, src, srcPin, dst, dstPin) {
 }
 
 function newTestCircuitModel() {
-  let circuit = newCircuit();
-  let test = circuits.circuitModel.extend(circuit),
-      dataModel = test.model.dataModel;
-  circuits.signatureModel.extend(circuit);
-  circuit.dataModel.initialize();
+  const model = newCircuit(),
+        test = circuits.circuitModel.extend(model);
+  circuits.signatureModel.extend(model);
+  model.dataModel.initialize();
   return test;
 }
 
 function newTestEditingModel() {
-  let circuit = newCircuit();
-  let test = circuits.editingModel.extend(circuit),
-      dataModel = test.model.dataModel;
-  circuits.signatureModel.extend(circuit);
-  circuits.layoutModel.extend(circuit);
-  circuit.dataModel.initialize();
-  circuit.layoutModel.initialize();
+  const model = newCircuit(),
+        test = circuits.editingModel.extend(model);
+  circuits.signatureModel.extend(model);
+  circuits.layoutModel.extend(model);
+  model.dataModel.initialize();
+  model.layoutModel.initialize();
   return test;
 }
 
@@ -135,8 +133,8 @@ function doInitialize(item) {
 }
 
 test("circuits.signatureModel", function() {
-  let circuit = newCircuit();
-  let test = circuits.signatureModel.extend(circuit);
+  const model = newCircuit(),
+        test = circuits.signatureModel.extend(model);
   ok(test);
   ok(test.model);
   ok(test.model.dataModel);
@@ -211,8 +209,6 @@ test("circuits.circuitModel.extend", function() {
 
 test("circuits.circuitModel.getGraphInfo", function() {
   const test = newTestCircuitModel(),
-        circuit = test.model,
-        items = circuit.root.items,
         elem1 = addElement(test, newTypedElement('[vv,v]')),
         elem2 = addElement(test, newTypedElement('[vv,v]')),
         wire1 = addWire(test, elem1, 0, elem2, 1);
@@ -250,8 +246,6 @@ test("circuits.circuitModel.getGraphInfo", function() {
 
 test("circuits.circuitModel.getSubgraphInfo", function() {
   const test = newTestCircuitModel(),
-        circuit = test.model,
-        items = circuit.root.items,
         elem1 = addElement(test, newTypedElement('[vv,v]')),
         elem2 = addElement(test, newTypedElement('[vv,v]')),
         wire1 = addWire(test, elem1, 0, elem2, 1);
@@ -291,8 +285,6 @@ function testIterator(fn, element, items) {
 
 test("circuits.circuitModel.iterators", function() {
   const test = newTestCircuitModel(),
-        circuit = test.model,
-        items = circuit.root.items,
         elem1 = addElement(test, newTypedElement('[vv,v]')),
         elem2 = addElement(test, newTypedElement('[vv,v]')),
         wire1 = addWire(test, elem1, 0, elem2, 0),
@@ -313,7 +305,7 @@ test("circuits.circuitModel.iterators", function() {
 
 test("circuits.editingAndMastering", function() {
   let test = newTestEditingModel(),
-      circuit = test.model,
+      circuit = test.model.root,
       signatureModel = test.model.signatureModel;
   let types = [], masters = [];
   function onMasterInserted(type, master) {
@@ -325,7 +317,7 @@ test("circuits.editingAndMastering", function() {
   // Add an item.
   let item1 = newTypedElement('[vv,v]');
   test.newItem(item1);
-  test.addItem(item1, circuit.root);
+  test.addItem(item1, circuit);
   // Check master
   let type = item1.master;
   deepEqual(stringifyMaster(signatureModel.getMaster(item1)), type);
@@ -334,7 +326,7 @@ test("circuits.editingAndMastering", function() {
 });
 
 test("circuits.editingModel", function() {
-  let test = newTestEditingModel();
+  const test = newTestEditingModel();
   ok(test);
   ok(test.model);
   ok(test.model.dataModel);
@@ -342,7 +334,7 @@ test("circuits.editingModel", function() {
 });
 
 test("circuits.editingModel.newItem", function() {
-  let test = newTestEditingModel();
+  const test = newTestEditingModel();
   test.model.dataModel.addInitializer(doInitialize);
   let item1 = newElement();
   test.newItem(item1);
@@ -351,55 +343,58 @@ test("circuits.editingModel.newItem", function() {
 });
 
 test("circuits.editingModel.addDeleteItem", function() {
-  let test = newTestEditingModel(),
-      circuit = test.model;
+  const test = newTestEditingModel(),
+        model = test.model,
+        circuit = model.root;
   // Add an item.
   let item1 = newElement();
   test.newItem(item1);
-  test.addItem(item1, circuit.root);
-  deepEqual(circuit.root.items, [item1]);
-  deepEqual(circuit.hierarchicalModel.getParent(item1), circuit.root);
+  test.addItem(item1, circuit);
+  deepEqual(circuit.items, [item1]);
+  deepEqual(model.hierarchicalModel.getParent(item1), circuit);
   // Delete the item.
   test.deleteItem(item1);
-  deepEqual(circuit.root.items, []);
+  deepEqual(circuit.items, []);
 });
 
 test("circuits.editingModel.connectInput", function() {
-  let test = newTestEditingModel(),
-      circuit = test.model;
+  const test = newTestEditingModel(),
+        model = test.model,
+        circuit = model.root;
   // Add an item.
   let item1 = newElement();
   test.newItem(item1);
-  test.addItem(item1, circuit.root);
+  test.addItem(item1, circuit);
   // Connect input 0.
   test.connectInput(item1, 0);
-  deepEqual(circuit.root.items.length, 3);
-  let junction = circuit.root.items[1],
-      wire = circuit.root.items[2];
+  deepEqual(circuit.items.length, 3);
+  let junction = circuit.items[1],
+      wire = circuit.items[2];
   deepEqual(junction.elementType, 'input');
   deepEqual(test.getWireSrc(wire), junction);
   deepEqual(test.getWireDst(wire), item1);
 });
 
 test("circuits.editingModel.connectOutput", function() {
-  let test = newTestEditingModel(),
-      circuit = test.model;
+  const test = newTestEditingModel(),
+        model = test.model,
+        circuit = model.root;
   // Add an item.
   let item1 = newElement();
   test.newItem(item1);
-  test.addItem(item1, circuit.root);
+  test.addItem(item1, circuit);
   // Connect output 0.
   test.connectOutput(item1, 0);
-  deepEqual(circuit.root.items.length, 3);
-  let junction = circuit.root.items[1],
-      wire = circuit.root.items[2];
+  deepEqual(circuit.items.length, 3);
+  let junction = circuit.items[1],
+      wire = circuit.items[2];
   deepEqual(junction.elementType, 'output');
   deepEqual(test.getWireSrc(wire), item1);
   deepEqual(test.getWireDst(wire), junction);
 });
 
 test("circuits.editingModel.getLabel", function() {
-  let test = newTestEditingModel();
+  const test = newTestEditingModel();
   let input = addElement(test, newInputJunction('[,*(foo)](bar)'));
   deepEqual(test.getLabel(input), 'foo');
 
@@ -411,8 +406,8 @@ test("circuits.editingModel.getLabel", function() {
 });
 
 test("circuits.editingModel.setLabel", function() {
-  let test = newTestEditingModel(),
-      dataModel = test.model.dataModel;
+  const test = newTestEditingModel(),
+        dataModel = test.model.dataModel;
   let input = addElement(test, newInputJunction('[,*]'));
   deepEqual(test.setLabel(input, 'f'), '[,*(f)]');
   deepEqual(test.setLabel(input, ''), '[,*]');
@@ -442,8 +437,8 @@ test("circuits.editingModel.setLabel", function() {
 });
 
 test("circuits.editingModel.changeType", function() {
-  let test = newTestEditingModel(),
-      dataModel = test.model.dataModel;
+  const test = newTestEditingModel(),
+        dataModel = test.model.dataModel;
   let input = addElement(test, newInputJunction('[,*(f)]'));
   deepEqual(test.changeType(input, '[v,v]'), '[,[v,v](f)]');
   deepEqual(test.changeType(input, '*'), '[,*(f)]');
@@ -462,12 +457,11 @@ test("circuits.editingModel.changeType", function() {
 });
 
 test("circuits.editingModel.completeGroup", function() {
-  let test = newTestEditingModel(),
-      circuit = test.model,
-      items = circuit.root.items,
-      elem1 = addElement(test, newTypedElement('[vv,v]')),
-      elem2 = addElement(test, newTypedElement('[vv,v]')),
-      wire = addWire(test, elem1, 0, elem2, 1);
+  const test = newTestEditingModel(),
+        items = test.model.root.items,
+        elem1 = addElement(test, newTypedElement('[vv,v]')),
+        elem2 = addElement(test, newTypedElement('[vv,v]')),
+        wire = addWire(test, elem1, 0, elem2, 1);
   // Complete the two element group.
   test.completeGroup([elem1, elem2]);
   deepEqual(items.length, 11);
@@ -477,15 +471,13 @@ test("circuits.editingModel.completeGroup", function() {
 });
 
 test("circuits.editingModel.getConnectedElements", function() {
-  let test = newTestEditingModel(),
-      circuit = test.model,
-      items = circuit.root.items,
-      elem1 = addElement(test, newTypedElement('[vv,v]')),
-      elem2 = addElement(test, newTypedElement('[vv,v]')),
-      elem3 = addElement(test, newTypedElement('[vv,v]')),
-      wire1 = addWire(test, elem1, 0, elem2, 1),
-      wire2 = addWire(test, elem2, 0, elem3, 1),
-      selectionModel = circuit.selectionModel;
+  const test = newTestEditingModel(),
+        items = test.model.root.items,
+        elem1 = addElement(test, newTypedElement('[vv,v]')),
+        elem2 = addElement(test, newTypedElement('[vv,v]')),
+        elem3 = addElement(test, newTypedElement('[vv,v]')),
+        wire1 = addWire(test, elem1, 0, elem2, 1),
+        wire2 = addWire(test, elem2, 0, elem3, 1);
   // Get upstream and downstream connected elements from elem2.
   let all = Array.from(test.getConnectedElements([elem2], true, true));
   deepEqual(all.length, 3);
@@ -500,12 +492,11 @@ test("circuits.editingModel.getConnectedElements", function() {
 });
 
 test("circuits.editingModel.openElements", function() {
-  let test = newTestEditingModel(),
-      circuit = test.model,
-      items = circuit.root.items,
-      elem1 = addElement(test, newTypedElement('[vv,v]')),
-      elem2 = addElement(test, newTypedElement('[v(a)v(b),v(c)]')),
-      wire = addWire(test, elem1, 0, elem2, 1);
+  const test = newTestEditingModel(),
+        items = test.model.root.items,
+        elem1 = addElement(test, newTypedElement('[vv,v]')),
+        elem2 = addElement(test, newTypedElement('[v(a)v(b),v(c)]')),
+        wire = addWire(test, elem1, 0, elem2, 1);
   // Open element #2.
   test.openElements([elem2]);
   ok(items.includes(elem1));
@@ -520,12 +511,11 @@ test("circuits.editingModel.openElements", function() {
 });
 
 test("circuits.editingModel.closeFunction", function() {
-  let test = newTestEditingModel(),
-      circuit = test.model,
-      items = circuit.root.items,
-      elem1 = addElement(test, newTypedElement('[vv,v]')),
-      elem2 = addElement(test, newTypedElement('[vv,v]')),
-      wire = addWire(test, elem1, 0, elem2, 1);
+  const test = newTestEditingModel(),
+        items = test.model.root.items,
+        elem1 = addElement(test, newTypedElement('[vv,v]')),
+        elem2 = addElement(test, newTypedElement('[vv,v]')),
+        wire = addWire(test, elem1, 0, elem2, 1);
   // Close element #2.
   test.closeElements([elem2]);
   deepEqual(items.length, 3);
@@ -539,14 +529,13 @@ test("circuits.editingModel.closeFunction", function() {
 });
 
 test("circuits.editingModel.replaceElement", function() {
-  let test = newTestEditingModel(),
-      circuit = test.model,
-      items = circuit.root.items,
-      elem1 = addElement(test, newTypedElement('[vv,v]')),
-      elem2 = addElement(test, newTypedElement('[v(a)v(b),v(c)]')),
-      wire = addWire(test, elem1, 0, elem2, 1),
-      replacement1 = addElement(test, newTypedElement('[vv,v]')),
-      replacement2 = addElement(test, newTypedElement('[,v]'));
+  const test = newTestEditingModel(),
+        items = test.model.root.items,
+        elem1 = addElement(test, newTypedElement('[vv,v]')),
+        elem2 = addElement(test, newTypedElement('[v(a)v(b),v(c)]')),
+        wire = addWire(test, elem1, 0, elem2, 1),
+        replacement1 = addElement(test, newTypedElement('[vv,v]')),
+        replacement2 = addElement(test, newTypedElement('[,v]'));
   // Replace elem1 with replacement1. The wire should still be connected.
   test.replaceElement(elem1, replacement1);
   deepEqual(items.length, 4);
@@ -564,8 +553,7 @@ test("circuits.editingModel.replaceElement", function() {
 
 test("circuits.editingModel.build", function() {
   const test = newTestEditingModel(),
-        circuit = test.model,
-        items = circuit.root.items,
+        items = test.model.root.items,
         elem = addElement(test, newTypedElement('[vv,v]')),
         input1 = addElement(test, newInputJunction('[*,v]')),
         input2 = addElement(test, newInputJunction('[*,v(f)]')),
@@ -579,12 +567,11 @@ test("circuits.editingModel.build", function() {
 });
 
 test("circuits.editingModel.wireConsistency", function() {
-  let test = newTestEditingModel(),
-      circuit = test.model,
-      items = circuit.root.items,
-      elem1 = addElement(test, newInputJunction('[,v]')),
-      elem2 = addElement(test, newTypedElement('[vv,v]')),
-      wire = addWire(test, elem1, 0, elem2, 1);
+  const test = newTestEditingModel(),
+        items = test.model.root.items,
+        elem1 = addElement(test, newInputJunction('[,v]')),
+        elem2 = addElement(test, newTypedElement('[vv,v]')),
+        wire = addWire(test, elem1, 0, elem2, 1);
 
   // Remove element and make sure dependent wire is also deleted.
   test.deleteItem(elem1);
