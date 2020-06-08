@@ -374,11 +374,6 @@ const editingModel = (function() {
             break;
           }
         }
-        // If this leaves an empty statechart (except for the root), delete it.
-        if (isStatechart(parent) && items.length === 0 &&
-            hierarchicalModel.getParent(parent)) {
-          this.deleteItem(parent);
-        }
       }
     },
 
@@ -415,36 +410,15 @@ const editingModel = (function() {
       return copies;
     },
 
-    // Returns a value indicating if the item can be added to the state
-    // without violating statechart constraints.
-    canAddItemToStatechart: function(item, statechart) {
-      function containsType(type) {
-        const items = statechart.items;
-        for (let i = 0; i < items.length; i++) {
-          if (items[i].type === type)
-            return true;
-        }
-        return false;
-      }
-
-      // TODO enable constraints with palette items excluded.
-      // switch (item.type) {
-      //   case 'start':
-      //     return !containsType('start');
-      // }
-      return true;
-    },
-
-    // Creates a new statechart to hold the given item.
-    createStatechart: function(item) {
+    // Creates a new statechart.
+    createStatechart: function() {
       const statechart = {
         type: 'statechart',
         x: 0,
         y: 0,
         width: 0,
         height: 0,
-        name: '',
-        items: [ item ],
+        items: new Array(),
       };
       this.model.dataModel.initialize(statechart);
       return statechart;
@@ -465,48 +439,83 @@ const editingModel = (function() {
       items.forEach(item => self.newItem(item));
     },
 
+    isTopLevelStatechart: function(item) {
+      return isStatechart(item) &&
+             !this.model.hierarchicalModel.getParent(item);
+    },
+
+    // Returns a value indicating if the item can be added to the state
+    // without violating statechart constraints.
+    canAddItemToStatechart: function(newItem, statechart) {
+      if (isPaletted(newItem))
+        return true;
+
+      switch (newItem.type) {
+        case 'state':
+        case 'transition':
+          return true;
+        case 'start': {
+          for (let item of statechart.items) {
+            if (item.type == 'start' && item !== newItem)
+              return false;
+          }
+          return true;
+        }
+      }
+    },
+
+    findChildStatechart: function(state, newItem) {
+      if (state.items) {
+        for (let i = 0; i < state.items.length; i++) {
+          if (this.canAddItemToStatechart(newItem, state.items[i]))
+            return i;
+        }
+      }
+      return -1;
+    },
+
+    findOrCreateChildStatechart: function(state, newItem) {
+      let i = this.findChildStatechart(state, newItem);
+      if (i < 0) {
+        if (!state.items)
+          this.setAttr(state, 'items', new Array());
+        i = state.items.length;
+        const statechart = this.createStatechart();
+        this.model.observableModel.insertElement(state, 'items', i, statechart);
+      }
+      return state.items[i];
+    },
+
     addItem: function(item, parent) {
       const model = this.model,
             observableModel = model.observableModel,
             hierarchicalModel = model.hierarchicalModel,
             oldParent = hierarchicalModel.getParent(item);
-      if (oldParent === parent)
-        return;
-      let itemToAdd = item;
-      if (isContainable(item)) {
+
+      if (isState(item)) {
         const translatableModel = model.translatableModel,
               translation = translatableModel.getToParent(item, parent);
         this.setAttr(item, 'x', item.x + translation.x);
         this.setAttr(item, 'y', item.y + translation.y);
-
-        if (isTrueState(parent)) {
-          if (!Array.isArray(parent.items))
-            observableModel.changeValue(parent, 'items', []);
-          if (parent.items.length === 0) {
-            itemToAdd = this.createStatechart(item);
-          } else {
-            parent = parent.items[0];
-            if (!parent.items)
-              parent.items = [];
-          }
-        } else if (isStatechart(parent) &&
-                   !this.canAddItemToStatechart(item, parent)) {
-          parent = hierarchicalModel.getParent(parent);
-          const parentItems = parent.items,
-                lastStatechart = parentItems[parentItems.length - 1];
-          itemToAdd = this.createStatechart(item);
-          this.setAttr(itemToAdd, 'y', lastStatechart.y + lastStatechart.height);
-          this.setAttr(item, 'y', 16);
-          // TODO determine horizontal / vertical flow direction from item
-          // position in statechart.
+      }
+      if (isState(parent)) {
+        if (isPseudostate(parent)) return;
+        parent = this.findOrCreateChildStatechart(parent, item);
+      } else if (isStatechart(parent)) {
+        if (!this.isTopLevelStatechart(parent) &&
+            !this.canAddItemToStatechart(item, parent)) {
+          const superState = hierarchicalModel.getParent(parent);
+          parent = this.findOrCreateChildStatechart(superState, item);
         }
       }
-      if (oldParent !== parent) {
-        if (oldParent)            // if null, it's a new item.
-          this.deleteItem(item);  // notifies observers
-        observableModel.insertElement(parent, 'items', parent.items.length, itemToAdd);
-      }
-      return itemToAdd;
+      // At this point we can add item to parent.
+
+      if (oldParent === parent)
+        return;
+      if (oldParent)
+        this.deleteItem(item);
+      observableModel.insertElement(parent, 'items', parent.items.length, item);
+      return item;
     },
 
     addItems: function(items) {
@@ -514,9 +523,8 @@ const editingModel = (function() {
             statechart = this.statechart,
             statechartItems = statechart.items;
       items.forEach(function(item) {
-        statechartItems.push(item);
+        model.observableModel.insertElement(statechart, 'items', statechartItems.length, item);
         model.selectionModel.add(item);
-        model.observableModel.onElementInserted(statechart, 'items', statechartItems.length - 1);
       });
     },
 
@@ -574,10 +582,9 @@ const editingModel = (function() {
             hierarchicalModel = model.hierarchicalModel,
             selectionModel = model.selectionModel,
             observableModel = model.observableModel,
-            graphInfo = model.statechartModel.getGraphInfo(),
-            transitions = graphInfo.transitions;
+            graphInfo = model.statechartModel.getGraphInfo();
       // Eliminate dangling transitions.
-      transitions.forEach(function(transition) {
+      graphInfo.transitions.forEach(function(transition) {
         const src = self.getTransitionSrc(transition),
               dst = self.getTransitionDst(transition);
         if (!src || !graphInfo.statesAndStatecharts.has(src) ||
@@ -591,6 +598,13 @@ const editingModel = (function() {
           self.deleteItem(transition);
           self.addItem(transition, lca);
         }
+      });
+      // Delete any empty statecharts (except for the root statechart).
+      graphInfo.statesAndStatecharts.forEach(function(item) {
+        if (isStatechart(item) &&
+            !self.isTopLevelStatechart(item) &&
+            item.items.length === 0)
+          self.deleteItem(item);
       });
     },
   }
@@ -809,7 +823,7 @@ const layoutModel = (function() {
           for (let i = 0; i < items.length; i++) {
             const item = items[i];
             if (isTransition(item)) continue;
-            observableModel.changeValue(items[i], 'x', item.x - xMin);
+            observableModel.changeValue(item, 'x', item.x - xMin);
           }
         }
         if (yMin < 0) {
@@ -817,7 +831,7 @@ const layoutModel = (function() {
           for (let i = 0; i < items.length; i++) {
             const item = items[i];
             if (isTransition(item)) continue;
-            observableModel.changeValue(items[i], 'y', item.y - yMin);
+            observableModel.changeValue(item, 'y', item.y - yMin);
           }
         }
         observableModel.changeValue(statechart, 'x', 0);

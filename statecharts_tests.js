@@ -14,20 +14,34 @@ function newStatechart() {
   };
 }
 
+let id = 1;
 function newState(x, y) {
   return {
     type: "state",
+    id: id++,
     x: x || 0,
     y: y || 0,
   };
 }
 
-function newPseudoState(x, y, type) {
+function newPseudoState(type, x, y) {
   return {
     type: type,
     x: x || 0,
     y: y || 0,
   };
+}
+
+function getId(item) {
+  return item.id;
+}
+
+function newTransition(src, dst) {
+  return {
+    type: 'transition',
+    srcId: getId(src),
+    dstId: getId(dst),
+  }
 }
 
 function addState(test, state) {
@@ -42,16 +56,10 @@ function addState(test, state) {
   return state;
 }
 
-function addTransition(test, src, dst) {
+function addTransition(test, transition) {
   const model = test.model,
-        dataModel = model.dataModel,
         observableModel = model.observableModel,
-        parent = dataModel.root;
-  let transition = {
-    type: 'transition',
-    srcId: dataModel.getId(src),
-    dstId: dataModel.getId(dst),
-  }
+        parent = model.dataModel.root;
   observableModel.insertElement(parent, 'items', parent.items.length, transition);
   return transition;
 }
@@ -94,7 +102,7 @@ test("statecharts.statechartModel.getGraphInfo", function() {
         items = model.root.items,
         state1 = addState(test, newState()),
         state2 = addState(test, newState()),
-        transition1 = addTransition(test, state1, state2);
+        transition1 = addTransition(test, newTransition(state1, state2));
   let graph;
 
   graph = test.getGraphInfo([state1, state2]);
@@ -109,8 +117,8 @@ test("statecharts.statechartModel.getGraphInfo", function() {
 
   const input = addState(test, newState()),
         output = addState(test, newState()),
-        transition2 = addTransition(test, input, state1),
-        transition3 = addTransition(test, state2, output);
+        transition2 = addTransition(test, newTransition(input, state1)),
+        transition3 = addTransition(test, newTransition(state2, output));
 
   graph = test.getGraphInfo();
   ok(graph.statesAndStatecharts.has(state1));
@@ -133,7 +141,7 @@ test("statecharts.statechartModel.getSubgraphInfo", function() {
         items = model.root.items,
         state1 = addState(test, newState()),
         state2 = addState(test, newState()),
-        transition1 = addTransition(test, state1, state2);
+        transition1 = addTransition(test, newTransition(state1, state2));
   let subgraph;
 
   subgraph = test.getSubgraphInfo([state1, state2]);
@@ -148,8 +156,8 @@ test("statecharts.statechartModel.getSubgraphInfo", function() {
 
   const input = addState(test, newState()),
         output = addState(test, newState()),
-        transition2 = addTransition(test, input, state1),
-        transition3 = addTransition(test, state2, output);
+        transition2 = addTransition(test, newTransition(input, state1)),
+        transition3 = addTransition(test, newTransition(state2, output));
 
   subgraph = test.getSubgraphInfo([state1, state2]);
   ok(subgraph.statesAndStatecharts.has(state1));
@@ -176,12 +184,12 @@ test("statecharts.statechartModel.iterators", function() {
         items = model.root.items,
         state1 = addState(test, newState()),
         state2 = addState(test, newState()),
-        transition1 = addTransition(test, state1, state2),
+        transition1 = addTransition(test, newTransition(state1, state2)),
         input = addState(test, newState()),
         output = addState(test, newState()),
-        transition2 = addTransition(test, input, state1),
-        transition3 = addTransition(test, input, state2),
-        transition4 = addTransition(test, state2, output);
+        transition2 = addTransition(test, newTransition(input, state1)),
+        transition3 = addTransition(test, newTransition(input, state2)),
+        transition4 = addTransition(test, newTransition(state2, output));
 
   let subgraph = test.getSubgraphInfo([state1, state2]);
   testIterator(subgraph.iterators.forInTransitions, input, []);
@@ -198,12 +206,12 @@ test("statecharts.statechartModel.getTopLevelState", function() {
         items = model.root.items,
         state1 = addState(test, newState()),
         state2 = addState(test, newState()),
-        transition1 = addTransition(test, state1, state2),
+        transition1 = addTransition(test, newTransition(state1, state2)),
         input = addState(test, newState()),
         output = addState(test, newState()),
-        transition2 = addTransition(test, input, state1),
-        transition3 = addTransition(test, input, state2),
-        transition4 = addTransition(test, state2, output);
+        transition2 = addTransition(test, newTransition(input, state1)),
+        transition3 = addTransition(test, newTransition(input, state2)),
+        transition4 = addTransition(test, newTransition(state2, output));
 
   let subgraph = test.getSubgraphInfo([state1, state2]);
   testIterator(subgraph.iterators.forInTransitions, input, []);
@@ -254,35 +262,36 @@ test("statecharts.editingModel.addDeleteItem", function() {
   deepEqual(statechart.items, []);
 });
 
-// test("circuits.editingModel.getConnectedElements", function() {
-//   let test = newTestEditingModel(),
-//       circuit = test.model,
-//       items = circuit.root.items,
-//       elem1 = addElement(test, newTypedElement('[vv,v]')),
-//       elem2 = addElement(test, newTypedElement('[vv,v]')),
-//       elem3 = addElement(test, newTypedElement('[vv,v]')),
-//       wire1 = addWire(test, elem1, 0, elem2, 1),
-//       wire2 = addWire(test, elem2, 0, elem3, 1),
-//       selectionModel = circuit.selectionModel;
-//   // Get upstream and downstream connected elements from elem2.
-//   let all = Array.from(test.getConnectedElements([elem2], true, true));
-//   deepEqual(all.length, 3);
-//   ok(all.includes(elem1));
-//   ok(all.includes(elem2));
-//   ok(all.includes(elem3));
-//   // Get only downstream connected elements from elem2.
-//   let downstream = Array.from(test.getConnectedElements([elem2], false, true));
-//   deepEqual(downstream.length, 2);
-//   ok(downstream.includes(elem2));
-//   ok(downstream.includes(elem3));
-// });
-//
+test("statecharts.editingModel.findChildStatechart", function() {
+  let test = newTestEditingModel(),
+      items = test.model.root.items,
+      superState = addState(test, newState()),
+      state = newState(),
+      transition = newTransition(state, state),
+      start = newPseudoState('start');
+  // Primitive state has no statechart.
+  ok(test.findChildStatechart(superState, state) === -1);
+  ok(test.findChildStatechart(superState, start) === -1);
+  // Add a child statechart.
+  const statechart1 = test.findOrCreateChildStatechart(superState, state);
+  // Can add state.
+  ok(test.findChildStatechart(superState, state) === 0);
+  ok(test.findChildStatechart(superState, start) === 0);
+  statechart1.items.push(newState());
+  ok(test.findChildStatechart(superState, state) === 0);
+  ok(test.findChildStatechart(superState, start) === 0);
+  // Add a start state.
+  statechart1.items.push(newPseudoState('start'));
+  ok(test.findChildStatechart(superState, state) === 0);
+  ok(test.findChildStatechart(superState, start) === -1);
+});
+
 test("statecharts.editingModel.transitionConsistency", function() {
   let test = newTestEditingModel(),
       items = test.model.root.items,
       state1 = addState(test, newState()),
       state2 = addState(test, newState()),
-      transition = addTransition(test, state1, state2);
+      transition = addTransition(test, newTransition(state1, state2));
 
   // Remove element and make sure dependent wire is also deleted.
   test.deleteItem(state1);
