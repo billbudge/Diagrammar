@@ -411,11 +411,11 @@ const editingModel = (function() {
     },
 
     // Creates a new statechart.
-    createStatechart: function() {
+    createStatechart: function(y) {
       const statechart = {
         type: 'statechart',
         x: 0,
-        y: 0,
+        y: y || 0,
         width: 0,
         height: 0,
         items: new Array(),
@@ -480,11 +480,9 @@ const editingModel = (function() {
         if (!state.items)
           this.setAttr(state, 'items', new Array());
         i = state.items.length;
-        const statechart = this.createStatechart();
+        const y = this.model.layoutModel.getNextStatechartY(state);
+        const statechart = this.createStatechart(y);
         this.model.observableModel.insertElement(state, 'items', i, statechart);
-        // Layout the super state to set the statechart's position, so we can
-        // place the new child item correctly.
-        this.model.layoutModel.layoutState_(state);
       }
       return state.items[i];
     },
@@ -731,6 +729,15 @@ const layoutModel = (function() {
       return { width: width, height: height };
     },
 
+    getNextStatechartY: function(state) {
+      let y = 0;
+      if (state.items && state.items.length > 0) {
+        const lastStatechart = state.items[state.items.length - 1];
+        y = lastStatechart.y + lastStatechart.height;
+      }
+      return y;
+    },
+
     updateLayout: function() {
       const self = this,
             graphInfo = this.model.statechartModel.getGraphInfo();
@@ -862,7 +869,7 @@ const layoutModel = (function() {
       }
     },
 
-    update_: function (item) {
+    update: function (item) {
       const self = this;
       if (isTransition(item)) {
         this.changedTransitions_.add(item);
@@ -882,13 +889,12 @@ const layoutModel = (function() {
       switch (change.type) {
         case 'change':
         case 'remove': {
-          this.update_(item);
+          this.update(item);
           break;
         }
         case 'insert': {
           const newValue = item[attr][change.index];
-          // this.update_(item);
-          this.update_(newValue);
+          this.update(newValue);
           break;
         }
       }
@@ -918,7 +924,7 @@ const layoutModel = (function() {
                                      change => instance.onChanged_(change));
 
     // Initialize our data.
-    visitItem(instance.statechart, item => instance.update_(item));
+    visitItem(instance.statechart, item => instance.update(item));
 
     model.layoutModel = instance;
     return instance;
@@ -1023,12 +1029,14 @@ Renderer.prototype.drawState = function(state, mode) {
 Renderer.prototype.hitTestState = function(state, p, tol, mode) {
   const theme = this.theme, r = theme.radius,
         rect = this.layoutModel.getItemRect(state),
-        x = rect.x, y = rect.y, w = rect.w, h = rect.h;
-  const lineBase = y + theme.fontSize + theme.textLeading,
-        knobbyRadius = theme.knobbyRadius;
-  if (hitTestArrow(this, x + w + theme.arrowSize, lineBase, p, tol))
-    return { arrow: true };
-  return diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
+        x = rect.x, y = rect.y, w = rect.w, h = rect.h,
+        result = diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
+  if (result) {
+    const lineBase = y + theme.fontSize + theme.textLeading;
+    if (hitTestArrow(this, x + w + theme.arrowSize, lineBase, p, tol))
+      result.arrow = true;
+  }
+  return result;
 }
 
 Renderer.prototype.drawPseudoState = function(state, mode) {
@@ -1358,7 +1366,7 @@ Editor.prototype.getFirstHit = function(hitList, filterFn) {
 }
 
 function isStateBorder(hitInfo, model) {
-  return isState(hitInfo.item) && hitInfo.border && !hitInfo.arrow;
+  return isState(hitInfo.item) && hitInfo.border;
 }
 
 function isDraggable(hitInfo, model) {
@@ -1530,6 +1538,7 @@ Editor.prototype.onDrag = function(p0, p) {
         observableModel.changeValue(dragItem, 't1', t1);
       } else {
         dragItem[_p1] = cp;
+        layoutModel.update(dragItem);  // manually force layout.
       }
       break;
     case connectTransitionDst:
@@ -1547,6 +1556,7 @@ Editor.prototype.onDrag = function(p0, p) {
         observableModel.changeValue(dragItem, 't2', t2);
       } else {
         dragItem[_p2] = cp;
+        layoutModel.update(dragItem);  // manually force layout.
       }
       break;
   }
