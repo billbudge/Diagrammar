@@ -29,9 +29,8 @@ let ctx = canvas.getContext('2d');
 
 let textBox = document.getElementById('text_input');
 
-let theme = diagrams.theme.create(),  // or createBlueprint
+let theme = diagrams.theme.createDefault(),  // or createBlueprint
     canvasController = new diagrams.CanvasController(canvas, ctx, theme),
-    // TODO text editing layer?
     textInputController = new diagrams.TextInputController(text_input, theme),
     statechartModel = { root: statechart_data },
     circuitModel = { root: circuit_data },
@@ -39,8 +38,8 @@ let theme = diagrams.theme.create(),  // or createBlueprint
 
 document.bgColor = theme.bgColor;
 
-var statechartEditor = new statecharts.Editor(statechartModel),
-    circuitEditor = new circuits.Editor(circuitModel, textInputController),
+var statechartEditor = new statecharts.Editor(statechartModel, theme),
+    circuitEditor = new circuits.Editor(circuitModel, theme, textInputController),
     panZoomLayer = new diagrams.CanvasPanZoomLayer(),
     shapeEditor = new shapes.Editor(shapeModel);
 

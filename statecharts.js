@@ -492,12 +492,6 @@ const editingModel = (function() {
             hierarchicalModel = model.hierarchicalModel,
             oldParent = hierarchicalModel.getParent(item);
 
-      if (isState(item)) {
-        const translatableModel = model.translatableModel,
-              translation = translatableModel.getToParent(item, parent);
-        this.setAttr(item, 'x', item.x + translation.x);
-        this.setAttr(item, 'y', item.y + translation.y);
-      }
       if (isState(parent)) {
         if (isPseudostate(parent)) return;
         parent = this.findOrCreateChildStatechart(parent, item);
@@ -509,6 +503,12 @@ const editingModel = (function() {
         }
       }
       // At this point we can add item to parent.
+      if (isState(item)) {
+        const translatableModel = model.translatableModel,
+              translation = translatableModel.getToParent(item, parent);
+        this.setAttr(item, 'x', item.x + translation.x);
+        this.setAttr(item, 'y', item.y + translation.y);
+      }
 
       if (oldParent === parent)
         return;
@@ -646,28 +646,17 @@ const editingModel = (function() {
 
 //------------------------------------------------------------------------------
 
-const stateMinWidth = 100,
-      stateMinHeight = 60;
-
-const radius = 8,
-      textIndent = 8,
-      textLeading = 6,
-      arrowSize = 8,
-      knobbyRadius = 4,
-      padding = 8;
-
 const _bezier = Symbol('bezier');
 
 const layoutModel = (function() {
   const proto = {
-    initialize: function(ctx, theme) {
+    initialize: function(ctx) {
       this.ctx = ctx ||
         {
           save: function() {},
           restore: function() {},
           measureText: () => { return { width: 10, height: 10 }},
         };
-      this.theme = theme || diagrams.theme.create();
     },
 
     getSize: function(item) {
@@ -679,7 +668,7 @@ const layoutModel = (function() {
           h = item.height;
           break;
         case 'start':
-          w = h = 2 * radius;
+          w = h = 2 * this.theme.radius;
           break;
       }
       return { w: w, h: h };
@@ -711,7 +700,7 @@ const layoutModel = (function() {
     },
 
     statePointToParam: function(state, p) {
-      const r = radius,
+      const r = this.theme.radius,
             rect = this.getItemRect(state);
       if (isTrueState(state))
         return diagrams.rectPointToParam(rect.x, rect.y, rect.w, rect.h, p);
@@ -720,7 +709,7 @@ const layoutModel = (function() {
     },
 
     stateParamToPoint: function(state, t) {
-      const r = radius,
+      const r = this.theme.radius,
             rect = this.getItemRect(state);
       if (isTrueState(state))
         return diagrams.roundRectParamToPoint(rect.x, rect.y, rect.w, rect.h, r, t);
@@ -729,8 +718,9 @@ const layoutModel = (function() {
     },
 
     getStateMinSize: function(state) {
-      const ctx = this.ctx, theme = this.theme, r = radius;
-      let width = this.stateMinWidth, height = this.stateMinHeight;
+      const ctx = this.ctx, theme = this.theme,
+            r = theme.radius;
+      let width = theme.stateMinWidth, height = theme.stateMinHeight;
       if (state.type !== 'state')
         return;
       width = Math.max(width, ctx.measureText(state.name).width + 2 * r);
@@ -774,9 +764,10 @@ const layoutModel = (function() {
 
     // Layout a state.
     layoutState_: function(state) {
-      const observableModel = this.model.observableModel;
-      let width = Math.max(state.width, stateMinWidth),
-          height = Math.max(state.height, stateMinHeight);
+      const theme = this.theme,
+            observableModel = this.model.observableModel;
+      let width = Math.max(state.width, theme.stateMinWidth),
+          height = Math.max(state.height, theme.stateMinHeight);
 
       const statecharts = state.items;
       let statechartOffsetY = 0;
@@ -809,7 +800,8 @@ const layoutModel = (function() {
     // Make sure a statechart is big enough to enclose its contents. Statecharts
     // are always sized automatically.
     layoutStatechart_: function(statechart) {
-      const items = statechart.items;
+      const padding = this.theme.padding,
+            items = statechart.items;
       if (items) {
         // Get extents of child states.
         const r = this.getBounds(items),
@@ -899,7 +891,7 @@ const layoutModel = (function() {
     },
   }
 
-  function extend(model) {
+  function extend(model, theme) {
     dataModels.dataModel.extend(model);
     dataModels.observableModel.extend(model);
     dataModels.referencingModel.extend(model);
@@ -909,6 +901,7 @@ const layoutModel = (function() {
     let instance = Object.create(proto);
     instance.model = model;
     instance.statechart = model.root;
+    instance.theme = theme;
 
     instance.changedTransitions_ = new Set();
     instance.changedStates_ = new Set();
@@ -939,21 +932,11 @@ const normalMode = 1,
       hotTrackMode = 3;
 
 function Renderer(theme) {
-  this.theme = theme || diagrams.theme.create();
-
-  this.radius = 8;
-  this.textIndent = 8;
-  this.textLeading = 6;
-  this.arrowSize = 8;
-  this.knobbyRadius = 4;
-  this.padding = 8;
-  this.stateMinWidth = stateMinWidth;
-  this.stateMinHeight = stateMinHeight;
+  this.theme = theme;
 }
 
 Renderer.prototype.beginDraw = function(model, ctx) {
   this.model = model;
-  this.translatableModel = model.translatableModel;
   this.layoutModel = model.layoutModel;
   this.ctx = ctx;
   ctx.save();
@@ -971,21 +954,21 @@ Renderer.prototype.endDraw = function() {
 function drawArrow(renderer, x, y) {
   const ctx = renderer.ctx;
   ctx.beginPath();
-  diagrams.arrowPath({ x: x, y: y, nx: -1, ny: 0 }, ctx, renderer.arrowSize);
+  diagrams.arrowPath({ x: x, y: y, nx: -1, ny: 0 }, ctx, renderer.theme.arrowSize);
   ctx.stroke();
 }
 
-function hitArrow(renderer, x, y, p, tol) {
-  const d = renderer.arrowSize, r = d * 0.5;
+function hitTestArrow(renderer, x, y, p, tol) {
+  const d = renderer.theme.arrowSize, r = d * 0.5;
   return diagrams.hitTestRect(x - r, y - r, d, d, p, tol);
 }
 
 Renderer.prototype.drawState = function(state, mode) {
-  const ctx = this.ctx, theme = this.theme, r = this.radius,
+  const ctx = this.ctx, theme = this.theme, r = theme.radius,
         rect = this.layoutModel.getItemRect(state),
         x = rect.x, y = rect.y, w = rect.w, h = rect.h,
-        knobbyRadius = this.knobbyRadius, textSize = theme.fontSize,
-        lineBase = y + textSize + this.textLeading;
+        knobbyRadius = theme.knobbyRadius, textSize = theme.fontSize,
+        lineBase = y + textSize + theme.textLeading;
   diagrams.roundRectPath(x, y, w, h, r, ctx);
   switch (mode) {
     case normalMode:
@@ -1030,22 +1013,22 @@ Renderer.prototype.drawState = function(state, mode) {
       ctx.stroke();
       break;
   }
-  drawArrow(this, x + w + this.arrowSize, lineBase);
+  drawArrow(this, x + w + theme.arrowSize, lineBase);
 }
 
 Renderer.prototype.hitTestState = function(state, p, tol, mode) {
-  const theme = this.theme, r = this.radius,
+  const theme = this.theme, r = theme.radius,
         rect = this.layoutModel.getItemRect(state),
         x = rect.x, y = rect.y, w = rect.w, h = rect.h;
-  const lineBase = y + theme.fontSize + this.textLeading,
-        knobbyRadius = this.knobbyRadius;
-  if (hitArrow(this, x + w + this.arrowSize, lineBase, p, tol))
+  const lineBase = y + theme.fontSize + theme.textLeading,
+        knobbyRadius = theme.knobbyRadius;
+  if (hitTestArrow(this, x + w + theme.arrowSize, lineBase, p, tol))
     return { arrow: true };
   return diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
 }
 
 Renderer.prototype.drawPseudoState = function(state, mode) {
-  const ctx = this.ctx, theme = this.theme, r = this.radius,
+  const ctx = this.ctx, theme = this.theme, r = theme.radius,
         rect = this.layoutModel.getItemRect(state),
         x = rect.x, y = rect.y;
   // TODO handle other psuedo state types.
@@ -1069,14 +1052,15 @@ Renderer.prototype.drawPseudoState = function(state, mode) {
       ctx.stroke();
       break;
   }
-  drawArrow(this, x + 2 * r + this.arrowSize, y + r);
+  drawArrow(this, x + 2 * r + theme.arrowSize, y + r);
 }
 
 Renderer.prototype.hitTestPseudoState = function(state, p, tol, mode) {
-  const r = this.radius,
+  const theme = this.theme,
+        r = theme.radius,
         rect = this.layoutModel.getItemRect(state),
         x = rect.x, y = rect.y;
-  if (hitArrow(this, x + 2 * r + this.arrowSize, y + r, p, tol))
+  if (hitTestArrow(this, x + 2 * r + theme.arrowSize, y + r, p, tol))
     return { arrow: true };
 
   return diagrams.hitTestDisk(x + r, y + r, r, p, tol);
@@ -1089,7 +1073,7 @@ Renderer.prototype.drawStatechart = function(statechart, mode) {
     case highlightMode:
       break;
     case hotTrackMode:
-      const ctx = this.ctx, theme = this.theme, r = this.radius,
+      const ctx = this.ctx, theme = this.theme, r = theme.radius,
             rect = this.layoutModel.getItemRect(statechart),
             x = rect.x, y = rect.y, w = rect.w, h = rect.h;
       diagrams.roundRectPath(x, y, w, h, r, ctx);
@@ -1101,7 +1085,8 @@ Renderer.prototype.drawStatechart = function(statechart, mode) {
 }
 
 Renderer.prototype.hitTestStatechart = function(statechart, p, tol, mode) {
-  const r = this.radius,
+  const theme = this.theme,
+        r = theme.radius,
         rect = this.layoutModel.getItemRect(statechart),
         x = rect.x, y = rect.y, w = rect.w, h = rect.h;
   return diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
@@ -1109,9 +1094,10 @@ Renderer.prototype.hitTestStatechart = function(statechart, p, tol, mode) {
 
 Renderer.prototype.drawTransition = function(transition, mode) {
   const ctx = this.ctx,
-        r = this.knobbyRadius,
+        theme = this.theme,
+        r = theme.knobbyRadius,
         bezier = transition[_bezier];
-  diagrams.bezierEdgePath(bezier, ctx, this.arrowSize);
+  diagrams.bezierEdgePath(bezier, ctx, theme.arrowSize);
   switch (mode) {
     case normalMode:
       ctx.strokeStyle = theme.strokeColor;
@@ -1119,9 +1105,9 @@ Renderer.prototype.drawTransition = function(transition, mode) {
       ctx.stroke();
       let src = getTransitionSrc(transition);
       if (src && !isPseudostate(src)) {
-        diagrams.roundRectPath(bezier[0].x - this.radius,
-                               bezier[0].y - this.radius,
-                               16, 16, this.radius, ctx);
+        diagrams.roundRectPath(bezier[0].x - theme.radius,
+                               bezier[0].y - theme.radius,
+                               16, 16, theme.radius, ctx);
         ctx.fillStyle = theme.bgColor;
         ctx.fill();
         ctx.lineWidth = 0.25;
@@ -1213,11 +1199,34 @@ Renderer.prototype.drawHoverText = function(item, p) {
 
 //------------------------------------------------------------------------------
 
-function Editor(model, renderer) {
+function createTheme(properties) {
+  let theme = diagrams.theme.createDefault();
+  // Assign default statechart layout and drawing parameters.
+  theme = Object.assign(theme, {
+    radius: 8,
+    textIndent: 8,
+    textLeading: 6,
+    arrowSize: 8,
+    knobbyRadius: 4,
+    padding: 8,
+
+    stateMinWidth: 100,
+    stateMinHeight: 60,
+  });
+  // Assign custom properties.
+  if (properties) {
+    theme = Object.assign(theme, properties);
+  }
+  return theme;
+}
+
+function Editor(model, theme) {
   const self = this;
   this.model = model;
   this.statechart = model.root;
-  this.renderer = renderer;
+
+  this.theme = theme = createTheme(theme);
+  this.renderer = new Renderer(theme);
 
   this.hitTolerance = 8;
 
@@ -1248,7 +1257,7 @@ function Editor(model, renderer) {
 
   model.dataModel.initialize();
 
-  layoutModel.extend(model);
+  layoutModel.extend(model, theme);
 
   function updateLayout() {
     self.model.layoutModel.updateLayout();
@@ -1266,8 +1275,6 @@ Editor.prototype.initialize = function(canvasController) {
   this.canvasController = canvasController;
   this.canvas = canvasController.canvas;
   this.ctx = canvasController.ctx;
-
-  this.renderer = new Renderer(canvasController.theme);
 
   const model = this.model,
         layoutModel = model.layoutModel,
@@ -1489,7 +1496,7 @@ Editor.prototype.onDrag = function(p0, p) {
       hitInfo = this.getFirstHit(hitList, isContainerTarget);
       selectionModel.forEach(function(item) {
         const snapshot = transactionModel.getSnapshot(item);
-        if (snapshot) {
+        if (snapshot && isContainable(item)) {
           observableModel.changeValue(item, 'x', snapshot.x + dx);
           observableModel.changeValue(item, 'y', snapshot.y + dy);
         }
@@ -1668,12 +1675,6 @@ return {
   editingModel: editingModel,
   layoutModel: layoutModel,
   statechartModel: statechartModel,
-
-  // normalMode: normalMode,
-  // highlightMode: highlightMode,
-  // hotTrackMode: hotTrackMode,
-
-  Renderer: Renderer,
 
   Editor: Editor,
 };

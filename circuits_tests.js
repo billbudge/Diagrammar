@@ -122,7 +122,7 @@ function newTestEditingModel() {
   const model = newCircuit(),
         test = circuits.editingModel.extend(model);
   circuits.signatureModel.extend(model);
-  circuits.layoutModel.extend(model);
+  circuits.layoutModel.extend(model, circuits.createTheme());
   model.dataModel.initialize();
   model.layoutModel.initialize();
   return test;

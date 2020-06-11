@@ -641,8 +641,8 @@ CanvasMultiselectLayer.prototype.draw = function() {
 //------------------------------------------------------------------------------
 
 let theme = (function() {
-  let themes = {
-    normal: {
+  function createDefault() {
+    return {
       bgColor: 'white',
       altBgColor: '#F0F0F0',
       strokeColor: '#505050',
@@ -655,8 +655,11 @@ let theme = (function() {
 
       font: '14px monospace',
       fontSize: 14,
-    },
-    blueprint: {
+    }
+  }
+
+  function createBlueprint() {
+    return {
       bgColor: '#6666cc',
       altBgColor: '#5656aa',
       strokeColor: '#f0f0f0',
@@ -669,19 +672,11 @@ let theme = (function() {
 
       font: '14px monospace',
       fontSize: 14,
-    },
-  };
-
-  function create() {
-    return Object.create(themes.normal);
-  }
-
-  function createBlueprint() {
-    return Object.create(themes.blueprint);
+    }
   }
 
   return {
-    create: create,
+    createDefault: createDefault,
     createBlueprint: createBlueprint,
   }
 })();

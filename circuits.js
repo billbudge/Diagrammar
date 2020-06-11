@@ -1127,6 +1127,7 @@ const editingModel = (function() {
             graphInfo = model.circuitModel.getSubgraphInfo(items),
             groupItems = items.concat(Array.from(graphInfo.interiorWires)),
             extents = layoutModel.getItemRects(graphInfo.elementsAndGroups),
+            spacing = 8,  // TODO use theme
             x = extents.x - spacing,
             y = extents.y - spacing;
 
@@ -1398,24 +1399,15 @@ const _x = Symbol('x'),
       _p2 = Symbol('p2'),
       _bezier = Symbol('bezier');
 
-const spacing = 6;
-const shrink = 0.7, inv_shrink = 1 / shrink;
-const minMasterWidth = 8;
-const minMasterHeight = 8;
-
-const knobbyRadius = 4;
-const padding = 8;
-
 const layoutModel = (function() {
   const proto = {
-    initialize: function(ctx, theme) {
+    initialize: function(ctx) {
       this.ctx = ctx ||
         {
           save: function() {},
           restore: function() {},
           measureText: () => { return { width: 10, height: 10 }},
         };
-      this.theme = theme || diagrams.theme.create();
     },
 
     getItemRect: function (item) {
@@ -1504,7 +1496,7 @@ const layoutModel = (function() {
 
     // Make sure a group is big enough to enclose its contents.
     layoutGroup_: function(group) {
-      const self = this;
+      const self = this, spacing = this.theme.spacing;
       function layout(group) {
         const extents = self.getItemRects(group.items),
               translatableModel = self.model.translatableModel,
@@ -1531,7 +1523,8 @@ const layoutModel = (function() {
       const self = this,
             model = this.model,
             ctx = this.ctx, theme = this.theme,
-            textSize = theme.fontSize, name = master.name,
+            textSize = theme.fontSize, spacing = theme.spacing,
+            name = master.name,
             inputs = master.inputs, outputs = master.outputs;
       let height = 0, width = 0;
       if (name) {
@@ -1568,14 +1561,15 @@ const layoutModel = (function() {
 
       this.setItemBounds(
         master,
-        Math.round(Math.max(width, wIn + 2 * spacing + wOut, minMasterWidth)),
-        Math.round(Math.max(yIn, yOut, minMasterHeight) + spacing / 2));
+        Math.round(Math.max(width, wIn + 2 * spacing + wOut, theme.minMasterWidth)),
+        Math.round(Math.max(yIn, yOut, theme.minMasterHeight) + spacing / 2));
       return master;
     },
 
     layoutPin_: function(pin) {
+      const theme = this.theme, shrink = theme.shrink;
       if (pin.type === 'v' || pin.type === '*') {
-        pin[_width] = pin[_height] = 2 * knobbyRadius;
+        pin[_width] = pin[_height] = 2 * theme.knobbyRadius;
       } else {
         let master = getMaster(pin);
         this.layoutMaster_(master);
@@ -1651,7 +1645,7 @@ const layoutModel = (function() {
     },
   }
 
-  function extend(model) {
+  function extend(model, theme) {
     dataModels.dataModel.extend(model);
     dataModels.observableModel.extend(model);
     dataModels.referencingModel.extend(model);
@@ -1662,6 +1656,7 @@ const layoutModel = (function() {
     instance.model = model;
     const circuit = model.root;
     instance.circuit = circuit;
+    instance.theme = theme;
 
     model.observableModel.addHandler('changed',
                                      change => instance.onChanged_(change));
@@ -1710,14 +1705,14 @@ const normalMode = 1,
     highlightMode = 2,
     hotTrackMode = 3;
 
-function Renderer(ctx, theme) {
-  this.ctx = ctx;
-  this.theme = theme || diagrams.theme.create();
+function Renderer(theme) {
+  this.theme = theme;
 }
 
 Renderer.prototype = {
-  begin: function(model) {
+  begin: function(model, ctx) {
     this.model = model;
+    this.ctx = ctx;
     this.layoutModel = model.layoutModel;
 
     ctx.save();
@@ -1733,7 +1728,8 @@ Renderer.prototype = {
 
   drawMaster: function(master, x, y) {
     const self = this, ctx = this.ctx, theme = this.theme,
-          textSize = theme.fontSize, name = master.name,
+          textSize = theme.fontSize, spacing = theme.spacing,
+          name = master.name,
           w = master[_width], h = master[_height],
           right = x + w;
     ctx.lineWidth = 0.5;
@@ -1763,9 +1759,10 @@ Renderer.prototype = {
   },
 
   drawPin: function(pin, x, y) {
+    const theme = this.theme;
     ctx.strokeStyle = theme.strokeColor;
     if (pin.type === 'v' || pin.type === '*') {
-      const r = knobbyRadius;
+      const r = theme.knobbyRadius;
       ctx.beginPath();
       if (pin.type === 'v') {
         const d = 2 * r;
@@ -1775,21 +1772,23 @@ Renderer.prototype = {
       }
       ctx.stroke();
     } else {
-      const master = getMaster(pin),
+      const shrink = theme.shrink, invShrink = theme.invShrink,
+            master = getMaster(pin),
             width = master[_width], height = master[_height];
       this.ctx.scale(shrink, shrink);
-      x *= inv_shrink;
-      y *= inv_shrink;
+      x *= invShrink;
+      y *= invShrink;
       ctx.beginPath();
       ctx.rect(x, y, width, height);
       ctx.stroke();
       this.drawMaster(master, x, y);
-      this.ctx.scale(inv_shrink, inv_shrink);
+      this.ctx.scale(invShrink, invShrink);
     }
   },
 
   drawElement: function(element, mode) {
-    const ctx = this.ctx, theme = this.theme,
+    const ctx = this.ctx,
+          theme = this.theme, spacing = theme.spacing,
           rect = this.layoutModel.getItemRect(element),
           x = rect.x, y = rect.y, w = rect.w, h = rect.h,
           right = x + w, bottom = y + h;
@@ -1866,17 +1865,19 @@ Renderer.prototype = {
 
   // Gets the bounding rect for the group instancing element.
   getGroupInstanceBounds: function(master, groupRight, groupBottom) {
-    const width = master[_width], height = master[_height],
+    const theme = this.theme, spacing = theme.spacing,
+          width = master[_width], height = master[_height],
           x = groupRight - width - spacing, y = groupBottom - height - spacing;
     return { x: x, y: y, w: width, h: height };
   },
 
   drawGroup: function(group, mode) {
-    const ctx = this.ctx, theme = this.theme,
+    const ctx = this.ctx,
+          theme = this.theme,
           rect = this.layoutModel.getItemRect(group),
           x = rect.x, y = rect.y, w = rect.w , h = rect.h,
           right = x + w, bottom = y + h;
-    diagrams.roundRectPath(x, y, w, h, spacing, ctx);
+    diagrams.roundRectPath(x, y, w, h, theme.spacing, ctx);
     switch (mode) {
       case normalMode:
         ctx.fillStyle = theme.bgColor;
@@ -2052,10 +2053,32 @@ Renderer.prototype = {
 
 //------------------------------------------------------------------------------
 
-function Editor(model, textInputController) {
+function createTheme(properties) {
+  let theme = diagrams.theme.createDefault();
+  // Assign default circuit layout and drawing parameters.
+  theme = Object.assign(theme, {
+    spacing: 6,
+    shrink: 0.7,
+    knobbyRadius: 4,
+
+    minMasterWidth: 8,
+    minMasterHeight: 8,
+  });
+  // Assign custom properties.
+  if (properties) {
+    theme = Object.assign(theme, properties);
+  }
+  theme.invShrink = 1.0 / theme.shrink;
+  return theme;
+}
+
+function Editor(model, theme, textInputController) {
   const self = this;
   this.model = model;
   this.diagram = model.root;
+  this.theme = theme = createTheme(theme);
+  this.renderer = new Renderer(theme);
+
   this.textInputController = textInputController;
 
   this.hitTolerance = 4;
@@ -2144,7 +2167,7 @@ function Editor(model, textInputController) {
   }
 
   editingModel.extend(model);
-  layoutModel.extend(model);
+  layoutModel.extend(model, theme);
 
   function update() {
     self.model.layoutModel.updateGroupLayout();
@@ -2157,23 +2180,22 @@ function Editor(model, textInputController) {
 
 Editor.prototype.initialize = function(canvasController) {
   const canvas = canvasController.canvas,
-        ctx = canvasController.ctx,
-        theme = canvasController.theme;
+        ctx = canvasController.ctx;
   this.canvasController = canvasController;
   this.canvas = canvas;
   this.ctx = ctx;
-  this.renderer = new Renderer(ctx, theme);
 
   let model = this.model,
       layoutModel = model.layoutModel,
       renderer = this.renderer;
 
-  layoutModel.initialize(ctx, theme);
+  layoutModel.initialize(ctx);
 
   model.dataModel.initialize();
 
   // Create an instance of every junction and literal.
-  let x = 16, y = 16, h = 0, spacing = 8;
+  let x = 16, y = 16, h = 0;
+  const spacing = 8;
   this.junctions.forEach(function(junction) {
     let item = Object.assign(junction);
     item.x = x;
@@ -2209,7 +2231,7 @@ Editor.prototype.draw = function() {
   let renderer = this.renderer, diagram = this.diagram,
       model = this.model, ctx = this.ctx,
       canvasController = this.canvasController;
-  renderer.begin(model);
+  renderer.begin(model, ctx);
   canvasController.applyTransform();
 
   // Draw registration frame for generating screen shots.
@@ -2264,7 +2286,7 @@ Editor.prototype.hitTest = function(p) {
     if (info)
       hitList.push(info);
   }
-  renderer.begin(model)
+  renderer.begin(model, ctx)
   model.selectionModel.forEach(function(item) {
     item => pushHit(renderer.hitTest(item, cp, cTol, normalMode));
   });
@@ -2730,13 +2752,8 @@ return {
   layoutModel: layoutModel,
   signatureModel: signatureModel,
 
-  // normalMode: normalMode,
-  // highlightMode: highlightMode,
-  // hotTrackMode: hotTrackMode,
-
-  Renderer: Renderer,
-
   Editor: Editor,
+  createTheme: createTheme,
 };
 })();
 
