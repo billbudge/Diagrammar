@@ -482,6 +482,9 @@ const editingModel = (function() {
         i = state.items.length;
         const statechart = this.createStatechart();
         this.model.observableModel.insertElement(state, 'items', i, statechart);
+        // Layout the super state to set the statechart's position, so we can
+        // place the new child item correctly.
+        this.model.layoutModel.layoutState_(state);
       }
       return state.items[i];
     },
@@ -784,12 +787,13 @@ const layoutModel = (function() {
           statechartOffsetY += statechart.height;
         });
 
+        height = Math.max(height, statechartOffsetY);
+
         // Expand the last statechart to fill its parent state.
         const lastStatechart = statecharts[statecharts.length - 1];
         observableModel.changeValue(lastStatechart, 'height',
-              lastStatechart.height + state.height - statechartOffsetY);
+              lastStatechart.height + height - statechartOffsetY);
 
-        height = Math.max(height, statechartOffsetY);
       }
       width = Math.max(width, state.width);
       height = Math.max(height, state.height);
@@ -1570,10 +1574,8 @@ Editor.prototype.onEndDrag = function(p) {
           hitInfo = this.getFirstHit(hitList, isContainerTarget),
           parent = hitInfo ? hitInfo.item : statechart;
     // Reparent items.
-    selectionModel.forEach(function(item) {
-      if (isContainable(item)) {
-        editingModel.addItem(item, parent);
-      }
+    selectionModel.contents().forEach(function(item) {
+      editingModel.addItem(item, parent);
     });
   }
 
