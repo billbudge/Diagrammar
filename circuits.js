@@ -578,7 +578,7 @@ const editingModel = (function() {
     getConnectedElements: function(items, upstream, downstream) {
       const self = this,
             model = this.model,
-            graphInfo = model.circuitModel.getGraphInfo(),
+            graphInfo = model.circuitModel.getSubgraphInfo(items),
             result = new Set();
       while (items.length > 0) {
         const item = items.pop();
@@ -732,7 +732,7 @@ const editingModel = (function() {
       const self = this, model = this.model,
             observableModel = model.observableModel,
             signatureModel = model.signatureModel,
-            graphInfo = model.circuitModel.getGraphInfo(),
+            graphInfo = model.circuitModel.getSubgraphInfo([element]),
             master = getMaster(element),
             newId = model.dataModel.getId(newElement),
             newMaster = getMaster(newElement);
@@ -1127,7 +1127,7 @@ const editingModel = (function() {
             graphInfo = model.circuitModel.getSubgraphInfo(items),
             groupItems = items.concat(Array.from(graphInfo.interiorWires)),
             extents = layoutModel.getItemRects(graphInfo.elementsAndGroups),
-            spacing = 8,  // TODO use theme
+            spacing = this.theme.spacing,
             x = extents.x - spacing,
             y = extents.y - spacing;
 
@@ -1355,7 +1355,7 @@ const editingModel = (function() {
     },
   }
 
-  function extend(model) {
+  function extend(model, theme) {
     dataModels.dataModel.extend(model);
     dataModels.observableModel.extend(model);
     dataModels.selectionModel.extend(model);
@@ -1371,6 +1371,7 @@ const editingModel = (function() {
     let instance = Object.create(proto);
     instance.model = model;
     instance.diagram = model.root;
+    instance.theme = theme;
 
     instance.getWireSrc = model.referencingModel.getReferenceFn('srcId');
     instance.getWireDst = model.referencingModel.getReferenceFn('dstId');
@@ -1676,16 +1677,7 @@ const layoutModel = (function() {
     instance.changedElements_ = new Set();
     instance.changedTopLevelGroups_ = new Set();
 
-    const dataModel = model.dataModel;
-    // Initialize items and layout groups.
-    // TODO fix this...
-    circuit.items.forEach(function(item) {
-      instance.update_(item);
-    });
-    circuit.items.forEach(function(item) {
-      if (isGroup(item))
-        instance.layoutGroup_(item);
-    });
+    visitItem(instance.circuit, item => instance.update_(item));
 
     instance.getWireSrc = model.referencingModel.getReferenceFn('srcId');
     instance.getWireDst = model.referencingModel.getReferenceFn('dstId');
@@ -2166,7 +2158,7 @@ function Editor(model, theme, textInputController) {
     instance[_groupItems] = null;
   }
 
-  editingModel.extend(model);
+  editingModel.extend(model, theme);
   layoutModel.extend(model, theme);
 
   function update() {

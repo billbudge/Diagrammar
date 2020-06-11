@@ -120,9 +120,10 @@ function newTestCircuitModel() {
 
 function newTestEditingModel() {
   const model = newCircuit(),
-        test = circuits.editingModel.extend(model);
+        theme = circuits.createTheme(),
+        test = circuits.editingModel.extend(model, theme);
   circuits.signatureModel.extend(model);
-  circuits.layoutModel.extend(model, circuits.createTheme());
+  circuits.layoutModel.extend(model, theme);
   model.dataModel.initialize();
   model.layoutModel.initialize();
   return test;
@@ -204,8 +205,6 @@ test("circuits.circuitModel.extend", function() {
   ok(test.model);
   ok(test.model.referencingModel);
 });
-
-// TODO circuitModel tests.
 
 test("circuits.circuitModel.getGraphInfo", function() {
   const test = newTestCircuitModel(),
