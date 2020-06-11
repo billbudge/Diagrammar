@@ -39,9 +39,7 @@ function isPaletted(item) {
   return item.state === 'palette';
 }
 
-const _p1 = Symbol('p1'),
-      _p2 = Symbol('p2'),
-      _master = Symbol('master');
+const _master = Symbol('master');
 
 // Visits in pre-order.
 function visitItem(item, fn, filter) {
@@ -647,7 +645,10 @@ const editingModel = (function() {
 
 //------------------------------------------------------------------------------
 
-const _bezier = Symbol('bezier');
+const _bezier = Symbol('bezier'),
+      _p1 = Symbol('p1'),
+      _p2 = Symbol('p2'),
+      _pt = Symbol('pt');  // transition attachment point;
 
 const layoutModel = (function() {
   const proto = {
@@ -851,8 +852,8 @@ const layoutModel = (function() {
             p2 = dst ? this.stateParamToPoint(dst, transition.t2) : transition[_p2];
       if (p1 && p2) {
         transition[_bezier] = diagrams.getEdgeBezier(p1, p2);
+        transition[_pt] = geometry.evaluateBezier(transition[_bezier], transition.pt);
       }
-      // transition[_mid] = geometry.evaluateBezier(bezier, 0.5);
     },
 
     addTopLevelState_: function(item) {
@@ -1117,8 +1118,9 @@ Renderer.prototype.drawTransition = function(transition, mode) {
       ctx.stroke();
       let src = getTransitionSrc(transition);
       if (src && !isPseudostate(src)) {
-        diagrams.roundRectPath(bezier[0].x - theme.radius,
-                               bezier[0].y - theme.radius,
+        const pt = transition[_pt];
+        diagrams.roundRectPath(pt.x - theme.radius,
+                               pt.y - theme.radius,
                                16, 16, theme.radius, ctx);
         ctx.fillStyle = theme.bgColor;
         ctx.fill();
@@ -1140,7 +1142,7 @@ Renderer.prototype.drawTransition = function(transition, mode) {
 }
 
 Renderer.prototype.hitTestTransition = function(transition, p, tol, mode) {
-  // TODO fix layout with viewModel
+  // TODO fix layout
   if (!transition[_bezier])
     return;
   return diagrams.hitTestBezier(transition[_bezier], p, tol);
@@ -1344,25 +1346,23 @@ Editor.prototype.hitTest = function(p) {
       hitList.push(info);
   }
   // TODO hit test selection first, in highlight, first.
-  reverseVisitItem(statechart, isTransition, function(transition) {
+  reverseVisitItem(statechart, function(transition) {
     pushInfo(renderer.hitTest(transition, cp, cTol, normalMode));
-  });
-  reverseVisitItem(statechart, isContainable, function(item) {
+  }, isTransition);
+  reverseVisitItem(statechart, function(item) {
     pushInfo(renderer.hitTest(item, cp, cTol, normalMode));
-  });
+  }, isContainable);
   return hitList;
 }
 
 Editor.prototype.getFirstHit = function(hitList, filterFn) {
   if (hitList) {
     const model = this.model;
-    for (let i = 0; i < hitList.length; i++) {
-      var hitInfo = hitList[i];
+    for (let hitInfo of hitList) {
       if (filterFn(hitInfo, model))
         return hitInfo;
     }
   }
-  return null;
 }
 
 function isStateBorder(hitInfo, model) {
@@ -1373,7 +1373,7 @@ function isDraggable(hitInfo, model) {
   return !isStatechart(hitInfo.item);
 }
 
-function isContainerTarget(hitInfo, model) {
+function isDropTarget(hitInfo, model) {
   const item = hitInfo.item;
   return isTrueStateOrStatechart(item) &&
          !model.hierarchicalModel.isItemInSelection(item);
@@ -1406,7 +1406,8 @@ const connectTransitionSrc = 1,
       connectTransitionDst = 2,
       moveSelection = 3,
       moveCopySelection = 4,
-      resizeState = 5;
+      resizeState = 5,
+      moveTransitionPoint = 6;
 
 Editor.prototype.onBeginDrag = function(p0) {
   const mouseHitInfo = this.mouseHitInfo,
@@ -1427,6 +1428,7 @@ Editor.prototype.onBeginDrag = function(p0) {
       srcId: stateId,
       t1: 0,
       [_p2]: cp0,
+      pt: 0,  // initial attachment point.
     };
     drag = {
       type: connectTransitionDst,
@@ -1452,6 +1454,9 @@ Editor.prototype.onBeginDrag = function(p0) {
           drag = { type: connectTransitionSrc, name: 'Edit transition' };
         else if (mouseHitInfo.p2)
           drag = { type: connectTransitionDst, name: 'Edit transition' };
+        else {
+          drag = { type: moveTransitionPoint, name: 'Drag transition attachment point' };
+        }
         break;
     }
   }
@@ -1505,7 +1510,7 @@ Editor.prototype.onDrag = function(p0, p) {
   switch (drag.type) {
     case moveCopySelection:
     case moveSelection:
-      hitInfo = this.getFirstHit(hitList, isContainerTarget);
+      hitInfo = this.getFirstHit(hitList, isDropTarget);
       selectionModel.forEach(function(item) {
         const snapshot = transactionModel.getSnapshot(item);
         if (snapshot && isContainable(item)) {
@@ -1559,6 +1564,14 @@ Editor.prototype.onDrag = function(p0, p) {
         layoutModel.update(dragItem);  // manually force layout.
       }
       break;
+    case moveTransitionPoint: {
+      hitInfo = this.renderer.hitTest(dragItem, cp, this.hitTolerance, normalMode);
+      if (hitInfo)
+        observableModel.changeValue(dragItem, 'pt', hitInfo.t);
+      else
+        observableModel.changeValue(dragItem, 'pt', snapshot.pt);
+      break;
+    }
   }
 
   this.hotTrackInfo = (hitInfo && hitInfo.item !== this.statechart) ? hitInfo : null;
@@ -1581,7 +1594,7 @@ Editor.prototype.onEndDrag = function(p) {
   } else if (drag.type === moveSelection || drag.type === moveCopySelection) {
     // Find state beneath mouse.
     const hitList = this.hitTest(p),
-          hitInfo = this.getFirstHit(hitList, isContainerTarget),
+          hitInfo = this.getFirstHit(hitList, isDropTarget),
           parent = hitInfo ? hitInfo.item : statechart;
     // Reparent items.
     selectionModel.contents().forEach(function(item) {

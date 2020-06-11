@@ -196,13 +196,13 @@ const geometry = (function() {
   }
 
   function hitTestCurveSegment(p1, p2, p3, p4, p, tolerance) {
-    var beziers = new diagrammar.collections.LinkedList();
-    beziers.pushFront([p1, p2, p3, p4]);
-    var dMin = Number.MAX_VALUE;
-    var closestX, closestY;
+    const beziers = new diagrammar.collections.LinkedList();
+    beziers.pushFront([p1, p2, p3, p4, 0, 1]);
+    let dMin = Number.MAX_VALUE,
+        closestX, closestY, tMin;
     while (beziers.length > 0) {
       var b = beziers.popBack().value,
-          b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3];
+          b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3], t0 = b[4], t1 = b[5];
       // Get control point distances from the segment defined by the curve endpoints.
       var d1 = pointToLineDist(b0, b3, b1);
       var d2 = pointToLineDist(b0, b3, b2);
@@ -219,27 +219,29 @@ const geometry = (function() {
       if (curvature <= tolerance) {
         if (d < dMin) {
           dMin = d;
+          tMin = t0 + t * (t1 - t0);
           closestX = projX;
           closestY = projY;
         }
       } else {
         // Subdivide into two curves at t = 0.5.
-        var s11 = { x: (b0.x + b1.x) * 0.5, y: (b0.y + b1.y) * 0.5 };
-        var s12 = { x: (b1.x + b2.x) * 0.5, y: (b1.y + b2.y) * 0.5 };
-        var s13 = { x: (b2.x + b3.x) * 0.5, y: (b2.y + b3.y) * 0.5 };
+        const s11 = { x: (b0.x + b1.x) * 0.5, y: (b0.y + b1.y) * 0.5 },
+              s12 = { x: (b1.x + b2.x) * 0.5, y: (b1.y + b2.y) * 0.5 },
+              s13 = { x: (b2.x + b3.x) * 0.5, y: (b2.y + b3.y) * 0.5 },
 
-        var s21 = { x: (s11.x + s12.x) * 0.5, y: (s11.y + s12.y) * 0.5 };
-        var s22 = { x: (s12.x + s13.x) * 0.5, y: (s12.y + s13.y) * 0.5 };
+              s21 = { x: (s11.x + s12.x) * 0.5, y: (s11.y + s12.y) * 0.5 },
+              s22 = { x: (s12.x + s13.x) * 0.5, y: (s12.y + s13.y) * 0.5 },
 
-        var s31 = { x: (s21.x + s22.x) * 0.5, y: (s21.y + s22.y) * 0.5 };
+              s31 = { x: (s21.x + s22.x) * 0.5, y: (s21.y + s22.y) * 0.5 },
 
-        beziers.pushFront([ b0, s11, s21, s31 ]);
-        beziers.pushFront([ s31, s22, s13, b3 ]);
+              tMid = t0 + 0.5 * (t1 - t0);
+
+        beziers.pushFront([ b0, s11, s21, s31, t0, tMid ]);
+        beziers.pushFront([ s31, s22, s13, b3, tMid, t1 ]);
       }
     }
     if (dMin < tolerance)
-      return { x: closestX, y: closestY, d: dMin };
-    // Otherwise, return nothing.
+      return { x: closestX, y: closestY, d: dMin, t: tMin };
   }
 
   // Cosine of angle between x-axis (1, 0) and (dx, dy).

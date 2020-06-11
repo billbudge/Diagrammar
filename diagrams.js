@@ -249,11 +249,11 @@ function hitTestRect(x, y, width, height, p, tol) {
 }
 
 function hitTestDisk(x, y, r, p, tol) {
-  let dx = x - p.x, dy = y - p.y,
-      dSquared = dx * dx + dy * dy,
-      inner = Math.max(0, r - tol), outer = r + tol;
+  const dx = x - p.x, dy = y - p.y,
+        dSquared = dx * dx + dy * dy,
+        inner = Math.max(0, r - tol), outer = r + tol;
   if (dSquared < outer * outer) {
-    let border = dSquared > inner * inner;
+    const border = dSquared > inner * inner;
     return { interior: !border, border: border };
   }
 }
@@ -269,13 +269,17 @@ function hitTestLine(p1, p2, p, tol) {
 }
 
 function hitTestBezier(bezier, p, tol) {
-  let p1 = bezier[0], p2 = bezier[3];
+  const p1 = bezier[0], p2 = bezier[3];
   if (geometry.pointToPointDist(p1, p) < tol) {
-    return { p1: true };
+    return { p1: true, t: 0 };
   } else if (geometry.pointToPointDist(p2, p) < tol) {
-    return { p2: true };
-  } else if (geometry.hitTestCurveSegment(bezier[0], bezier[1], bezier[2], bezier[3], p, tol)) {
-    return { edge: true };
+    return { p2: true, t: 1 };
+  } else {
+    const hit = geometry.hitTestCurveSegment(bezier[0], bezier[1], bezier[2], bezier[3], p, tol);
+    if (hit) {
+      hit.edge = true;
+    }
+    return hit;
   }
 }
 
@@ -550,12 +554,15 @@ CanvasController.prototype.draw = function() {
   let canvas = this.canvas, ctx = this.ctx,
       layers = this.layers, length = layers.length,
       t = this.transform_;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  for (let i = length - 1; i >= 0; i--) {
-    let layer = layers[i];
-    if (layer.draw)
-      layer.draw();
+  function drawFrame() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (let i = length - 1; i >= 0; i--) {
+      let layer = layers[i];
+      if (layer.draw)
+        layer.draw();
+    }
   }
+  window.requestAnimationFrame(drawFrame);
 }
 
 CanvasController.prototype.resize = function(width, height) {
