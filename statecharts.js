@@ -527,6 +527,36 @@ const editingModel = (function() {
       });
     },
 
+    getConnectedStates: function(items, upstream, downstream) {
+      const self = this,
+            model = this.model,
+            graphInfo = model.statechartModel.getSubgraphInfo(items),
+            result = new Set();
+      while (items.length > 0) {
+        const item = items.pop();
+        if (!isState(item))
+          continue;
+
+        result.add(item);
+
+        if (upstream) {
+          graphInfo.iterators.forInTransitions(item, function(transition) {
+            const src = self.getTransitionSrc(transition);
+            if (!result.has(src))
+              items.push(src);
+          });
+        }
+        if (downstream) {
+          graphInfo.iterators.forOutTransitions(item, function(transition) {
+            const dst = self.getTransitionDst(transition);
+            if (!result.has(dst))
+              items.push(dst);
+          });
+        }
+      }
+      return result;
+    },
+
     doDelete: function() {
       this.reduceSelection();
       this.model.copyPasteModel.doDelete(this.deleteItems.bind(this));
@@ -559,6 +589,13 @@ const editingModel = (function() {
       });
       copyPasteModel.doPaste(this.copyItems.bind(this),
                              this.addItems.bind(this));
+    },
+
+    doSelectConnectedStates: function(upstream) {
+      let selectionModel = this.model.selectionModel,
+          selection = selectionModel.contents(),
+          newSelection = this.getConnectedStates(selection, upstream, true);
+      selectionModel.set(newSelection);
     },
 
     doTogglePalette: function() {
@@ -1675,6 +1712,9 @@ Editor.prototype.onKeyDown = function(e) {
           return true;
         }
         return false;
+      case 69:  // 'e'
+        editingModel.doSelectConnectedStates(!shiftKey);
+        return true;
       case 72:  // 'h'
         editingModel.doTogglePalette();
         return true;
