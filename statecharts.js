@@ -27,12 +27,16 @@ function isTrueStateOrStatechart(item) {
   return item.type === 'state' || item.type === 'statechart';
 }
 
-function isContainable(item) {
-  return item.type !== 'transition';
-}
-
 function isTransition(item) {
   return item.type === 'transition';
+}
+
+function isProperty(item) {
+  return item.type === 'event' || item.type === 'guard' || item.type === 'action';
+}
+
+function isContainable(item) {
+  return isState(item) || isProperty(item);
 }
 
 function isPaletted(item) {
@@ -396,7 +400,7 @@ const editingModel = (function() {
       items.forEach(function(item) {
         const copy = map.get(dataModel.getId(item));
         if (isContainable(copy)) {
-          if (isState(copy)) {
+          if (isState(copy) || isProperty(copy)) {
             // De-palettize states.
             copy.state = 'normal';
           }
@@ -500,6 +504,9 @@ const editingModel = (function() {
           const superState = hierarchicalModel.getParent(parent);
           parent = this.findOrCreateChildStatechart(superState, item);
         }
+      } else if (isTransition(parent)) {
+        if (!isProperty(item))
+          parent = hierarchicalModel.getParent(parent);
       }
       // At this point we can add item to parent.
       if (isState(item)) {
@@ -513,7 +520,14 @@ const editingModel = (function() {
         return;
       if (oldParent)
         this.deleteItem(item);
-      observableModel.insertElement(parent, 'items', parent.items.length, item);
+
+      if (isProperty(item) && isTransition(parent)) {
+        // For transition properties, delete the item and assign to transition.
+        this.deleteItem(item);
+        observableModel.changeValue(parent, item.type, item);
+      } else {
+        observableModel.insertElement(parent, 'items', parent.items.length, item);
+      }
       return item;
     },
 
@@ -685,7 +699,9 @@ const editingModel = (function() {
 const _bezier = Symbol('bezier'),
       _p1 = Symbol('p1'),
       _p2 = Symbol('p2'),
-      _pt = Symbol('pt');  // transition attachment point;
+      _pt = Symbol('pt'),  // transition attachment point;
+      _text = Symbol('text'),
+      _textWidth = Symbol('textWidth');
 
 const layoutModel = (function() {
   const proto = {
@@ -708,6 +724,12 @@ const layoutModel = (function() {
           break;
         case 'start':
           w = h = 2 * this.theme.radius;
+          break;
+        case 'event':
+        case 'guard':
+        case 'action':
+          h = this.theme.fontSize + this.theme.padding;
+          w = item[_textWidth];
           break;
       }
       return { w: w, h: h };
@@ -788,6 +810,10 @@ const layoutModel = (function() {
       });
       this.changedStates_.clear();
 
+      this.changedProperties_.forEach(
+          property => self.layoutProperty_(property));
+      this.changedProperties_.clear();
+
       this.changedTransitions_.forEach(
           transition => self.layoutTransition_(transition));
       this.changedTransitions_.clear();
@@ -807,7 +833,27 @@ const layoutModel = (function() {
         this.layoutState_(item);
       } else if (isStatechart(item)) {
         this.layoutStatechart_(item);
+      } else if (isProperty(item)) {
+        this.layoutProperty_(item);
       }
+    },
+
+    // Layout a property item.
+    layoutProperty_: function(property) {
+      const ctx = this.ctx, theme = this.theme;
+      let text = property.text;
+      switch (property.type) {
+        case 'event':
+          break;
+        case 'guard':
+          text = '[ ' + text + ' ]';
+          break;
+        case 'action':
+          text = '/ ' + text;
+          break;
+      }
+      property[_text] = text;
+      property[_textWidth] = ctx.measureText(text).width + 2 * theme.padding;
     },
 
     // Layout a state.
@@ -890,6 +936,20 @@ const layoutModel = (function() {
       if (p1 && p2) {
         transition[_bezier] = diagrams.getEdgeBezier(p1, p2);
         transition[_pt] = geometry.evaluateBezier(transition[_bezier], transition.pt);
+        let text = "";
+        if (transition.event) {
+          this.layoutProperty_(transition.event);
+          text += transition.event[_text];
+        }
+        if (transition.guard) {
+          this.layoutProperty_(transition.guard);
+          text += transition.guard[_text];
+        }
+        if (transition.action) {
+          this.layoutProperty_(transition.action);
+          text += transition.action[_text];
+        }
+        transition[_text] = text;
       }
     },
 
@@ -918,6 +978,8 @@ const layoutModel = (function() {
         this.addTopLevelState_(item);
       } else if (isStatechart(item)) {
         this.addTopLevelState_(item);
+      } else if (isProperty(item)) {
+        this.changedProperties_.add(item);
       }
     },
 
@@ -954,6 +1016,7 @@ const layoutModel = (function() {
     instance.changedTransitions_ = new Set();
     instance.changedStates_ = new Set();
     instance.changedTopLevelStates_ = new Set();
+    instance.changedProperties_ = new Set();
 
     instance.getTransitionSrc = model.referencingModel.getReferenceFn('srcId');
     instance.getTransitionDst = model.referencingModel.getReferenceFn('dstId');
@@ -1142,6 +1205,44 @@ Renderer.prototype.hitTestStatechart = function(statechart, p, tol, mode) {
   return diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
 }
 
+Renderer.prototype.drawProperty = function(property, mode) {
+  const ctx = this.ctx, theme = this.theme, r = theme.radius,
+        rect = this.layoutModel.getItemRect(property),
+        x = rect.x, y = rect.y, w = rect.w, h = rect.h,
+        textSize = theme.fontSize,
+        lineBase = y + textSize;// + theme.textLeading;
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  switch (mode) {
+    case normalMode:
+      ctx.fillStyle = property.state === 'palette' ? theme.altBgColor : theme.bgColor;
+      ctx.fill();
+      ctx.lineWidth = 0.25;
+      ctx.stroke();
+      ctx.fillStyle = theme.textColor;
+      ctx.fillText(property[_text], x + theme.padding, lineBase);
+      break;
+    case highlightMode:
+      ctx.strokeStyle = theme.highlightColor;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      break;
+    case hotTrackMode:
+      ctx.strokeStyle = theme.hotTrackColor;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      break;
+  }
+}
+
+Renderer.prototype.hitTestProperty = function(property, p, tol, mode) {
+  const theme = this.theme,
+        r = theme.radius,
+        rect = this.layoutModel.getItemRect(property),
+        x = rect.x, y = rect.y, w = rect.w, h = rect.h;
+  return diagrams.hitTestRect(x, y, w, h, p, tol);
+}
+
 Renderer.prototype.drawTransition = function(transition, mode) {
   const ctx = this.ctx,
         theme = this.theme,
@@ -1163,6 +1264,8 @@ Renderer.prototype.drawTransition = function(transition, mode) {
         ctx.fill();
         ctx.lineWidth = 0.25;
         ctx.stroke();
+        ctx.fillStyle = theme.textColor;
+        ctx.fillText(transition[_text], pt.x + theme.padding, pt.y + theme.fontSize);
       }
       break;
     case highlightMode:
@@ -1199,6 +1302,11 @@ Renderer.prototype.draw = function(item, mode) {
     case 'statechart':
       this.drawStatechart(item, mode);
       break;
+    case 'event':
+    case 'guard':
+    case 'action':
+      this.drawProperty(item, mode);
+      break;
   }
 }
 
@@ -1216,6 +1324,11 @@ Renderer.prototype.hitTest = function(item, p, tol, mode) {
       break;
     case 'statechart':
       hitInfo = this.hitTestStatechart(item, p, tol, mode);
+      break;
+    case 'event':
+    case 'guard':
+    case 'action':
+      hitInfo = this.hitTestProperty(item, p, tol, mode);
       break;
   }
   if (hitInfo)
@@ -1296,6 +1409,27 @@ function Editor(model, theme) {
       width: 100,
       height: 60,
       name: 'New State',
+    },
+    {
+      type: 'event',
+      state: 'palette',
+      x: 8,
+      y: 100,
+      text: 'Event',
+    },
+    {
+      type: 'guard',
+      state: 'palette',
+      x: 8,
+      y: 132,
+      text: 'Cond',
+    },
+    {
+      type: 'action',
+      state: 'palette',
+      x: 8,
+      y: 164,
+      text: 'Action',
     },
   ]
 
@@ -1410,9 +1544,15 @@ function isDraggable(hitInfo, model) {
   return !isStatechart(hitInfo.item);
 }
 
-function isDropTarget(hitInfo, model) {
+function isStateDropTarget(hitInfo, model) {
   const item = hitInfo.item;
   return isTrueStateOrStatechart(item) &&
+         !model.hierarchicalModel.isItemInSelection(item);
+}
+
+function isPropertyDropTarget(hitInfo, model) {
+  const item = hitInfo.item;
+  return isTransition(item) &&
          !model.hierarchicalModel.isItemInSelection(item);
 }
 
@@ -1476,6 +1616,9 @@ Editor.prototype.onBeginDrag = function(p0) {
     switch (dragItem.type) {
       case 'state':
       case 'start':
+      case 'event':
+      case 'guard':
+      case 'action':
         if (mouseHitInfo.moveCopy) {
           drag = { type: moveCopySelection, name: 'Move copy of selection', newItem: true };
         } else {
@@ -1542,12 +1685,14 @@ Editor.prototype.onDrag = function(p0, p) {
         dx = cp.x - cp0.x, dy = cp.y - cp0.y,
         mouseHitInfo = this.mouseHitInfo,
         snapshot = transactionModel.getSnapshot(dragItem),
+        primaryDragObject = selectionModel.lastSelected(),
         hitList = this.hitTest(p);
   let hitInfo;
   switch (drag.type) {
     case moveCopySelection:
     case moveSelection:
-      hitInfo = this.getFirstHit(hitList, isDropTarget);
+      hitInfo = this.getFirstHit(hitList,
+          isProperty(primaryDragObject) ? isPropertyDropTarget : isStateDropTarget);
       selectionModel.forEach(function(item) {
         const snapshot = transactionModel.getSnapshot(item);
         if (snapshot && isContainable(item)) {
@@ -1631,7 +1776,9 @@ Editor.prototype.onEndDrag = function(p) {
   } else if (drag.type === moveSelection || drag.type === moveCopySelection) {
     // Find state beneath mouse.
     const hitList = this.hitTest(p),
-          hitInfo = this.getFirstHit(hitList, isDropTarget),
+          primaryDragObject = selectionModel.lastSelected(),
+          hitInfo = this.getFirstHit(hitList,
+              isProperty(primaryDragObject) ? isPropertyDropTarget : isStateDropTarget),
           parent = hitInfo ? hitInfo.item : statechart;
     // Reparent items.
     selectionModel.contents().forEach(function(item) {

@@ -1214,8 +1214,8 @@ const hierarchicalModel = (function() {
       return false;
     },
 
-    // Reduces the selection to the roots of the current selection. Thus, a
-    // parent and child can't be simultaneously selected.
+    // Reduces the selection to the roots of the current selection. Thus, if a
+    // child and ancestor are selected, remove the child.
     reduceSelection: function() {
       const self = this,
             selectionModel = this.model.selectionModel,
@@ -1224,7 +1224,8 @@ const hierarchicalModel = (function() {
         if (!self.isItemInSelection(self.getParent(item)))
           roots.push(item);
       });
-      return roots;
+      // Reverse, so passing this to selectionModel.set preserves order.
+      return roots.reverse();
     },
 
     getLineage: function(item) {
