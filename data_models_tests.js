@@ -332,6 +332,17 @@ test("referencingModel", function() {
   deepEqual(model.referencingModel.resolveId(child2.refId), undefined);
 });
 
+test("referencingModel getReferenceFn", function() {
+  const model = { root: {} };
+  const test = dataModels.referencingModel.extend(model);
+  // Multiple invocations return the same function (cached).
+  const fn = test.getReferenceFn('ref attr name');
+  // The result of invoking the function on an object without the attribute is undefined.
+  deepEqual(fn({}), undefined);
+  const fn2 = test.getReferenceFn('ref attr name');
+  deepEqual(fn, fn2);
+});
+
 // Instancing model unit tests.
 
 test("instancingModel isomorphic", function() {

@@ -113,7 +113,6 @@ function addWire(test, src, srcPin, dst, dstPin) {
 function newTestCircuitModel() {
   const model = newCircuit(),
         test = circuits.circuitModel.extend(model);
-  circuits.signatureModel.extend(model);
   model.dataModel.initialize();
   return test;
 }
@@ -122,10 +121,16 @@ function newTestEditingModel() {
   const model = newCircuit(),
         theme = circuits.createTheme(),
         test = circuits.editingModel.extend(model, theme);
-  circuits.signatureModel.extend(model);
+  circuits.circuitModel.extend(model);
   circuits.layoutModel.extend(model, theme);
   model.dataModel.initialize();
   model.layoutModel.initialize();
+
+  // Context sufficient for tests.
+  const ctx = {
+    measureText: () => { return { width: 10, height: 10 }},
+  };
+  model.renderer = new circuits.Renderer(theme, model, ctx);
   return test;
 }
 
@@ -133,55 +138,53 @@ function doInitialize(item) {
   item.initalized = true;
 }
 
-test("circuits.signatureModel", function() {
-  const model = newCircuit(),
-        test = circuits.signatureModel.extend(model);
-  ok(test);
-  ok(test.model);
-  ok(test.model.dataModel);
-});
+//------------------------------------------------------------------------------
 
-test("circuits.signatureModel", function() {
-  let test = newTestSignatureModel();
-  let types = [
+test("circuits.TypeMap.add", function() {
+  const test = new circuits.TypeMap();
+  const types = [
     '[vv,v](+)',
     '[v(a)v(b),v(c)]',
     '[,[,v][v,v]](@)',
     '[[v,vv(q)](a)v(b),v(c)](foo)',
   ];
-  types.forEach(
-    type => deepEqual(stringifyMaster(test.decodeType(type)), type));
+  types.forEach(type => deepEqual(stringifyMaster(test.add(type)), type));
+  types.forEach(type => ok(test.has(type)));
+  // Make sure subtypes are present.
+  ok(test.has('[,v]'));
+  ok(test.has('[v,v]'));
+  ok(test.has('[v,vv(q)]'));
 });
 
-test("circuits.signatureModel.unlabelType", function() {
-  let test = newTestSignatureModel();
-  deepEqual(test.unlabelType('[v,vv](foo)'), '[v,vv]');
-  deepEqual(test.unlabelType('[v,vv]'), '[v,vv]');
-  deepEqual(test.unlabelType('[vvv(foo)'), '[vvv');
-});
-
-test("circuits.signatureModel.getSignature", function() {
-  let test = newTestSignatureModel();
-  deepEqual(test.getSignature('[v,vv](foo)'), '[v,vv]');
-  deepEqual(test.getSignature('[v(a),v(b)v](foo)'), '[v,vv]');
-  deepEqual(test.getSignature('[[v,v](a),vv](foo)'), '[[v,v],vv]');
-});
-
-test("circuits.signatureModel.splitType", function() {
-  let test = newTestSignatureModel();
-  let tuples = [
-    { type: '[vv,v](+)', split: 3 },
-    { type: '[v(a)v(b),v(c)]', split: 9 },
-    { type: '[,[,v][v,v]](@)', split: 1 },
-    { type: '[[v,vv(q)](a)v(b),v(c)](foo)', split: 17 },
+test("circuits.TypeMap.splitType", function() {
+  const test = new circuits.TypeMap();
+  const tuples = [
+    { type: '[vv,v](+)', expected: 3 },
+    { type: '[v(a)v(b),v(c)]', expected: 9 },
+    { type: '[,[,v][v,v]](@)', expected: 1 },
+    { type: '[[v,vv(q)](a)v(b),v(c)](foo)', expected: 17 },
   ];
   tuples.forEach(
-    tuple => deepEqual(test.splitType(tuple.type), tuple.split));
+      tuple => deepEqual(test.splitType(tuple.type), tuple.expected));
 });
 
-test("circuits.signatureModel.addInputToType", function() {
-  let test = newTestSignatureModel();
-  let tuples = [
+test("circuits.TypeMap.trimType", function() {
+  const test = new circuits.TypeMap();
+  deepEqual(test.trimType('[v,vv](foo)'), '[v,vv]');
+  deepEqual(test.trimType('[v,vv]'), '[v,vv]');
+  deepEqual(test.trimType('[vvv(foo)'), '[vvv');
+});
+
+test("circuits.TypeMap.getUnlabeledType", function() {
+  const test = new circuits.TypeMap();
+  deepEqual(test.getUnlabeledType('[v,vv](foo)'), '[v,vv]');
+  deepEqual(test.getUnlabeledType('[v,vv]'), '[v,vv]');
+  deepEqual(test.getUnlabeledType('[vvv(foo)'), '[vvv');
+});
+
+test("circuits.TypeMap.addInputToType", function() {
+  const test = new circuits.TypeMap();
+  const tuples = [
     { type: '[,]', innerType: '*(x)', joined: '[*(x),]' },
     { type: '[vv,v](+)', innerType: '*(x)', joined: '[vv*(x),v](+)' },
   ];
@@ -189,15 +192,17 @@ test("circuits.signatureModel.addInputToType", function() {
     tuple => deepEqual(test.addInputToType(tuple.type, tuple.innerType), tuple.joined));
 });
 
-test("circuits.signatureModel.addOutputToType", function() {
-  let test = newTestSignatureModel();
-  let tuples = [
+test("circuits.TypeMap.addOutputToType", function() {
+  const test = new circuits.TypeMap();
+  const tuples = [
     { type: '[,]', innerType: '*(x)', joined: '[,*(x)]' },
     { type: '[vv,v](+)', innerType: '*(x)', joined: '[vv,v*(x)](+)' },
   ];
   tuples.forEach(
     tuple => deepEqual(test.addOutputToType(tuple.type, tuple.innerType), tuple.joined));
 });
+
+//------------------------------------------------------------------------------
 
 test("circuits.circuitModel.extend", function() {
   let test = newTestCircuitModel();
@@ -305,23 +310,14 @@ test("circuits.circuitModel.iterators", function() {
 test("circuits.editingAndMastering", function() {
   const test = newTestEditingModel(),
         circuit = test.model.root,
-        signatureModel = test.model.signatureModel;
-  const types = [], masters = [];
-  function onMasterInserted(type, master) {
-    types.push(type);
-    masters.push(master);
-  }
-  signatureModel.addHandler('masterInserted', onMasterInserted);
-
+        circuitModel = test.model.circuitModel;
   // Add an item.
   const a = newTypedElement('[vv,v]');
   test.newItem(a);
   test.addItem(a, circuit);
   // Check master
   const type = a.master;
-  deepEqual(stringifyMaster(signatureModel.getMaster(a)), type);
-  deepEqual(types, [type]);
-  deepEqual(masters, [signatureModel.getMaster(a)]);
+  deepEqual(stringifyMaster(circuits.getMaster(a)), type);
 });
 
 test("circuits.editingModel", function() {
@@ -593,7 +589,7 @@ test("circuits.editingModel.wireConsistency", function() {
 //         x: 0,
 //         y: 0,
 //         master: group.master,
-//         [_master]: getMaster(group),
+//         [_master]: circuits.getMaster(group),
 //       },
 //       expectedType = '[v,v]',
 //       elem4 = addElement(test, newTypedElement('[,' + expectedType + ']')),
@@ -610,7 +606,7 @@ test("circuits.editingModel.wireConsistency", function() {
 //         x: newGroupInstanceInfo.x,
 //         y: newGroupInstanceInfo.y,
 //         master: group.master,
-//         [_master]: getMaster(group),
+//         [_master]: circuits.getMaster(group),
 //         state: 'palette',
 //       };
 

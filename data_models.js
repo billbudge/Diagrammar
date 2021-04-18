@@ -562,10 +562,14 @@ const referencingModel = (function() {
     },
 
     getReferenceFn: function(attr) {
+      // this object caches the reference functions, indexed by the symbol.
       const self = this, symbol = Symbol.for(attr);
-      return function(item) {
-        return item[symbol] || self.resolveReference(item, attr);
+      let fn = this[symbol];
+      if (!fn) {
+        fn = item => { return item[symbol] || self.resolveReference(item, attr); };
+        self[symbol] = fn;
       }
+      return fn;
     },
 
     // Resolves an id to a target item if possible.

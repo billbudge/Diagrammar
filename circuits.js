@@ -104,204 +104,183 @@ function reverseVisitItems(items, fn, filter) {
 const inputElementType = '[,*]',
       outputElementType = '[*,]';
 
-const _master = Symbol('master'),
+const _x = Symbol('x'),
+      _y = Symbol('y'),
+      _baseline = Symbol('baseline'),
+      _width = Symbol('width'),
+      _height = Symbol('height'),
+      _p1 = Symbol('p1'),
+      _p2 = Symbol('p2'),
+      _bezier = Symbol('bezier'),
+      _needs_layout = Symbol('needs layout'),
+      _master = Symbol('master'),
       _groupItems = Symbol('groupItems');
 
+//------------------------------------------------------------------------------
+
+// A map from type strings to type objects.
+
+function TypeMap() {
+  this.map_ = new Map();
+}
+
+TypeMap.prototype = {
+
+  // Signature format: [inputs,outputs] with optional names, e.g.
+  // [v(a)v(b),v(sum)](+) for a binary addition element.
+
+  get: function(type) {
+    return this.map_.get(type);
+  },
+  has: function(type) {
+    return this.map_.has(type);
+  },
+  add: function(type) {
+    const self = this;
+
+    function addMaster(type, master) {
+      self.map_.set(type, master);
+      return master;
+    }
+
+    let j = 0;
+    // Close over j to avoid extra return values.
+    function parseName() {
+      let name;
+      if (type[j] === '(') {
+        let i = j + 1;
+        j = type.indexOf(')', i);
+        if (j > i)
+          name = type.substring(i, j);
+        j++;
+      }
+      return name;
+    }
+    function parsePin() {
+      let i = j;
+      // value types
+      if (type[j] === 'v') {
+        j++;
+        return { type: 'v', name: parseName() };
+      }
+      // wildcard types
+      if (type[j] === '*') {
+        j++;
+        return { type: '*', name: parseName() };
+      }
+      // function types
+      let pinMaster = parseFunction(),
+          pinType = type.substring(i, j),
+          name = parseName(),
+          master = self.map_.get(pinType) || addMaster(pinType, pinMaster);
+      return {
+        type: pinType,
+        name: name,
+        [_master]: pinMaster,
+      };
+    }
+    function parseFunction() {
+      let i = j;
+      if (type[j] === '[') {
+        j++;
+        let inputs = [], outputs = [];
+        while (type[j] !== ',') {
+          inputs.push(parsePin());
+        }
+        j++;
+        while (type[j] !== ']') {
+          outputs.push(parsePin());
+        }
+        j++;
+        let fnType = type.substring(i, j);
+        return {
+          type: fnType,
+          inputs: inputs,
+          outputs: outputs,
+        };
+      }
+    }
+    let f = parseFunction(),
+        name = parseName();
+    let master = {
+      type: type,
+      name: name,
+      inputs: f.inputs,
+      outputs: f.outputs,
+    };
+    master = self.map_.get(type) || addMaster(type, master);
+    return master;
+  },
+
+  // Removes any trailing label. Type may be ill-formed, e.g. '[v(f)'
+  trimType: function(type) {
+    if (type[type.length - 1] === ')')
+      type = type.substring(0, type.lastIndexOf('('));
+    return type;
+  },
+
+  // Removes all labels from signature.
+  getUnlabeledType: function(type) {
+    let result = '', label = 0;
+    while (true) {
+      label = type.indexOf('(');
+      if (label <= 0)
+        break;
+      result += type.substring(0, label);
+      label = type.indexOf(')', label);
+      if (label <= 0)
+        break;
+      type = type.substring(label + 1, type.length);
+    }
+    return result + type;
+  },
+
+  splitType: function(type) {
+    let self = this;
+    let j = 0, level = 0;
+    while (true) {
+      if (type[j] === '[')
+        level++;
+      else if (type[j] === ']')
+        level--;
+      else if (type[j] === ',')
+        if (level === 1) return j;
+      j++;
+    }
+  },
+
+  hasOutput: function(type) {
+    return !type.endsWith(',]');
+  },
+
+  addInputToType: function(type, inputType) {
+    let i = this.splitType(type);
+    return type.substring(0, i) + inputType + type.substring(i);
+  },
+
+  addOutputToType: function(type, outputType) {
+    let i = type.lastIndexOf(']');
+    return type.substring(0, i) + outputType + type.substring(i);
+  },
+}
+
+const globalTypeMap_ = new TypeMap();
+
 function getMaster(item) {
-  return item[_master];
+  assert(!isWire(item));
+  let master = item[_master];
+  if (!master) {
+    let type = item.master || item.type;
+    master = globalTypeMap_.add(type);
+    master[_needs_layout] = true;
+    item[_master] = master;
+  }
+  return master;
 }
 
 function getGroupItems(item) {
   return item[_groupItems];
 }
-
-//------------------------------------------------------------------------------
-
-const signatureModel = (function() {
-  const proto = {
-    getMaster: function(item) {
-      return item[_master];
-    },
-
-    onMasterInserted_: function(type, master) {
-      // console.log(master);
-      this.onEvent('masterInserted', function (handler) {
-        handler(type, master);
-      });
-    },
-
-    // Type description: [inputs,outputs] with optional names, e.g.
-    // [v(a)v(b),v(sum)](+) for a binop.
-    decodeType: function(s) {
-      let self = this;
-      let j = 0;
-      // close over j to avoid extra return values.
-      function decodeName() {
-        let name;
-        if (s[j] === '(') {
-          let i = j + 1;
-          j = s.indexOf(')', i);
-          if (j > i)
-            name = s.substring(i, j);
-          j++;
-        }
-        return name;
-      }
-      function addMaster(type, master) {
-        let existing = self.masterMap_.get(type);
-        if (existing)
-          return existing;
-        self.masterMap_.set(type, master);
-        self.onMasterInserted_(type, master);
-        return master;
-      }
-      function decodePin() {
-        let i = j;
-        // value types
-        if (s[j] === 'v') {
-          j++;
-          return { type: 'v', name: decodeName() };
-        }
-        // wildcard types
-        if (s[j] === '*') {
-          j++;
-          return { type: '*', name: decodeName() };
-        }
-        // function types
-        let f = decodeFunction(),
-            type = s.substring(i, j),
-            name = decodeName(),
-            master = addMaster(type, f);
-        return {
-          type: type,
-          name: name,
-          [_master]: master,
-        };
-      }
-      function decodeFunction() {
-        let i = j;
-        if (s[j] === '[') {
-          j++;
-          let inputs = [], outputs = [];
-          while (s[j] !== ',') {
-            inputs.push(decodePin());
-          }
-          j++;
-          while (s[j] !== ']') {
-            outputs.push(decodePin());
-          }
-          j++;
-          let type = s.substring(i, j);
-          return {
-            type: type,
-            inputs: inputs,
-            outputs: outputs,
-          };
-        }
-      }
-      let f = decodeFunction(),
-          name = decodeName(),
-          type = s;
-      let master = {
-        type: type,
-        name: name,
-        inputs: f.inputs,
-        outputs: f.outputs,
-      };
-      master = addMaster(type, master);
-      return master;
-    },
-
-    // Removes any trailing label. Type may be ill-formed, e.g. '[v(f)'
-    unlabelType: function(type) {
-      if (type[type.length - 1] === ')')
-        type = type.substring(0, type.lastIndexOf('('));
-      return type;
-    },
-
-    // Removes all labels from type.
-    getSignature: function(type) {
-      let result = '', label = 0;
-      while (true) {
-        label = type.indexOf('(');
-        if (label <= 0)
-          break;
-        result += type.substring(0, label);
-        label = type.indexOf(')', label);
-        if (label <= 0)
-          break;
-        type = type.substring(label + 1, type.length);
-      }
-      return result + type;
-    },
-
-    splitType: function(s) {
-      let self = this;
-      let j = 0, level = 0;
-      while (true) {
-        if (s[j] === '[')
-          level++;
-        else if (s[j] === ']')
-          level--;
-        else if (s[j] === ',')
-          if (level === 1) return j;
-        j++;
-      }
-    },
-
-    hasOutput: function(type) {
-      return !type.endsWith(',]');
-    },
-
-    addInputToType: function(type, inputType) {
-      let i = this.splitType(type);
-      return type.substring(0, i) + inputType + type.substring(i);
-    },
-
-    addOutputToType: function(type, outputType) {
-      let i = type.lastIndexOf(']');
-      return type.substring(0, i) + outputType + type.substring(i);
-    },
-
-    initialize: function(item) {
-      if (isElementOrGroup(item)) {
-        const master = item.master;
-        item[_master] = master ?
-                        this.masterMap_.get(master) || this.decodeType(master) :
-                        null;
-      }
-    },
-  }
-
-  function extend(model) {
-    dataModels.dataModel.extend(model);
-    dataModels.observableModel.extend(model);
-
-    let instance = Object.create(proto);
-    instance.model = model;
-    instance.masterMap_ = new Map();
-
-    dataModels.eventMixin.extend(instance);
-
-    // Make sure new elements have masters.
-    model.dataModel.addInitializer(item => instance.initialize(item));
-    // Make sure elements are remastered if their master type changes.
-    model.observableModel.addHandler('changed', function (change) {
-      if (isElementOrGroup(change.item)) {
-        if (change.attr === 'master') {
-          instance.initialize(change.item);
-        }
-      }
-    });
-
-    model.signatureModel = instance;
-    return instance;
-  }
-
-  return {
-    extend: extend,
-  }
-})();
 
 //------------------------------------------------------------------------------
 
@@ -412,13 +391,14 @@ const circuitModel = (function() {
 
     insertElement_: function(element) {
       this.elementsAndGroups_.add(element);
-      const master = getMaster(element);
+      let master = getMaster(element);
       // inputMap_ takes element to array of incoming wires.
       this.inputMap_.set(element, new Array(master.inputs.length).fill(null));
       // outputMap_ takes element to array of arrays of outgoing wires.
       const arrays = [...Array(master.outputs.length)].map(() => new Array());
       this.outputMap_.set(element, arrays);
     },
+
     removeElement_: function(element) {
       this.elementsAndGroups_.delete(element);
       this.inputMap_.delete(element);
@@ -522,7 +502,7 @@ const circuitModel = (function() {
       });
 
       changeAggregator.clear();
-    }
+    },
   }
 
   function extend(model) {
@@ -541,6 +521,14 @@ const circuitModel = (function() {
     instance.outputMap_ = new Map();  // element -> output wires[][]
     instance.elementsAndGroups_ = new Set();
     instance.wires_ = new Set();
+
+    // Make sure elements are remastered if their master type changes.
+    model.observableModel.addHandler('changed', function (change) {
+      if (isElementOrGroup(change.item) && change.attr === 'master') {
+        const item = change.item;
+        item[_master] = globalTypeMap_.add(item.master);
+      }
+    });
 
     instance.getWireSrc_ = model.referencingModel.getReferenceFn('srcId');
     instance.getWireDst_ = model.referencingModel.getReferenceFn('dstId');
@@ -731,16 +719,16 @@ const editingModel = (function() {
     replaceElement: function(element, newElement) {
       const self = this, model = this.model,
             observableModel = model.observableModel,
-            signatureModel = model.signatureModel,
-            graphInfo = model.circuitModel.getSubgraphInfo([element]),
+            circuitModel = model.circuitModel,
+            graphInfo = circuitModel.getSubgraphInfo([element]),
             master = getMaster(element),
             newId = model.dataModel.getId(newElement),
             newMaster = getMaster(newElement);
       function canRewire(index, pins, newPins) {
         if (index >= newPins.length)
           return false;
-        const type = signatureModel.getSignature(pins[index].type),
-              newType = signatureModel.getSignature(newPins[index].type);
+        const type = globalTypeMap_.trimType(pins[index].type),
+              newType = globalTypeMap_.trimType(newPins[index].type);
         return type === '*' || type === newType;
       }
       graphInfo.iterators.forInputWires(element, function(wire, pin) {
@@ -767,10 +755,10 @@ const editingModel = (function() {
     },
 
     connectInput: function(element, pin, p) {
-      const layoutModel = this.model.layoutModel,
+      const renderer = this.model.renderer,
             parent = this.getParent(element),
             dstPin = getMaster(element).inputs[pin],
-            pinPoint = p || layoutModel.pinToPoint(element, pin, true);
+            pinPoint = p || renderer.pinToPoint(element, pin, true);
 
       const junction = {
         type: 'element',
@@ -794,10 +782,10 @@ const editingModel = (function() {
     },
 
     connectOutput: function(element, pin, p) {
-      const layoutModel = this.model.layoutModel,
+      const renderer = this.model.renderer,
             parent = this.getParent(element),
             srcPin = getMaster(element).outputs[pin],
-            pinPoint = p || layoutModel.pinToPoint(element, pin, false);
+            pinPoint = p || renderer.pinToPoint(element, pin, false);
 
       const junction = {
         type: 'element',
@@ -858,20 +846,19 @@ const editingModel = (function() {
     },
 
     setLabel: function (item, newText) {
-      const signatureModel = this.model.signatureModel,
-            label = newText ? '(' + newText + ')' : '',
+      const label = newText ? '(' + newText + ')' : '',
             master = item.master;
       let newMaster;
       if (isInputPinLabeled(item)) {
-        const j = signatureModel.splitType(master),
+        const j = globalTypeMap_.splitType(master),
               prefix = master.substring(0, j),
               suffix = master.substring(j);
-        newMaster = signatureModel.unlabelType(prefix) + label + suffix;
+        newMaster = globalTypeMap_.trimType(prefix) + label + suffix;
       } else if (isOutputPinLabeled(item)) {
         const prefix = master.substring(0, master.length - 1);
-        newMaster = signatureModel.unlabelType(prefix) + label + ']';
+        newMaster = globalTypeMap_.trimType(prefix) + label + ']';
       } else {
-        newMaster = signatureModel.unlabelType(master) + label;
+        newMaster = globalTypeMap_.trimType(master) + label;
       }
       return newMaster;
     },
@@ -896,7 +883,6 @@ const editingModel = (function() {
     openElement: function(element) {
       const self = this, model = this.model,
             dataModel = model.dataModel,
-            signatureModel = model.signatureModel,
             observableModel = model.observableModel,
             master = getMaster(element);
 
@@ -907,9 +893,9 @@ const editingModel = (function() {
         y: element.y,
       };
       const id = dataModel.assignId(newElement),
-            type = signatureModel.unlabelType(element.master),
-            innerType = signatureModel.getSignature(type),
-            newType = signatureModel.addInputToType(type, innerType);
+            type = globalTypeMap_.trimType(element.master),
+            innerType = globalTypeMap_.getUnlabeledType(type),
+            newType = globalTypeMap_.addInputToType(type, innerType);
       newElement.master = newType;
       dataModel.initialize(newElement);
       return newElement;
@@ -934,7 +920,6 @@ const editingModel = (function() {
     closeElement: function(element, incomingWires, outgoingWireArrays) {
       const self = this, model = this.model,
             dataModel = model.dataModel,
-            signatureModel = model.signatureModel,
             observableModel = model.observableModel,
             translatableModel = model.translatableModel,
             master = getMaster(element);
@@ -985,7 +970,7 @@ const editingModel = (function() {
       if (master.name) {
         closedType += '(' + master.name + ')';
       }
-      type = signatureModel.addOutputToType(type, closedType);
+      type = globalTypeMap_.addOutputToType(type, closedType);
 
       newElement.master = type;
       dataModel.initialize(newElement);
@@ -1015,9 +1000,9 @@ const editingModel = (function() {
     setGroupMasterInfo: function(group, items) {
       const self = this, model = this.model,
             dataModel = model.dataModel,
-            signatureModel = model.signatureModel,
-            layoutModel = model.layoutModel,
+            circuitModel = model.circuitModel,
             graphInfo = model.circuitModel.getSubgraphInfo(items),
+            renderer = this.model.renderer,
             inputs = [], outputs = [];
 
       function makePin(item, type, y) {
@@ -1052,10 +1037,10 @@ const editingModel = (function() {
           if (!isElement(item))
             return;
           if (isInput(item)) {
-            const y = layoutModel.pinToPoint(item, 0, false).y;
+            const y = renderer.pinToPoint(item, 0, false).y;
             inputs.push(makePin(item, getInputType(item), y));
           } else if (isOutput(item)) {
-            const y = layoutModel.pinToPoint(item, 0, true).y;
+            const y = renderer.pinToPoint(item, 0, true).y;
             outputs.push(makePin(item, getOutputType(item), y));
           } else if (isGroup(item)) {
             addItems(item.items);
@@ -1121,12 +1106,12 @@ const editingModel = (function() {
     build: function(items) {
       const self = this, model = this.model,
             dataModel = model.dataModel,
-            signatureModel = model.signatureModel,
             observableModel = model.observableModel,
-            layoutModel = model.layoutModel,
-            graphInfo = model.circuitModel.getSubgraphInfo(items),
+            renderer = this.model.renderer,
+            circuitModel = model.circuitModel,
+            graphInfo = circuitModel.getSubgraphInfo(items),
             groupItems = items.concat(Array.from(graphInfo.interiorWires)),
-            extents = layoutModel.getItemRects(graphInfo.elementsAndGroups),
+            extents = renderer.getUnionBounds(graphInfo.elementsAndGroups),
             spacing = this.theme.spacing,
             x = extents.x - spacing,
             y = extents.y - spacing;
@@ -1143,10 +1128,12 @@ const editingModel = (function() {
 
       group.items = groupItems;
       groupItems.forEach(function(item) {
-        let r = layoutModel.getItemRect(item);
-        if (r) {
-          observableModel.changeValue(item, 'x', r.x - x);
-          observableModel.changeValue(item, 'y', r.y - y);
+        if (!isWire(item)) {
+          let r = renderer.getBounds(item);
+          if (r) {
+            observableModel.changeValue(item, 'x', r.x - x);
+            observableModel.changeValue(item, 'y', r.y - y);
+          }
         }
         self.deleteItem(item);
       });
@@ -1304,9 +1291,9 @@ const editingModel = (function() {
             diagram = this.diagram,
             dataModel = model.dataModel,
             hierarchicalModel = model.hierarchicalModel,
-            signatureModel = model.signatureModel,
             selectionModel = model.selectionModel,
             observableModel = model.observableModel,
+            circuitModel = model.circuitModel,
             graphInfo = model.circuitModel.getGraphInfo(),
             elementsAndGroups = graphInfo.elementsAndGroups,
             wires = graphInfo.wires;
@@ -1338,7 +1325,7 @@ const editingModel = (function() {
           return;
         }
         const newSig = self.setGroupMasterInfo(group, group.items),
-              oldSig = signatureModel.unlabelType(group.master);
+              oldSig = globalTypeMap_.trimType(group.master);
         if (oldSig !== newSig) {
           let label = group.master.substring(oldSig.length);
           observableModel.changeValue(group, 'master', newSig + label);
@@ -1365,6 +1352,7 @@ const editingModel = (function() {
     dataModels.transactionHistory.extend(model);
     dataModels.instancingModel.extend(model);
     dataModels.copyPasteModel.extend(model);
+    dataModels.translatableModel.extend(model);
 
     circuitModel.extend(model);
 
@@ -1391,210 +1379,35 @@ const editingModel = (function() {
 
 //------------------------------------------------------------------------------
 
-const _x = Symbol('x'),
-      _y = Symbol('y'),
-      _baseline = Symbol('baseline'),
-      _width = Symbol('width'),
-      _height = Symbol('height'),
-      _p1 = Symbol('p1'),
-      _p2 = Symbol('p2'),
-      _bezier = Symbol('bezier');
-
 const layoutModel = (function() {
   const proto = {
     initialize: function(ctx) {
       this.ctx = ctx ||
         {
+          // Mock context for testing.
           save: function() {},
           restore: function() {},
           measureText: () => { return { width: 10, height: 10 }},
         };
     },
 
-    getItemRect: function (item) {
-      if (isWire(item))
-        return;
-      let translatableModel = this.model.translatableModel,
-          x = translatableModel.globalX(item),
-          y = translatableModel.globalY(item),
-          width, height;
-      if (isGroup(item)) {
-        width = item[_width];
-        height = item[_height];
-      } else if (isElement(item)) {
-        let master = getMaster(item);
-        width = master[_width];
-        height = master[_height];
-      }
-      return { x: x, y: y, w: width, h: height };
-    },
-
-    setItemBounds: function (item, width, height) {
-      item[_width] = width;
-      item[_height] = height;
-    },
-
-    getItemRects: function(items) {
-      let xMin = Number.POSITIVE_INFINITY, yMin = Number.POSITIVE_INFINITY,
-          xMax = -Number.POSITIVE_INFINITY, yMax = -Number.POSITIVE_INFINITY;
-      for (let item of items) {
-        if (isWire(item))
-          continue;
-        let rect = this.getItemRect(item);
-        xMin = Math.min(xMin, rect.x);
-        yMin = Math.min(yMin, rect.y);
-        xMax = Math.max(xMax, rect.x + rect.w);
-        yMax = Math.max(yMax, rect.y + rect.h);
-      }
-      return { x: xMin, y: yMin, w: xMax - xMin, h: yMax - yMin };
-    },
-
-    pinToPoint: function(item, index, isInput) {
-      let rect = this.getItemRect(item),
-          x = rect.x, y = rect.y, w = rect.w, h = rect.h,
-          master = getMaster(item),
-          pin, nx;
-      if (isInput) {
-        pin = master.inputs[index];
-        nx = -1;
-      } else {
-        pin = master.outputs[index];
-        nx = 1;
-        x += w;
-      }
-      y += pin[_y] + pin[_height] / 2;
-
-      return {
-        x: x,
-        y: y,
-        nx: nx,
-        ny: 0,
-      }
-    },
-
     updateLayout: function() {
       const self = this,
             graphInfo = this.model.circuitModel.getGraphInfo();
       this.changedElements_.forEach(function(element) {
-        function addWire(wire) {
-          if (wire)
-            self.changedWires_.add(wire);
+        function markWire(wire) {
+          wire[_needs_layout] = true;
         }
-        graphInfo.iterators.forInputWires(element, addWire);
-        graphInfo.iterators.forOutputWires(element, addWire);
+        graphInfo.iterators.forInputWires(element, markWire);
+        graphInfo.iterators.forOutputWires(element, markWire);
       });
       this.changedElements_.clear();
-
-      this.changedWires_.forEach(wire => self.layoutWire_(wire));
       this.changedWires_.clear();
     },
 
     updateGroupLayout: function() {
-      const self = this;
-      this.changedTopLevelGroups_.forEach(group => self.layoutGroup_(group));
+      this.changedTopLevelGroups_.forEach(group => group[_needs_layout] = true);
       this.changedTopLevelGroups_.clear();
-    },
-
-    // Make sure a group is big enough to enclose its contents.
-    layoutGroup_: function(group) {
-      const self = this, spacing = this.theme.spacing;
-      function layout(group) {
-        const extents = self.getItemRects(group.items),
-              translatableModel = self.model.translatableModel,
-              groupX = translatableModel.globalX(group),
-              groupY = translatableModel.globalY(group),
-              margin = 2 * spacing,
-              master = getMaster(group);
-        let width = extents.x + extents.w - groupX + margin,
-            height = extents.y + extents.h - groupY + margin;
-        if (master) {
-          width += master[_width];
-          height = Math.max(height, master[_height] + margin);
-        }
-        self.setItemBounds(group, width, height);
-      }
-      // visit in reverse order to correctly include sub-group bounds.
-      reverseVisitItem(group, function(group) {
-        layout(group);
-      }, isGroup);
-    },
-
-    // Compute sizes for an element master.
-    layoutMaster_: function(master) {
-      const self = this,
-            model = this.model,
-            ctx = this.ctx, theme = this.theme,
-            textSize = theme.fontSize, spacing = theme.spacing,
-            name = master.name,
-            inputs = master.inputs, outputs = master.outputs;
-      let height = 0, width = 0;
-      if (name) {
-        width = 2 * spacing + ctx.measureText(name).width;
-        height += textSize + spacing / 2;
-      } else {
-        height += spacing / 2;
-      }
-
-      function layoutPins(pins) {
-        let y = height, w = 0;
-        for (let i = 0; i < pins.length; i++) {
-          let pin = pins[i];
-          self.layoutPin_(pin);
-          pin[_y] = y + spacing / 2;
-          let name = pin.name, pw = pin[_width], ph = pin[_height] + spacing / 2;
-          if (name) {
-            pin[_baseline] = y + textSize;
-            if (textSize > ph) {
-              pin[_y] += (textSize - ph) / 2;
-              ph = textSize;
-            } else {
-              pin[_baseline] += (ph - textSize) / 2;
-            }
-            pw += 2 * spacing + ctx.measureText(name).width;
-          }
-          y += ph;
-          w = Math.max(w, pw);
-        }
-        return [y, w];
-      }
-      const [yIn, wIn] = layoutPins(inputs);
-      const [yOut, wOut] = layoutPins(outputs);
-
-      this.setItemBounds(
-        master,
-        Math.round(Math.max(width, wIn + 2 * spacing + wOut, theme.minMasterWidth)),
-        Math.round(Math.max(yIn, yOut, theme.minMasterHeight) + spacing / 2));
-      return master;
-    },
-
-    layoutPin_: function(pin) {
-      const theme = this.theme, shrink = theme.shrink;
-      if (pin.type === 'v' || pin.type === '*') {
-        pin[_width] = pin[_height] = 2 * theme.knobbyRadius;
-      } else {
-        let master = getMaster(pin);
-        this.layoutMaster_(master);
-        pin[_width] = master[_width] * shrink;
-        pin[_height] = master[_height] * shrink;
-      }
-    },
-
-    layoutWire_: function(wire) {
-      let src = this.getWireSrc(wire),
-          dst = this.getWireDst(wire),
-          p1 = wire[_p1],
-          p2 = wire[_p2];
-      // Since we intercept change events and not transactions, wires may be in
-      // an inconsistent state, so check before creating the path.
-      if (src && wire.srcPin !== undefined) {
-        p1 = this.pinToPoint(src, wire.srcPin, false);
-      }
-      if (dst && wire.dstPin !== undefined) {
-        p2 = this.pinToPoint(dst, wire.dstPin, true);
-      }
-      if (p1 && p2) {
-        wire[_bezier] = diagrams.getEdgeBezier(p1, p2);
-      }
     },
 
     addTopLevelGroup_: function(item) {
@@ -1639,7 +1452,7 @@ const layoutModel = (function() {
           this.update_(item);
           this.update_(newValue);
           if (isGroup(newValue))
-            this.layoutGroup_(newValue);
+            newValue[_needs_layout] = true;
           break;
         }
       }
@@ -1647,11 +1460,13 @@ const layoutModel = (function() {
   }
 
   function extend(model, theme) {
+    if (model.layoutModel)
+      return model.layoutModel;
+
     dataModels.dataModel.extend(model);
     dataModels.observableModel.extend(model);
     dataModels.referencingModel.extend(model);
     dataModels.hierarchicalModel.extend(model);
-    dataModels.translatableModel.extend(model);
 
     let instance = Object.create(proto);
     instance.model = model;
@@ -1659,19 +1474,11 @@ const layoutModel = (function() {
     instance.circuit = circuit;
     instance.theme = theme;
 
+    // Make sure new items get laid out.
+    model.dataModel.addInitializer(item => item[_needs_layout] = true);
+
     model.observableModel.addHandler('changed',
                                      change => instance.onChanged_(change));
-
-    function layoutMaster(type, master) {
-      const ctx = instance.ctx,
-            theme = instance.theme;
-      ctx.save();
-      ctx.font = theme.font;
-      instance.layoutMaster_(master);
-      ctx.restore();
-
-    }
-    model.signatureModel.addHandler('masterInserted', layoutMaster);
 
     instance.changedWires_ = new Set();
     instance.changedElements_ = new Set();
@@ -1697,28 +1504,208 @@ const normalMode = 1,
     highlightMode = 2,
     hotTrackMode = 3;
 
-function Renderer(theme) {
+function Renderer(theme, model, ctx) {
   this.theme = theme;
+  // Tests set these globally, TODO Set model globally only. begin/end is cumbersome.
+  this.model = model;
+  this.ctx = ctx;
 }
 
 Renderer.prototype = {
   begin: function(model, ctx) {
+    const translatableModel = model.translatableModel,
+          referencingModel = model.referencingModel;
+
+    assert(translatableModel);
+    assert(referencingModel);
+
     this.model = model;
+    this.translatableModel = translatableModel;
+    this.referencingModel = referencingModel;
+
+    this.getWireSrc = referencingModel.getReferenceFn('srcId');
+    this.getWireDst = referencingModel.getReferenceFn('dstId');
+
     this.ctx = ctx;
-    this.layoutModel = model.layoutModel;
 
     ctx.save();
     ctx.font = this.theme.font;
-
-    model.layoutModel.updateLayout();
   },
 
   end: function() {
     this.ctx.restore();
-    this.model = this.layoutModel = null;
+  },
+
+  getBounds: function (item) {
+    assert(!isWire(item));
+    const translatableModel = this.model.translatableModel,
+          x = translatableModel.globalX(item),
+          y = translatableModel.globalY(item);
+    if (isElement(item)) {
+      const master = getMaster(item);
+      if (master[_needs_layout])
+        this.layoutMaster(master);
+      return { x: x, y: y, w: master[_width], h: master[_height] };
+    }
+    if (isGroup(item)) {
+      return { x: x, y: y, w: item[_width], h: item[_height] };
+    }
+  },
+
+  setBounds: function (item, width, height) {
+    assert(!isWire(item));
+    item[_width] = width;
+    item[_height] = height;
+  },
+
+  getUnionBounds: function(items) {
+    let xMin = Number.POSITIVE_INFINITY, yMin = Number.POSITIVE_INFINITY,
+        xMax = -Number.POSITIVE_INFINITY, yMax = -Number.POSITIVE_INFINITY;
+    for (let item of items) {
+      if (isWire(item))
+        continue;
+      const rect = this.getBounds(item);
+      xMin = Math.min(xMin, rect.x);
+      yMin = Math.min(yMin, rect.y);
+      xMax = Math.max(xMax, rect.x + rect.w);
+      yMax = Math.max(yMax, rect.y + rect.h);
+    }
+    return { x: xMin, y: yMin, w: xMax - xMin, h: yMax - yMin };
+  },
+
+  pinToPoint: function(element, index, isInput) {
+    assert(isElement(element));
+    const rect = this.getBounds(element),
+        w = rect.w, h = rect.h,
+        master = getMaster(element);
+    let x = rect.x, y = rect.y,
+        pin, nx;
+    if (isInput) {
+      pin = master.inputs[index];
+      nx = -1;
+    } else {
+      pin = master.outputs[index];
+      nx = 1;
+      x += w;
+    }
+    y += pin[_y] + pin[_height] / 2;
+    return { x: x, y: y, nx: nx, ny: 0 }
+  },
+
+  // Compute sizes for an element master.
+  layoutMaster: function(master) {
+    assert(master[_needs_layout]);
+    const self = this,
+          model = this.model,
+          ctx = this.ctx, theme = this.theme,
+          textSize = theme.fontSize, spacing = theme.spacing,
+          name = master.name,
+          inputs = master.inputs, outputs = master.outputs;
+    let height = 0, width = 0;
+    if (name) {
+      width = 2 * spacing + ctx.measureText(name).width;
+      height += textSize + spacing / 2;
+    } else {
+      height += spacing / 2;
+    }
+
+    function layoutPins(pins) {
+      let y = height, w = 0;
+      for (let i = 0; i < pins.length; i++) {
+        let pin = pins[i];
+        self.layoutPin(pin);
+        pin[_y] = y + spacing / 2;
+        let name = pin.name, pw = pin[_width], ph = pin[_height] + spacing / 2;
+        if (name) {
+          pin[_baseline] = y + textSize;
+          if (textSize > ph) {
+            pin[_y] += (textSize - ph) / 2;
+            ph = textSize;
+          } else {
+            pin[_baseline] += (ph - textSize) / 2;
+          }
+          pw += 2 * spacing + ctx.measureText(name).width;
+        }
+        y += ph;
+        w = Math.max(w, pw);
+      }
+      return [y, w];
+    }
+    const [yIn, wIn] = layoutPins(inputs);
+    const [yOut, wOut] = layoutPins(outputs);
+
+    this.setBounds(
+      master,
+      Math.round(Math.max(width, wIn + 2 * spacing + wOut, theme.minMasterWidth)),
+      Math.round(Math.max(yIn, yOut, theme.minMasterHeight) + spacing / 2));
+
+    master[_needs_layout] = false;
+  },
+
+  layoutPin: function(pin) {
+    const theme = this.theme, shrink = theme.shrink;
+    if (pin.type === 'v' || pin.type === '*') {
+      pin[_width] = pin[_height] = 2 * theme.knobbyRadius;
+    } else {
+      const master = getMaster(pin);
+      if (master[_needs_layout])
+        this.layoutMaster(master);
+      pin[_width] = master[_width] * shrink;
+      pin[_height] = master[_height] * shrink;
+    }
+  },
+
+  layoutWire: function(wire) {
+    assert(wire[_needs_layout]);
+    let src = this.getWireSrc(wire),
+        dst = this.getWireDst(wire),
+        p1 = wire[_p1],
+        p2 = wire[_p2];
+    // Since we intercept change events and not transactions, wires may be in
+    // an inconsistent state, so check before creating the path.
+    if (src && wire.srcPin !== undefined) {
+      p1 = this.pinToPoint(src, wire.srcPin, false);
+    }
+    if (dst && wire.dstPin !== undefined) {
+      p2 = this.pinToPoint(dst, wire.dstPin, true);
+    }
+    if (p1 && p2) {
+      wire[_bezier] = diagrams.getEdgeBezier(p1, p2);
+    }
+    wire[_needs_layout] = false;
+  },
+
+  // Make sure a group is big enough to enclose its contents.
+  layoutGroup: function(group) {
+    assert(group[_needs_layout]);
+    const self = this, spacing = this.theme.spacing;
+    function layout(group) {
+      const extents = self.getUnionBounds(group.items),
+            translatableModel = self.model.translatableModel,
+            groupX = translatableModel.globalX(group),
+            groupY = translatableModel.globalY(group),
+            margin = 2 * spacing,
+            master = getMaster(group);
+      let width = extents.x + extents.w - groupX + margin,
+          height = extents.y + extents.h - groupY + margin;
+      if (master[_needs_layout])
+        self.layoutMaster(master);
+      width += master[_width];
+      height = Math.max(height, master[_height] + margin);
+      self.setBounds(group, width, height);
+    }
+    // Visit in reverse order to correctly include sub-group bounds.
+    reverseVisitItem(group, function(group) {
+      layout(group);
+    }, isGroup);
+
+    group[_needs_layout] = false;
   },
 
   drawMaster: function(master, x, y) {
+    if (master[_needs_layout])
+      this.layoutMaster(master);
+
     const self = this, ctx = this.ctx, theme = this.theme,
           textSize = theme.fontSize, spacing = theme.spacing,
           name = master.name,
@@ -1781,7 +1768,7 @@ Renderer.prototype = {
   drawElement: function(element, mode) {
     const ctx = this.ctx,
           theme = this.theme, spacing = theme.spacing,
-          rect = this.layoutModel.getItemRect(element),
+          rect = this.getBounds(element),
           x = rect.x, y = rect.y, w = rect.w, h = rect.h,
           right = x + w, bottom = y + h;
 
@@ -1823,7 +1810,7 @@ Renderer.prototype = {
 
   drawElementPin: function(element, input, output, mode) {
     const ctx = this.ctx,
-          rect = this.layoutModel.getItemRect(element),
+          rect = this.getBounds(element),
           master = getMaster(element);
     let x = rect.x, y = rect.y, w = rect.w, h = rect.h,
         right = x + w,
@@ -1864,9 +1851,11 @@ Renderer.prototype = {
   },
 
   drawGroup: function(group, mode) {
+    if (group[_needs_layout])
+      this.layoutGroup(group);
     const ctx = this.ctx,
           theme = this.theme,
-          rect = this.layoutModel.getItemRect(group),
+          rect = this.getBounds(group),
           x = rect.x, y = rect.y, w = rect.w , h = rect.h,
           right = x + w, bottom = y + h;
     diagrams.roundRectPath(x, y, w, h, theme.spacing, ctx);
@@ -1907,11 +1896,12 @@ Renderer.prototype = {
   },
 
   hitTestElement: function(element, p, tol, mode) {
-    const rect = this.layoutModel.getItemRect(element),
+    const rect = this.getBounds(element),
           x = rect.x, y = rect.y, width = rect.w, height = rect.h,
           hitInfo = diagrams.hitTestRect(x, y, width, height, p, tol);
     if (hitInfo) {
       const master = getMaster(element);
+      assert(!master[_needs_layout]);
       master.inputs.forEach(function(input, i) {
         if (diagrams.hitTestRect(x, y + input[_y],
                                  input[_width], input[_height], p, 0)) {
@@ -1929,10 +1919,11 @@ Renderer.prototype = {
   },
 
   hitTestGroup: function(group, p, tol, mode) {
-    const rect = this.layoutModel.getItemRect(group),
+    const rect = this.getBounds(group),
           x = rect.x, y = rect.y, w = rect.w , h = rect.h,
           hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol);
     if (hitInfo) {
+      assert(!group[_needs_layout]);
       const master = getMaster(group);
       if (master) {
         const instanceRect = this.getGroupInstanceBounds(master, x + w, y + h);
@@ -1949,6 +1940,8 @@ Renderer.prototype = {
   },
 
   drawWire: function(wire, mode) {
+    if (wire[_needs_layout])
+      this.layoutWire(wire);
     const ctx = this.ctx;
     diagrams.bezierEdgePath(wire[_bezier], ctx, 0);
     switch (mode) {
@@ -1969,6 +1962,10 @@ Renderer.prototype = {
   },
 
   hitTestWire: function(wire, p, tol, mode) {
+    // TODO fix layout
+    // assert(!wire[_needs_layout]);
+    if (wire[_needs_layout])
+      this.layoutWire(wire);
     return diagrams.hitTestBezier(wire[_bezier], p, tol);
   },
 
@@ -2009,9 +2006,8 @@ Renderer.prototype = {
           x = p.x, y = p.y;
     ctx.fillStyle = theme.hoverColor;
     if (isGroupInstance(item)) {
-      const layoutModel = this.layoutModel,
-            groupItems = getGroupItems(item);
-      let r = layoutModel.getItemRects(groupItems);
+      const groupItems = getGroupItems(item);
+      let r = this.getBounds(groupItems);
       ctx.translate(x - r.x, y - r.y);
       let border = 4;
       ctx.fillRect(r.x - border, r.y - border, r.w + 2 * border, r.h + 2 * border);
@@ -2070,6 +2066,8 @@ function Editor(model, theme, textInputController) {
   this.diagram = model.root;
   this.theme = theme = createTheme(theme);
   this.renderer = new Renderer(theme);
+  // TODO fix layout/renderer dependency
+  model.renderer = this.renderer;
 
   this.textInputController = textInputController;
 
@@ -2147,8 +2145,6 @@ function Editor(model, theme, textInputController) {
 
   this.primitives = primitives;
 
-  signatureModel.extend(model);
-
   const masteringModel = dataModels.masteringModel.extend(model);
 
   masteringModel.onInstanceInserted = function(instance, master) {
@@ -2182,6 +2178,7 @@ Editor.prototype.initialize = function(canvasController) {
       renderer = this.renderer;
 
   layoutModel.initialize(ctx);
+  renderer.begin(model, ctx);
 
   model.dataModel.initialize();
 
@@ -2195,7 +2192,8 @@ Editor.prototype.initialize = function(canvasController) {
     item.state = 'palette';
     model.editingModel.newItem(item);
     model.editingModel.addItem(item);
-    let r = layoutModel.getItemRect(item);
+    item[_needs_layout] = true;
+    let r = renderer.getBounds(item);
     x += r.w + spacing;
     h = Math.max(h, r.h);
   });
@@ -2210,19 +2208,23 @@ Editor.prototype.initialize = function(canvasController) {
     item.state = 'palette';
     model.editingModel.newItem(item);
     model.editingModel.addItem(item);
-    let r = layoutModel.getItemRect(item);
+    item[_needs_layout] = true;
+    let r = renderer.getBounds(item);
     x += r.w + spacing;
     h = Math.max(h, r.h);
     if (x > 208) {
       x = 16, y += h + spacing, h = 0;
     }
   });
+  renderer.end();
 }
 
 Editor.prototype.draw = function() {
   let renderer = this.renderer, diagram = this.diagram,
       model = this.model, ctx = this.ctx,
       canvasController = this.canvasController;
+  //TODO fix layout
+  model.layoutModel.updateLayout();
   renderer.begin(model, ctx);
   canvasController.applyTransform();
 
@@ -2278,6 +2280,8 @@ Editor.prototype.hitTest = function(p) {
     if (info)
       hitList.push(info);
   }
+  //TODO fix layout
+  model.layoutModel.updateLayout();
   renderer.begin(model, ctx)
   model.selectionModel.forEach(function(item) {
     item => pushHit(renderer.hitTest(item, cp, cTol, normalMode));
@@ -2662,6 +2666,9 @@ Editor.prototype.onKeyDown = function(e) {
       cmdKey = e.ctrlKey || e.metaKey,
       shiftKey = e.shiftKey;
 
+  // TODO fix layout
+  this.renderer.begin(model, ctx);
+
   if (keyCode === 8) {  // 'delete'
     editingModel.doDelete();
     return true;
@@ -2736,13 +2743,17 @@ Editor.prototype.onKeyDown = function(e) {
         return true;
     }
   }
+  this.renderer.end();
 }
 
 return {
   circuitModel: circuitModel,
   editingModel: editingModel,
   layoutModel: layoutModel,
-  signatureModel: signatureModel,
+  getMaster: getMaster,
+
+  TypeMap: TypeMap,
+  Renderer: Renderer,
 
   Editor: Editor,
   createTheme: createTheme,
