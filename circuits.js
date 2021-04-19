@@ -505,6 +505,80 @@ const circuitModel = (function() {
 
       changeAggregator.clear();
     },
+
+    // May be called during transactions, to update wires during drags.
+    updateLayout: function() {
+      const self = this,
+            graphInfo = this.model.circuitModel.getGraphInfo();
+      this.changedElements_.forEach(function(element) {
+        function markWire(wire) {
+          wire[_needs_layout] = true;
+        }
+        graphInfo.iterators.forInputWires(element, markWire);
+        graphInfo.iterators.forOutputWires(element, markWire);
+      });
+      this.changedElements_.clear();
+      this.changedWires_.clear();
+    },
+
+    // Called at the end of transactions and undo/redo, to update bounds.
+    updateGroupLayout: function() {
+      this.changedTopLevelGroups_.forEach(group => group[_needs_layout] = true);
+      this.changedTopLevelGroups_.clear();
+    },
+
+    addTopLevelGroup_: function(item) {
+      let hierarchicalModel = this.model.hierarchicalModel,
+          ancestor = item;
+      do {
+        item = ancestor;
+        ancestor = hierarchicalModel.getParent(ancestor);
+      } while (ancestor && !isCircuit(ancestor));
+
+      if (isGroup(item)) {
+        this.changedTopLevelGroups_.add(item);
+      }
+    },
+
+    updateLayout_: function (item) {
+      const self = this;
+      if (isWire(item)) {
+        this.changedWires_.add(item);
+      } else if (isElement(item)) {
+        this.changedElements_.add(item);
+        this.addTopLevelGroup_(item);
+        if (item.items) {
+          visitItems(item.items, child => self.updateLayout_(child));
+        }
+      } else if (isGroup(item)) {
+        visitItems(item.items, child => self.updateLayout_(child));
+      }
+    },
+
+    onChanged_: function (change) {
+      const item = change.item,
+            attr = change.attr;
+      this.updateLayout_(item);
+      switch (change.type) {
+        case 'change': {
+          // Make sure elements are remastered if their master type changes.
+          if (isElementOrGroup(item) && attr === 'master') {
+            item[_master] = globalTypeMap_.add(item.master);
+          } else if (isWire(item)) {
+            item[_needs_layout] = true;
+          }
+          break;
+        }
+        case 'insert': {
+          const newValue = item[attr][change.index];
+          this.updateLayout_(newValue);
+          if (isGroup(newValue)) {
+            newValue[_needs_layout] = true;
+          }
+          break;
+        }
+      }
+    },
   }
 
   function extend(model) {
@@ -513,6 +587,7 @@ const circuitModel = (function() {
 
     dataModels.observableModel.extend(model);
     dataModels.referencingModel.extend(model);
+    dataModels.hierarchicalModel.extend(model);
 
     let instance = Object.create(proto);
     instance.model = model;
@@ -524,13 +599,24 @@ const circuitModel = (function() {
     instance.elementsAndGroups_ = new Set();
     instance.wires_ = new Set();
 
-    // Make sure elements are remastered if their master type changes.
-    model.observableModel.addHandler('changed', function (change) {
-      if (isElementOrGroup(change.item) && change.attr === 'master') {
-        const item = change.item;
-        item[_master] = globalTypeMap_.add(item.master);
+    instance.changedWires_ = new Set();
+    instance.changedElements_ = new Set();
+    instance.changedTopLevelGroups_ = new Set();
+
+    instance.circuit.items.forEach(item => instance.updateLayout_(item));
+
+    model.observableModel.addHandler('changed',
+                                     change => instance.onChanged_(change));
+
+    const transactionModel = model.transactionModel;
+    if (transactionModel) {
+      function update() {
+        instance.updateGroupLayout();
       }
-    });
+      transactionModel.addHandler('transactionEnded', update);
+      transactionModel.addHandler('didUndo', update);
+      transactionModel.addHandler('didRedo', update);
+    }
 
     instance.getWireSrc_ = model.referencingModel.getReferenceFn('srcId');
     instance.getWireDst_ = model.referencingModel.getReferenceFn('dstId');
@@ -1381,116 +1467,6 @@ const editingModel = (function() {
 
 //------------------------------------------------------------------------------
 
-const layoutModel = (function() {
-  const proto = {
-    updateLayout: function() {
-      const self = this,
-            graphInfo = this.model.circuitModel.getGraphInfo();
-      this.changedElements_.forEach(function(element) {
-        function markWire(wire) {
-          wire[_needs_layout] = true;
-        }
-        graphInfo.iterators.forInputWires(element, markWire);
-        graphInfo.iterators.forOutputWires(element, markWire);
-      });
-      this.changedElements_.clear();
-      this.changedWires_.clear();
-    },
-
-    updateGroupLayout: function() {
-      this.changedTopLevelGroups_.forEach(group => group[_needs_layout] = true);
-      this.changedTopLevelGroups_.clear();
-    },
-
-    addTopLevelGroup_: function(item) {
-      let hierarchicalModel = this.model.hierarchicalModel,
-          ancestor = item;
-      do {
-        item = ancestor;
-        ancestor = hierarchicalModel.getParent(ancestor);
-      } while (ancestor && !isCircuit(ancestor));
-
-      if (isGroup(item)) {
-        this.changedTopLevelGroups_.add(item);
-      }
-    },
-
-    update_: function (item) {
-      const self = this;
-      if (isWire(item)) {
-        this.changedWires_.add(item);
-      } else if (isElement(item)) {
-        this.changedElements_.add(item);
-        this.addTopLevelGroup_(item);
-        if (item.items) {
-          visitItems(item.items, child => self.update_(child));
-        }
-      } else if (isGroup(item)) {
-        visitItems(item.items, child => self.update_(child));
-      }
-    },
-
-    onChanged_: function (change) {
-      const item = change.item,
-            attr = change.attr;
-      switch (change.type) {
-        case 'change':
-        case 'remove': {
-          this.update_(item);
-          break;
-        }
-        case 'insert': {
-          const newValue = item[attr][change.index];
-          this.update_(item);
-          this.update_(newValue);
-          if (isGroup(newValue))
-            newValue[_needs_layout] = true;
-          break;
-        }
-      }
-    },
-  }
-
-  function extend(model) {
-    if (model.layoutModel)
-      return model.layoutModel;
-
-    dataModels.dataModel.extend(model);
-    dataModels.observableModel.extend(model);
-    dataModels.referencingModel.extend(model);
-    dataModels.hierarchicalModel.extend(model);
-
-    let instance = Object.create(proto);
-    instance.model = model;
-    const circuit = model.root;
-    instance.circuit = circuit;
-
-    // Make sure new items get laid out.
-    model.dataModel.addInitializer(item => item[_needs_layout] = true);
-
-    model.observableModel.addHandler('changed',
-                                     change => instance.onChanged_(change));
-
-    instance.changedWires_ = new Set();
-    instance.changedElements_ = new Set();
-    instance.changedTopLevelGroups_ = new Set();
-
-    visitItem(instance.circuit, item => instance.update_(item));
-
-    instance.getWireSrc = model.referencingModel.getReferenceFn('srcId');
-    instance.getWireDst = model.referencingModel.getReferenceFn('dstId');
-
-    model.layoutModel = instance;
-    return instance;
-  }
-
-  return {
-    extend: extend,
-  }
-})();
-
-//------------------------------------------------------------------------------
-
 const normalMode = 1,
     highlightMode = 2,
     hotTrackMode = 3;
@@ -2146,15 +2122,6 @@ function Editor(model, theme, textInputController) {
   }
 
   editingModel.extend(model, theme);
-  layoutModel.extend(model, theme);
-
-  function update() {
-    self.model.layoutModel.updateGroupLayout();
-  }
-  const transactionModel = model.transactionModel;
-  transactionModel.addHandler('transactionEnded', update);
-  transactionModel.addHandler('didUndo', update);
-  transactionModel.addHandler('didRedo', update);
 }
 
 Editor.prototype.initialize = function(canvasController) {
@@ -2165,7 +2132,6 @@ Editor.prototype.initialize = function(canvasController) {
   this.ctx = ctx;
 
   let model = this.model,
-      layoutModel = model.layoutModel,
       renderer = this.renderer;
 
   renderer.begin(model, ctx);
@@ -2214,7 +2180,7 @@ Editor.prototype.draw = function() {
       model = this.model, ctx = this.ctx,
       canvasController = this.canvasController;
   //TODO fix layout
-  model.layoutModel.updateLayout();
+  model.circuitModel.updateLayout();
   renderer.begin(model, ctx);
   canvasController.applyTransform();
 
@@ -2271,7 +2237,7 @@ Editor.prototype.hitTest = function(p) {
       hitList.push(info);
   }
   //TODO fix layout
-  model.layoutModel.updateLayout();
+  model.circuitModel.updateLayout();
   renderer.begin(model, ctx)
   model.selectionModel.forEach(function(item) {
     item => pushHit(renderer.hitTest(item, cp, cTol, normalMode));
@@ -2427,6 +2393,7 @@ Editor.prototype.onBeginDrag = function(p0) {
       srcId: elementId,
       srcPin: mouseHitInfo.output,
       [_p2]: cp0,
+      [_needs_layout]: true,
     };
     drag = {
       type: connectWireDst,
@@ -2739,7 +2706,6 @@ Editor.prototype.onKeyDown = function(e) {
 return {
   circuitModel: circuitModel,
   editingModel: editingModel,
-  layoutModel: layoutModel,
   getMaster: getMaster,
 
   TypeMap: TypeMap,
