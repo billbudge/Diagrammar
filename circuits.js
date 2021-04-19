@@ -118,7 +118,8 @@ const _x = Symbol('x'),
 
 //------------------------------------------------------------------------------
 
-// A map from type strings to type objects.
+// A map from type strings to type objects. The type objects are "atomized" so
+// there will only be one type object for each possible type string.
 
 function TypeMap() {
   this.map_ = new Map();
@@ -266,6 +267,7 @@ TypeMap.prototype = {
 
 const globalTypeMap_ = new TypeMap();
 
+// Gets the master object with information for displaying a pin or element.
 function getMaster(item) {
   assert(!isWire(item));
   let master = item[_master];
@@ -1381,16 +1383,6 @@ const editingModel = (function() {
 
 const layoutModel = (function() {
   const proto = {
-    initialize: function(ctx) {
-      this.ctx = ctx ||
-        {
-          // Mock context for testing.
-          save: function() {},
-          restore: function() {},
-          measureText: () => { return { width: 10, height: 10 }},
-        };
-    },
-
     updateLayout: function() {
       const self = this,
             graphInfo = this.model.circuitModel.getGraphInfo();
@@ -1459,7 +1451,7 @@ const layoutModel = (function() {
     },
   }
 
-  function extend(model, theme) {
+  function extend(model) {
     if (model.layoutModel)
       return model.layoutModel;
 
@@ -1472,7 +1464,6 @@ const layoutModel = (function() {
     instance.model = model;
     const circuit = model.root;
     instance.circuit = circuit;
-    instance.theme = theme;
 
     // Make sure new items get laid out.
     model.dataModel.addInitializer(item => item[_needs_layout] = true);
@@ -2002,12 +1993,12 @@ Renderer.prototype = {
   },
 
   drawHoverInfo: function(item, p) {
-    const self = this, theme = this.theme,
+    const self = this, theme = this.theme, ctx = this.ctx,
           x = p.x, y = p.y;
     ctx.fillStyle = theme.hoverColor;
     if (isGroupInstance(item)) {
       const groupItems = getGroupItems(item);
-      let r = this.getBounds(groupItems);
+      let r = this.getUnionBounds(groupItems);
       ctx.translate(x - r.x, y - r.y);
       let border = 4;
       ctx.fillRect(r.x - border, r.y - border, r.w + 2 * border, r.h + 2 * border);
@@ -2177,7 +2168,6 @@ Editor.prototype.initialize = function(canvasController) {
       layoutModel = model.layoutModel,
       renderer = this.renderer;
 
-  layoutModel.initialize(ctx);
   renderer.begin(model, ctx);
 
   model.dataModel.initialize();

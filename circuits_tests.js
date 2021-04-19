@@ -122,9 +122,7 @@ function newTestEditingModel() {
         theme = circuits.createTheme(),
         test = circuits.editingModel.extend(model, theme);
   circuits.circuitModel.extend(model);
-  circuits.layoutModel.extend(model, theme);
   model.dataModel.initialize();
-  model.layoutModel.initialize();
 
   // Context sufficient for tests.
   const ctx = {
