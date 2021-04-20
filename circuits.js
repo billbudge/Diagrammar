@@ -540,7 +540,7 @@ const circuitModel = (function() {
       }
     },
 
-    updateLayout_: function (item) {
+    updateLayout_: function(item) {
       const self = this;
       if (isWire(item)) {
         this.changedWires_.add(item);
@@ -563,7 +563,8 @@ const circuitModel = (function() {
         case 'change': {
           // Make sure elements are remastered if their master type changes.
           if (isElementOrGroup(item) && attr === 'master') {
-            item[_master] = globalTypeMap_.add(item.master);
+            const master = getMaster(item);
+            master[_needs_layout] = true;
           } else if (isWire(item)) {
             item[_needs_layout] = true;
           }
@@ -605,6 +606,13 @@ const circuitModel = (function() {
 
     instance.circuit.items.forEach(item => instance.updateLayout_(item));
 
+    model.dataModel.addInitializer(function(item) {
+      // TODO reduce duplication
+      if (isElementOrGroup(item)) {
+        const master = getMaster(item);
+        master[_needs_layout] = true;
+      }
+    });
     model.observableModel.addHandler('changed',
                                      change => instance.onChanged_(change));
 
@@ -1094,31 +1102,30 @@ const editingModel = (function() {
             inputs = [], outputs = [];
 
       function makePin(item, type, y) {
-        return {
-          item: item,
-          type: type,
-          y: y,
+        return { item: item, type: type, y: y,
         }
       }
+
       function getInputType(input) {
         const srcPin = getMaster(input).outputs[0],
               srcType = self.getPinType(srcPin),
-              label = srcType.substring(1),
               wires = graphInfo.outputMap.get(input)[0];
         if (!wires.length)
           return srcType;
+        const label = srcType.substring(1);
         return self.findDstType(wires[0]) + label;
       }
 
       function getOutputType(output) {
         const dstPin = getMaster(output).inputs[0],
               dstType = self.getPinType(dstPin),
-              label = dstType.substring(1),
               wire = graphInfo.inputMap.get(output)[0];
         if (!wire)
           return dstType;
+        const label = dstType.substring(1);
         return self.findSrcType(wire) + label;
       }
+
       function addItems(items) {
         let inputCount = 0, outputCount = 0;
         items.forEach(function(item, index) {
@@ -1132,9 +1139,26 @@ const editingModel = (function() {
             outputs.push(makePin(item, getOutputType(item), y));
           } else if (isGroup(item)) {
             addItems(item.items);
+          } else if (isElement(item)) {
+            // const master = getMaster(item),
+            //       inputWires = graphInfo.inputMap.get(item),
+            //       outputWires = graphInfo.outputMap.get(item);
+            // master.inputs.forEach(function(pin, i) {
+            //   if (!inputWires[i]) {
+            //     const y = renderer.pinToPoint(item, i, true).y;
+            //     inputs.push(makePin(item, pin.type, y));
+            //   }
+            // });
+            // master.outputs.forEach(function(pin, i) {
+            //   if (outputWires[i].length == 0) {
+            //     const y = renderer.pinToPoint(item, i, false).y;
+            //     outputs.push(makePin(item, pin.type, y));
+            //   }
+            // });
           }
         });
       }
+
       addItems(items);
 
       // Sort pins so we encounter them in increasing y-order. This lets us lay
@@ -1929,10 +1953,9 @@ Renderer.prototype = {
   },
 
   hitTestWire: function(wire, p, tol, mode) {
-    // TODO fix layout
-    // assert(!wire[_needs_layout]);
+    // TODO don't hit test new wire as it's dragged!
     if (wire[_needs_layout])
-      this.layoutWire(wire);
+      return;
     return diagrams.hitTestBezier(wire[_bezier], p, tol);
   },
 
@@ -2232,12 +2255,12 @@ Editor.prototype.hitTest = function(p) {
       cTol = tol / zoom,
       diagram = this.diagram,
       hitList = [];
+
   function pushHit(info) {
     if (info)
       hitList.push(info);
   }
-  //TODO fix layout
-  model.circuitModel.updateLayout();
+
   renderer.begin(model, ctx)
   model.selectionModel.forEach(function(item) {
     item => pushHit(renderer.hitTest(item, cp, cTol, normalMode));
@@ -2623,7 +2646,6 @@ Editor.prototype.onKeyDown = function(e) {
       cmdKey = e.ctrlKey || e.metaKey,
       shiftKey = e.shiftKey;
 
-  // TODO fix layout
   this.renderer.begin(model, ctx);
 
   if (keyCode === 8) {  // 'delete'
