@@ -271,11 +271,15 @@ const globalTypeMap_ = new TypeMap();
 function getType(item) {
   assert(!isWire(item));
   let type = item[_type];
-  if (!type) {
-    assert(item.type);
-    type = globalTypeMap_.add(item.type);
-    item[_type] = type;
-  }
+  if (!type)
+    type = updateType(item);
+  return type;
+}
+
+function updateType(item) {
+  assert(item.type);
+  const type = globalTypeMap_.add(item.type);
+  item[_type] = type;
   return type;
 }
 
@@ -572,6 +576,9 @@ const circuitModel = (function() {
           // Changed wires need layout.
           if (isWire(item)) {
             item[_has_layout] = false;
+          } else if (isElementOrGroup(item) && attr == 'type') {
+            // Type changed due to update or relabeling.
+            updateType(item);
           }
           break;
         }
@@ -1139,21 +1146,21 @@ const editingModel = (function() {
           } else if (isGroup(item)) {
             addItems(item.items);
           } else if (isElement(item)) {
-            // const type = getType(item),
-            //       inputWires = graphInfo.inputMap.get(item),
-            //       outputWires = graphInfo.outputMap.get(item);
-            // type.inputs.forEach(function(pin, i) {
-            //   if (!inputWires[i]) {
-            //     const y = renderer.pinToPoint(item, i, true).y;
-            //     inputs.push(makePin(item, pin.type, y));
-            //   }
-            // });
-            // type.outputs.forEach(function(pin, i) {
-            //   if (outputWires[i].length == 0) {
-            //     const y = renderer.pinToPoint(item, i, false).y;
-            //     outputs.push(makePin(item, pin.type, y));
-            //   }
-            // });
+            const type = getType(item),
+                  inputWires = graphInfo.inputMap.get(item),
+                  outputWires = graphInfo.outputMap.get(item);
+            type.inputs.forEach(function(pin, i) {
+              if (!inputWires[i]) {
+                const y = renderer.pinToPoint(item, i, true).y;
+                inputs.push(makePin(item, pin.type, y));
+              }
+            });
+            type.outputs.forEach(function(pin, i) {
+              if (outputWires[i].length == 0) {
+                const y = renderer.pinToPoint(item, i, false).y;
+                outputs.push(makePin(item, pin.type, y));
+              }
+            });
           }
         });
       }
