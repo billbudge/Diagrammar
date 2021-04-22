@@ -1,7 +1,6 @@
 // Collections.
 
 // TODO move stuff off of global object.
-var diagrammar = diagrammar || {};
 
 diagrammar.collections = (function() {
 'use strict';

@@ -377,18 +377,18 @@ test("instancingModel isomorphic", function() {
   ok(!test.isomorphic(test_data.item, test_data.items[2], new Map()));
 });
 
-// Mastering model unit tests.
+// Canonical instance model unit tests.
 
-test("masteringModel master tracking", function() {
+test("canonicalInstanceModel canonical tracking", function() {
   // TODO add some references.
   const test_data = {
     id: 1,
     items: [
     ],
-    masters: [
+    canonicals: [
     ],
   },
-  master1 = {
+  canonical1 = {
     id: 2,
     items: [
       { id: 3,
@@ -398,15 +398,15 @@ test("masteringModel master tracking", function() {
   },
   instance1 = {
     id: 4,
-    masterId: 2,
+    canonicalId: 2,
   },
   instance2 = {
     id: 5,
-    masterId: 2,
+    canonicalId: 2,
   }
 
   const model = { root: test_data };
-  const test = dataModels.masteringModel.extend(model);
+  const test = dataModels.canonicalInstanceModel.extend(model);
 
   const observableModel = model.observableModel,
         referencingModel = model.referencingModel,
@@ -415,27 +415,27 @@ test("masteringModel master tracking", function() {
   ok(referencingModel);
   ok(transactionModel);
 
-  const internal1 = test.internalizeMaster(master1);
-  ok(test_data.masters.length === 1);
-  deepEqual(internal1, master1);
-  deepEqual(test_data.masters[0], internal1);
+  const internal1 = test.internalize(canonical1);
+  ok(test_data.canonicals.length === 1);
+  deepEqual(internal1, canonical1);
+  deepEqual(test_data.canonicals[0], internal1);
 
   observableModel.insertElement(test_data, 'items', 0, instance1);
-  deepEqual(referencingModel.getReference(instance1, 'masterId'), internal1);
-  ok(test_data.masters.length === 1);
-  deepEqual(test_data.masters[0], master1);
+  deepEqual(referencingModel.getReference(instance1, 'canonicalId'), internal1);
+  ok(test_data.canonicals.length === 1);
+  deepEqual(test_data.canonicals[0], canonical1);
 
   observableModel.insertElement(test_data, 'items', 0, instance2);
-  deepEqual(referencingModel.getReference(instance2, 'masterId'), internal1);
-  ok(test_data.masters.length === 1);
-  deepEqual(test_data.masters[0], master1);
+  deepEqual(referencingModel.getReference(instance2, 'canonicalId'), internal1);
+  ok(test_data.canonicals.length === 1);
+  deepEqual(test_data.canonicals[0], canonical1);
 
-  // Remove both instances. Master should also be removed.
+  // Remove both instances. canonical should also be removed.
   transactionModel.beginTransaction();
   observableModel.removeElement(test_data, 'items', 0);
   observableModel.removeElement(test_data, 'items', 0);
   transactionModel.endTransaction();
-  ok(test_data.masters.length === 0);
+  ok(test_data.canonicals.length === 0);
 });
 
 // Hierarchical model unit tests.

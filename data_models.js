@@ -957,61 +957,62 @@ const instancingModel = (function() {
 
 //------------------------------------------------------------------------------
 
-// Tracks references on instances to master objects, maintaining a separate
-// data array to hold the masters. This array is updated as instances are added
-// and removed.
-const masteringModel = (function() {
+// Tracks references on instances to canonical objects, maintaining a separate
+// data array to hold the canonical objects. This array is updated as instances
+// are added and removed.
+const canonicalInstanceModel = (function() {
   const proto = {
-    // Converts the master to the canonical one if it is already in the model.
-    // This must be called before adding new instances of the master.
-    internalizeMaster: function(master) {
+    // Converts the instance to the canonical one if it is already in the model.
+    // This should be called before adding the new instance to the model.
+    internalize: function(instance) {
       const model = this.model,
-            diagram = this.diagram,
             dataModel = model.dataModel,
             instancingModel = model.instancingModel;
-      for (let m of this.masters_) {
-        if (instancingModel.isomorphic(m, master, new Map()))
-          return m;
+      for (let canonical of this.canonicals_) {
+        if (instancingModel.isomorphic(instance, canonical, new Map()))
+          return canonical;
       }
-      dataModel.assignId(master);
-      dataModel.initialize(master);
+      dataModel.assignId(instance);
+      dataModel.initialize(instance);
       model.observableModel.insertElement(
-          this.root, this.mastersAttr, this.masters_.length, master);
-      return master;
+          this.root, this.canonicalsAttr, this.canonicals_.length, instance);
+      return instance;
     },
 
     insertItem_: function(item) {
-      function insert(self, item) {
-        const master = self.getMaster(item);
-        if (master) {
-          const map = self.masterReferences_;
-          let count = map.get(master) || 0;  // this might be the first instance.
+      const self = this;
+      function insert(item) {
+        const canonical = self.getCanonical(item);
+        if (canonical) {
+          const map = self.references_;
+          let count = map.get(canonical) || 0;  // if this is the first instance.
           count++;
-          map.set(master, count);
-          self.unusedMasters_.delete(master);
-          self.onInstanceInserted(item, master);
+          map.set(canonical, count);
+          self.unused_.delete(canonical);
+          self.onInstanceInserted(item, canonical);
         }
       }
-      this.model.dataModel.visitSubtree(item, item => insert(this, item));
+      this.model.dataModel.visitSubtree(item, item => insert(item));
     },
 
     removeItem_: function(item) {
-      function remove(self, item) {
-        const master = self.getMaster(item);
-        if (master) {
-          const map = self.masterReferences_;
-          let count = map.get(master);
+      const self = this;
+      function remove(item) {
+        const canonical = self.getCanonical(item);
+        if (canonical) {
+          const map = self.references_;
+          let count = map.get(canonical);
           count--;
           if (count) {
-            map.set(master, count);
+            map.set(canonical, count);
           } else {
-            self.unusedMasters_.add(master);
-            map.delete(master);
+            self.unused_.add(canonical);
+            map.delete(canonical);
           }
-          self.onInstanceRemoved(item, master);
+          self.onInstanceRemoved(item, canonical);
         }
       }
-      this.model.dataModel.visitSubtree(item, item => remove(this, item));
+      this.model.dataModel.visitSubtree(item, item => remove(item));
     },
 
     onChange_: function(change) {
@@ -1028,33 +1029,33 @@ const masteringModel = (function() {
       }
     },
 
-    // Eliminate any unreferenced masters.
+    // Eliminate any unreferenced instances.
     makeConsistent_: function() {
       const model = this.model,
             observableModel = model.observableModel,
-            unusedMasters = this.unusedMasters_;
-      for (let master of unusedMasters) {
-        const index = this.masters_.indexOf(master);
-        // If undoing an insert, the master may have already been removed.
+            unused = this.unused_;
+      for (let canonical of unused) {
+        const index = this.canonicals_.indexOf(canonical);
+        // If undoing an insert, the instance may have already been removed.
         if (index < 0)
           continue;
-        observableModel.removeElement(this.root, this.mastersAttr, index);
+        observableModel.removeElement(this.root, this.canonicalsAttr, index);
       }
-      unusedMasters.clear();
+      unused.clear();
     },
   }
 
   const defaultImpl = {
-    mastersAttr: 'masters',
-    masterRefAttr: 'masterId',
+    canonicalsAttr: 'canonicals',
+    canonicalRefAttr: 'canonicalId',
 
     configure: function(model) {
       this.root = model.dataModel.root;
     },
 
-    onInstanceInserted: function(instance, master) {},
+    onInstanceInserted: function(instance, canonical) {},
 
-    onInstanceRemoved: function(instance, master) {},
+    onInstanceRemoved: function(instance, canonical) {},
   }
 
   function extend(model, impl) {
@@ -1069,27 +1070,27 @@ const masteringModel = (function() {
     instance.configure(model);
 
     const root = instance.root,
-          mastersAttr = instance.mastersAttr,
-          masterRefAttr = instance.masterRefAttr,
-          masterRefFn = model.referencingModel.getReferenceFn(masterRefAttr);
-    instance.getMaster = function(item) {
-      return item.hasOwnProperty(masterRefAttr) ? masterRefFn(item) : undefined;
+          canonicalsAttr = instance.canonicalsAttr,
+          canonicalRefAttr = instance.canonicalRefAttr,
+          canonicalRefFn = model.referencingModel.getReferenceFn(canonicalRefAttr);
+    instance.getCanonical = function(item) {
+      return item.hasOwnProperty(canonicalRefAttr) ? canonicalRefFn(item) : undefined;
     };
-    instance.unusedMasters_ = new Set();
-    instance.masters_ = root[mastersAttr];
+    instance.unused_ = new Set();
+    instance.canonicals_ = root[canonicalsAttr];
 
     // Build the reference map for the entire model.
-    instance.masterReferences_ = new Map();
+    instance.references_ = new Map();
     instance.insertItem_(root);
 
-    // Maintain reference counts for masters.
+    // Maintain reference counts for canonicals.
     model.observableModel.addHandler('changed',
                                      change => instance.onChange_(change));
-    // Remove masters with no references.
+    // Remove canonicals with no references.
     model.transactionModel.addHandler('transactionEnding',
                                       () => instance.makeConsistent_());
 
-    model.masteringModel = instance;
+    model.canonicalInstanceModel = instance;
     return instance;
   }
 
@@ -1827,7 +1828,7 @@ const changeAggregator = (function() {
     referenceValidator: referenceValidator,
     selectionModel: selectionModel,
     instancingModel: instancingModel,
-    masteringModel: masteringModel,
+    canonicalInstanceModel: canonicalInstanceModel,
     copyPasteModel: copyPasteModel,
     hierarchicalModel: hierarchicalModel,
     translatableModel: translatableModel,

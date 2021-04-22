@@ -6,7 +6,7 @@ const circuitTests = (function () {
 function newCircuit() {
   return {
     root: {  // dataModels default is model.root for data.
-      type: 'circuit',
+      kind: 'circuit',
       x: 0,
       y: 0,
       items: []
@@ -14,65 +14,65 @@ function newCircuit() {
   };
 }
 
-function stringifyMaster(master) {
-  let type = '[';
+function stringifyType(type) {
+  let s = '[';
   function stringifyName(item) {
     if (item.name)
-      type += '(' + item.name + ')';
+      s += '(' + item.name + ')';
   }
   function stringifyPin(pin) {
-    type += pin.type;
+    s += pin.type;
     stringifyName(pin);
   }
-  if (master.inputs)
-    master.inputs.forEach(input => stringifyPin(input));
-  type += ',';
-  if (master.outputs)
-    master.outputs.forEach(output => stringifyPin(output));
-  type += ']';
-  stringifyName(master);
-  return type;
+  if (type.inputs)
+    type.inputs.forEach(input => stringifyPin(input));
+  s += ',';
+  if (type.outputs)
+    type.outputs.forEach(output => stringifyPin(output));
+  s += ']';
+  stringifyName(type);
+  return s;
 }
 
 function newElement(x, y) {
   return {
-    type: "element",
+    kind: "element",
     x: x || 0,
     y: y || 0,
-    master: '[v,v]',
+    type: '[v,v]',
   };
 }
 
-function newTypedElement(master) {
+function newTypedElement(type) {
   return {
-    type: 'element',
+    kind: 'element',
     x: 0,
     y: 0,
-    master: master,
+    type: type,
   };
 }
 
 function newInputJunction(type) {
   let element = newTypedElement(type);
-  element.elementType = 'input';
+  element.elementKind = 'input';
   return element;
 }
 
 function newOutputJunction(type) {
   let element = newTypedElement(type);
-  element.elementType = 'output';
+  element.elementKind = 'output';
   return element;
 }
 
 function newApplyJunction() {
   let element = newTypedElement('[*,]');
-  element.elementType = 'apply';
+  element.elementKind = 'apply';
   return element;
 }
 
 function newLiteral(value) {
   let element = newTypedElement('[,v(' + value + ')]');
-  element.elementType = 'literal';
+  element.elementKind = 'literal';
   return element;
 }
 
@@ -100,7 +100,7 @@ function addWire(test, src, srcPin, dst, dstPin) {
         observableModel = model.observableModel,
         parent = dataModel.root;
   let wire = {
-    type: 'wire',
+    kind: 'wire',
     srcId: dataModel.getId(src),
     srcPin: srcPin,
     dstId: dataModel.getId(dst),
@@ -146,7 +146,7 @@ test("circuits.TypeMap.add", function() {
     '[,[,v][v,v]](@)',
     '[[v,vv(q)](a)v(b),v(c)](foo)',
   ];
-  types.forEach(type => deepEqual(stringifyMaster(test.add(type)), type));
+  types.forEach(type => deepEqual(stringifyType(test.add(type)), type));
   types.forEach(type => ok(test.has(type)));
   // Make sure subtypes are present.
   ok(test.has('[,v]'));
@@ -305,7 +305,7 @@ test("circuits.circuitModel.iterators", function() {
   testIterator(subgraph.iterators.forOutputWires, b, [b0_d0]);
 });
 
-test("circuits.editingAndMastering", function() {
+test("circuits.editingAndTyping", function() {
   const test = newTestEditingModel(),
         circuit = test.model.root,
         circuitModel = test.model.circuitModel;
@@ -313,9 +313,9 @@ test("circuits.editingAndMastering", function() {
   const a = newTypedElement('[vv,v]');
   test.newItem(a);
   test.addItem(a, circuit);
-  // Check master
-  const type = a.master;
-  deepEqual(stringifyMaster(circuits.getMaster(a)), type);
+  // Check type.
+  const type = a.type;
+  deepEqual(stringifyType(circuits.getType(a)), type);
 });
 
 test("circuits.editingModel", function() {
@@ -363,7 +363,7 @@ test("circuits.editingModel.connectInput", function() {
   deepEqual(circuit.items.length, 3);
   let junction = circuit.items[1],
       wire = circuit.items[2];
-  deepEqual(junction.elementType, 'input');
+  deepEqual(junction.elementKind, 'input');
   deepEqual(test.getWireSrc(wire), junction);
   deepEqual(test.getWireDst(wire), a);
 });
@@ -381,7 +381,7 @@ test("circuits.editingModel.connectOutput", function() {
   deepEqual(circuit.items.length, 3);
   let junction = circuit.items[1],
       wire = circuit.items[2];
-  deepEqual(junction.elementType, 'output');
+  deepEqual(junction.elementKind, 'output');
   deepEqual(test.getWireSrc(wire), a);
   deepEqual(test.getWireDst(wire), junction);
 });
@@ -500,7 +500,7 @@ test("circuits.editingModel.openElements", function() {
   deepEqual(test.getWireDst(wire), items[2]);
   deepEqual(wire.dstPin, 1);
   let openElement = items[2];
-  deepEqual(openElement.master, '[v(a)v(b)[vv,v],v(c)]');
+  deepEqual(openElement.type, '[v(a)v(b)[vv,v],v(c)]');
 });
 
 test("circuits.editingModel.closeFunction", function() {
@@ -518,7 +518,7 @@ test("circuits.editingModel.closeFunction", function() {
   deepEqual(test.getWireDst(wire), items[2]);
   deepEqual(wire.dstPin, 0);
   let closedElement = items[2];
-  deepEqual(closedElement.master, '[v,[v,v]]');
+  deepEqual(closedElement.type, '[v,[v,v]]');
 });
 
 test("circuits.editingModel.replaceElement", function() {
@@ -555,7 +555,7 @@ test("circuits.editingModel.build", function() {
         wire2 = addWire(test, input2, 0, elem, 1),
         wire3 = addWire(test, elem, 0, output, 0);
   const groupElement = test.build([input1, input2, elem, output]);
-  deepEqual(groupElement.master, '[vv(f),v]');
+  deepEqual(groupElement.type, '[vv(f),v]');
   ok(items.length === 0);
 });
 
@@ -583,11 +583,11 @@ test("circuits.editingModel.wireConsistency", function() {
 //       wire = addWire(test, a, 0, b, 0),
 //       group = addElement(test, test.build([a, b])),
 //       elem3 = {
-//         type: 'element',
+//         kind: 'element',
 //         x: 0,
 //         y: 0,
 //         master: group.master,
-//         [_master]: circuits.getMaster(group),
+//         [_master]: circuits.getType(group),
 //       },
 //       expectedType = '[v,v]',
 //       elem4 = addElement(test, newTypedElement('[,' + expectedType + ']')),
@@ -600,11 +600,11 @@ test("circuits.editingModel.wireConsistency", function() {
 //   deepEqual(actualType, expectedType);
 // });
 //       item = mouseHitInfo.item = {
-//         type: 'element',
+//         kind: 'element',
 //         x: newGroupInstanceInfo.x,
 //         y: newGroupInstanceInfo.y,
 //         master: group.master,
-//         [_master]: circuits.getMaster(group),
+//         [_master]: circuits.getType(group),
 //         state: 'palette',
 //       };
 
