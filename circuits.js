@@ -579,6 +579,7 @@ const circuitModel = (function() {
           } else if (isElementOrGroup(item) && attr == 'type') {
             // Type changed due to update or relabeling.
             updateType(item);
+            item[_has_layout] = false;
           }
           break;
         }
@@ -780,7 +781,7 @@ const editingModel = (function() {
         parent = this.diagram;
       if (oldParent === parent)
         return;
-      if (isCircuit(parent)) {
+      if (isCircuit(parent) || isGroup(parent)) {
         if (!Array.isArray(parent.items))
           model.observableModel.changeValue(parent, 'items', []);
       }
@@ -1099,7 +1100,7 @@ const editingModel = (function() {
       });
     },
 
-    setGroupTypeInfo: function(group, items) {
+    getGroupTypeInfo: function(items) {
       const self = this, model = this.model,
             dataModel = model.dataModel,
             circuitModel = model.circuitModel,
@@ -1143,8 +1144,6 @@ const editingModel = (function() {
           } else if (isOutput(item)) {
             const y = renderer.pinToPoint(item, 0, true).y;
             outputs.push(makePin(item, getOutputType(item), y));
-          } else if (isGroup(item)) {
-            addItems(item.items);
           } else if (isElement(item)) {
             const type = getType(item),
                   inputWires = graphInfo.inputMap.get(item),
@@ -1160,6 +1159,9 @@ const editingModel = (function() {
                 const y = renderer.pinToPoint(item, i, false).y;
                 outputs.push(makePin(item, pin.type, y));
               }
+            });
+            graphInfo.incomingWires.forEach(function(wire) {
+
             });
           }
         });
@@ -1187,6 +1189,10 @@ const editingModel = (function() {
       });
       typeString += ']';
 
+      const info = {
+        type: typeString,
+      }
+
       // Compute group pass throughs.
       const passThroughs = new Set();
       graphInfo.interiorWires.forEach(function(wire) {
@@ -1213,12 +1219,13 @@ const editingModel = (function() {
           }
         }
       });
+
       if (passThroughs.size) {
         // console.log(passThroughs);
-        group.passThroughs = Array.from(passThroughs);
+        info.passThroughs = Array.from(passThroughs);
       }
 
-      return typeString;
+      return info;
     },
 
     build: function(items) {
@@ -1236,30 +1243,21 @@ const editingModel = (function() {
 
       // Create the new group element.
       const group = {
-        kind: 'element',
+        kind: 'group',
         x: x,
         y: y,
+        items: new Array(),
       };
 
-      const id = dataModel.assignId(group),
-            typeString = self.setGroupTypeInfo(group, items);
+      const id = dataModel.assignId(group);
 
-      group.items = groupItems;
+      Object.assign(group, this.getGroupTypeInfo(items));
+
+      model.dataModel.initialize(group);
+
       groupItems.forEach(function(item) {
-        if (!isWire(item)) {
-          let r = renderer.getBounds(item);
-          if (r) {
-            observableModel.changeValue(item, 'x', r.x - x);
-            observableModel.changeValue(item, 'y', r.y - y);
-          }
-        }
-        self.deleteItem(item);
+        self.addItem(item, group);
       });
-
-      group.kind = 'group';
-      group.type = typeString;
-      group.x = x;
-      group.y = y;
 
       return group;
     },
@@ -1367,7 +1365,6 @@ const editingModel = (function() {
           parent = items.length === 1 ?
               null : model.hierarchicalModel.getLowestCommonAncestor(...items),
           group = this.build(items);
-      model.dataModel.initialize(group);
       this.addItem(group, parent);
       model.selectionModel.set(group);
       model.transactionModel.endTransaction();
@@ -1442,11 +1439,13 @@ const editingModel = (function() {
           self.deleteItem(group);
           return;
         }
-        const newSig = self.setGroupTypeInfo(group, group.items),
-              oldSig = globalTypeMap_.trimType(group.type);
-        if (oldSig !== newSig) {
-          let label = group.type.substring(oldSig.length);
-          observableModel.changeValue(group, 'type', newSig + label);
+        const oldType = group.type,
+              oldSig = globalTypeMap_.trimType(group.type),
+              info = self.getGroupTypeInfo(group.items);
+        if (oldSig !== info.type) {
+          let label = oldType.substring(oldSig.length);
+          observableModel.changeValue(group, 'type', info.type + label);
+          observableModel.changeValue(group, 'passThroughs', info.passThroughs);
         }
       }, isGroup);
 
