@@ -573,24 +573,22 @@ test("changeAggregator extend", function() {
 
 test("changeAggregator", function() {
   const model = {
-          root: {
-            prop1: 'foo',
-            array: [],
-          },
-        },
-        emptySet = new Set();
-
+    root: {
+      prop1: 'foo',
+      array: [],
+    },
+  };
   const test = dataModels.changeAggregator.attach(model);
-  deepEqual(test.getChangedItems(), emptySet);
+  deepEqual(test.getChangedItems(), []);
   ok(!test.hasChanges());
 
   // change attribute
   model.root.prop1 = 'bar';
   model.observableModel.onValueChanged(model.root, 'prop1', 'foo');
   ok(test.hasChanges());
-  deepEqual(test.getChangedItems(), new Set([model.root]));
-  deepEqual(test.getInsertedItems(), emptySet);
-  deepEqual(test.getRemovedItems(), emptySet);
+  deepEqual(test.getChangedItems(), [model.root]);
+  deepEqual(test.getInsertedItems(), []);
+  deepEqual(test.getRemovedItems(), []);
   test.clear();
   ok(!test.hasChanges());
 
@@ -599,18 +597,18 @@ test("changeAggregator", function() {
   model.root.array.push(child);
   model.observableModel.onElementInserted(model.root, 'array', 0);
   ok(test.hasChanges());
-  deepEqual(test.getChangedItems(), new Set([model.root]));
-  deepEqual(test.getInsertedItems(), new Set([child]));
-  deepEqual(test.getRemovedItems(), emptySet);
+  deepEqual(test.getChangedItems(), [model.root]);
+  deepEqual(test.getInsertedItems(), [child]);
+  deepEqual(test.getRemovedItems(), []);
   test.clear();
 
   // remove child
   model.root.array.pop();
   model.observableModel.onElementRemoved(model.root, 'array', 1, child);
   ok(test.hasChanges());
-  deepEqual(test.getChangedItems(), new Set([model.root]));
-  deepEqual(test.getInsertedItems(), emptySet);
-  deepEqual(test.getRemovedItems(), new Set([child]));
+  deepEqual(test.getChangedItems(), [model.root]);
+  deepEqual(test.getInsertedItems(), []);
+  deepEqual(test.getRemovedItems(), [child]);
   test.clear();
 
   // remove and then re-insert an item.
@@ -620,24 +618,24 @@ test("changeAggregator", function() {
   model.root.array.push(child);
   model.observableModel.onElementInserted(model.root, 'array', 0);
   ok(test.hasChanges());
-  deepEqual(test.getChangedItems(), new Set([model.root]));
-  deepEqual(test.getInsertedItems(), emptySet);
-  deepEqual(test.getRemovedItems(), emptySet);
-  deepEqual(test.getReparentedItems(), new Set([child]));
+  deepEqual(test.getChangedItems(), [model.root]);
+  deepEqual(test.getInsertedItems(), []);
+  deepEqual(test.getRemovedItems(), []);
+  deepEqual(test.getReparentedItems(), [child]);
   test.clear();
 
   // multiple changed items
   child.prop1 = 'baz';
   model.observableModel.onValueChanged(child, 'prop1', 'baz');
   ok(test.hasChanges());
-  deepEqual(test.getChangedItems(), new Set([child]));
+  deepEqual(test.getChangedItems(), [child]);
   model.root.prop1 = 'baz';
   model.observableModel.onValueChanged(model.root, 'prop1', 'baz');
   ok(test.hasChanges());
   const items = test.getChangedItems();
-  deepEqual(items.size, 2);
-  ok(items.has(model.root));
-  ok(items.has(child));
+  deepEqual(items.length, 2);
+  ok(items.includes(model.root));
+  ok(items.includes(child));
 });
 
 })();

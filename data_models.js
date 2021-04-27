@@ -1692,19 +1692,19 @@ const changeAggregator = (function() {
 
     // Changed items that are still in the data model.
     getChangedItems: function() {
-      return new Set(this.changedItems_);
+      return Array.from(this.changedItems_);
     },
     // Inserted items that are still in the data model.
     getInsertedItems: function() {
-      return new Set(this.insertedItems_);
+      return Array.from(this.insertedItems_);
     },
     // Items removed from the data model.
     getRemovedItems: function() {
-      return new Set(this.removedItems_);
+      return Array.from(this.removedItems_);
     },
     // Items which were removed and reinserted.
     getReparentedItems: function() {
-      return new Set(this.reparentedItems_);
+      return Array.from(this.reparentedItems_);
     },
 
     clear: function() {
@@ -1739,21 +1739,12 @@ const changeAggregator = (function() {
       this.changedItems_.add(item);
       this.has_changes_ = true;
       switch (change.type) {
-        // case 'change': {
-        //   break;
-        // }
         case 'insert': {
-          const self = this,
-                dataModel = this.model.dataModel,
-                newValue = item[attr][change.index];
-          dataModel.visitSubtree(newValue, item => self.insertItem_(item));
+          this.insertItem_(item[attr][change.index]);
           break;
         }
         case 'remove': {
-          const self = this,
-                dataModel = this.model.dataModel,
-                oldValue = change.oldValue;
-          dataModel.visitSubtree(oldValue, item => self.removeItem_(item));
+          this.removeItem_(change.oldValue);
           break;
         }
       }

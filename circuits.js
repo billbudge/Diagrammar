@@ -406,11 +406,15 @@ const circuitModel = (function() {
     insertElement_: function(element) {
       this.elementsAndGroups_.add(element);
       const type = getType(element);
-      // inputMap_ takes element to array of incoming wires.
-      this.inputMap_.set(element, new Array(type.inputs.length).fill(null));
-      // outputMap_ takes element to array of arrays of outgoing wires.
-      const arrays = [...Array(type.outputs.length)].map(() => new Array());
-      this.outputMap_.set(element, arrays);
+      // Initialize maps for new elements.
+      if (!this.inputMap_.has(element)) {
+        assert(!this.outputMap_.has(element));
+        // inputMap_ takes element to array of incoming wires.
+        this.inputMap_.set(element, new Array(type.inputs.length).fill(null));
+        // outputMap_ takes element to array of arrays of outgoing wires.
+        const arrays = [...Array(type.outputs.length)].map(() => new Array());
+        this.outputMap_.set(element, arrays);
+      }
     },
 
     removeElement_: function(element) {
@@ -467,64 +471,37 @@ const circuitModel = (function() {
       const self = this,
             removedItems = changeAggregator.getRemovedItems(),
             insertedItems = changeAggregator.getInsertedItems(),
-            reparentedItems = changeAggregator.getReparentedItems(),
             changedItems = changeAggregator.getChangedItems();
 
-      function isNewWire(item) {
-        return isWire(item) && !reparentedItems.has(item);
-      }
-      function isNewElement(item) {
-        return isElement(item) && !reparentedItems.has(item);
-      }
-      function isNewElementOrGroup(item) {
-        return isElementOrGroup(item) && !reparentedItems.has(item);
-      }
+      // Remove wires before elements and groups.
+      visitItems(removedItems, function(wire) {
+        self.removeWire_(wire);
+      }, isWire);
+      visitItems(removedItems, function(item) {
+        if (isElement(item)) {
+          self.removeElement_(item);
+        } else if (isGroup(item)) {
+          self.elementsAndGroups_.delete(item);
+        }
+      }, isElementOrGroup);
 
-      // Remove wires, then elements.
-      removedItems.forEach(function(item) {
-        if (isWire(item)) {
-          self.removeWire_(item);
+      // Add elements and groups before wires.
+      visitItems(insertedItems, function(item) {
+        if (isElement(item)) {
+          self.insertElement_(item);
         } else if (isGroup(item)) {
-          visitItem(item, function(wire) {
-            self.removeWire_(wire);
-          }, isWire);
+          self.elementsAndGroups_.add(item);
         }
-      });
-      removedItems.forEach(function(item) {
-        visitItem(item, function(item) {
-          if (isElement(item)) {
-            self.removeElement_(item);
-          } else if (isGroup(item)) {
-            self.elementsAndGroups_.delete(item);
-          }
-        }, isElementOrGroup);
-      });
-      // Add elements, then wires.
-      insertedItems.forEach(function(item) {
-        visitItem(item, function(item) {
-          if (isNewElement(item)) {
-            self.insertElement_(item);
-          } else if (isGroup(item)) {
-            self.elementsAndGroups_.add(item);
-          }
-        }, isNewElementOrGroup);
-      });
-      insertedItems.forEach(function(item) {
-        if (isWire(item)) {
-          self.insertWire_(item);
-        } else if (isGroup(item)) {
-          visitItem(item, function(wire) {
-            self.insertWire_(wire);
-          }, isNewWire);
-        }
-      });
+      }, isElementOrGroup);
+      visitItems(insertedItems, function(wire) {
+          self.insertWire_(wire);
+      }, isWire);
+
       // For changed wires, remove them and then re-insert them.
-      changedItems.forEach(function(item) {
-        if (isWire(item)) {
-          self.removeWire_(item);
-          self.insertWire_(item);
-        }
-      });
+      visitItems(changedItems, function(wire) {
+        self.removeWire_(wire);
+        self.insertWire_(wire);
+      }, isWire);
 
       changeAggregator.clear();
     },
@@ -1117,7 +1094,8 @@ const editingModel = (function() {
             circuitModel = model.circuitModel,
             graphInfo = model.circuitModel.getSubgraphInfo(items),
             renderer = this.model.renderer,
-            inputs = [], outputs = [];
+            inputs = [], outputs = [],
+            contextInputs = [];
 
       function makePin(item, type, y) {
         return { item: item, type: type, y: y }
@@ -1172,18 +1150,21 @@ const editingModel = (function() {
         }
       });
 
-      // graphInfo.incomingWires.forEach(function(wire) {
-      //   const src = self.getWireSrc(wire),
-      //         srcPin = getType(src).outputs[wire.srcPin],
-      //         y = renderer.pinToPoint(src, wire.srcPin, true).y;
-      //   inputs.push(makePin(src, srcPin.type, y));
-      // });
+      // Incoming wires become part of the enclosing context type. Use the
+      // output pin's y to order the pins.
+      graphInfo.incomingWires.forEach(function(wire) {
+        const src = self.getWireSrc(wire),
+              srcPin = getType(src).outputs[wire.srcPin],
+              y = renderer.pinToPoint(src, wire.srcPin, false).y;
+        contextInputs.push(makePin(src, srcPin.type, y));
+      });
 
       // Sort pins so we encounter them in increasing y-order. This lets us lay
       // out the group in an intuitively consistent way.
       function comparePins(pin1, pin2) {
         return pin1.y - pin2.y;
       }
+
       inputs.sort(comparePins);
       outputs.sort(comparePins);
 
@@ -1199,8 +1180,18 @@ const editingModel = (function() {
       });
       typeString += ']';
 
+      contextInputs.sort(comparePins);
+
+      let contextTypeString = '[';
+      contextInputs.forEach(function(input, i) {
+        contextTypeString += input.type;
+        input.item.index = i;
+      });
+      contextTypeString += ',]';  // no outputs
+
       const info = {
         type: typeString,
+        contextType: contextTypeString,
       }
 
       // Compute group pass throughs.
