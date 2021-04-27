@@ -1692,19 +1692,19 @@ const changeAggregator = (function() {
 
     // Changed items that are still in the data model.
     getChangedItems: function() {
-      return Array.from(this.changedItems_);
+      return new Set(this.changedItems_);
     },
     // Inserted items that are still in the data model.
     getInsertedItems: function() {
-      return Array.from(this.insertedItems_);
+      return new Set(this.insertedItems_);
     },
     // Items removed from the data model.
     getRemovedItems: function() {
-      return Array.from(this.removedItems_);
+      return new Set(this.removedItems_);
     },
     // Items which were removed and reinserted.
     getReparentedItems: function() {
-      return Array.from(this.reparentedItems_);
+      return new Set(this.reparentedItems_);
     },
 
     clear: function() {

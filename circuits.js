@@ -405,7 +405,7 @@ const circuitModel = (function() {
 
     insertElement_: function(element) {
       this.elementsAndGroups_.add(element);
-      let type = getType(element);
+      const type = getType(element);
       // inputMap_ takes element to array of incoming wires.
       this.inputMap_.set(element, new Array(type.inputs.length).fill(null));
       // outputMap_ takes element to array of arrays of outgoing wires.
@@ -467,7 +467,18 @@ const circuitModel = (function() {
       const self = this,
             removedItems = changeAggregator.getRemovedItems(),
             insertedItems = changeAggregator.getInsertedItems(),
+            reparentedItems = changeAggregator.getReparentedItems(),
             changedItems = changeAggregator.getChangedItems();
+
+      function isNewWire(item) {
+        return isWire(item) && !reparentedItems.has(item);
+      }
+      function isNewElement(item) {
+        return isElement(item) && !reparentedItems.has(item);
+      }
+      function isNewElementOrGroup(item) {
+        return isElementOrGroup(item) && !reparentedItems.has(item);
+      }
 
       // Remove wires, then elements.
       removedItems.forEach(function(item) {
@@ -491,12 +502,12 @@ const circuitModel = (function() {
       // Add elements, then wires.
       insertedItems.forEach(function(item) {
         visitItem(item, function(item) {
-          if (isElement(item)) {
+          if (isNewElement(item)) {
             self.insertElement_(item);
           } else if (isGroup(item)) {
             self.elementsAndGroups_.add(item);
           }
-        }, isElementOrGroup);
+        }, isNewElementOrGroup);
       });
       insertedItems.forEach(function(item) {
         if (isWire(item)) {
@@ -504,7 +515,7 @@ const circuitModel = (function() {
         } else if (isGroup(item)) {
           visitItem(item, function(wire) {
             self.insertWire_(wire);
-          }, isWire);
+          }, isNewWire);
         }
       });
       // For changed wires, remove them and then re-insert them.
@@ -930,7 +941,7 @@ const editingModel = (function() {
       });
     },
 
-    getPinType: function(pin) {
+    getPinTypeWithName: function(pin) {
       let type = pin.type;
       if (pin.name)
         type += '(' + pin.name + ')';
@@ -1042,7 +1053,7 @@ const editingModel = (function() {
       type.inputs.forEach(function(pin, i) {
         let incomingWire = incomingWires[i];
         if (incomingWire) {
-          typeString += self.getPinType(pin);
+          typeString += self.getPinTypeWithName(pin);
           // remap wire to new element and pin.
           observableModel.changeValue(incomingWire, 'dstId', id);
           observableModel.changeValue(incomingWire, 'dstPin', pinIndex);
@@ -1058,7 +1069,7 @@ const editingModel = (function() {
       type.outputs.forEach(function(pin, i) {
         const outgoingWires = outgoingWireArrays[i];
         if (outgoingWires.length > 0) {
-          typeString += self.getPinType(pin);
+          typeString += self.getPinTypeWithName(pin);
           outgoingWires.forEach(function(outgoingWire, j) {
             // remap wire to new element and pin.
             observableModel.changeValue(outgoingWire, 'srcId', id);
@@ -1109,13 +1120,12 @@ const editingModel = (function() {
             inputs = [], outputs = [];
 
       function makePin(item, type, y) {
-        return { item: item, type: type, y: y,
-        }
+        return { item: item, type: type, y: y }
       }
 
       function getInputType(input) {
         const srcPin = getType(input).outputs[0],
-              srcType = self.getPinType(srcPin),
+              srcType = self.getPinTypeWithName(srcPin),
               wires = graphInfo.outputMap.get(input)[0];
         if (!wires.length)
           return srcType;
@@ -1125,7 +1135,7 @@ const editingModel = (function() {
 
       function getOutputType(output) {
         const dstPin = getType(output).inputs[0],
-              dstType = self.getPinType(dstPin),
+              dstType = self.getPinTypeWithName(dstPin),
               wire = graphInfo.inputMap.get(output)[0];
         if (!wire)
           return dstType;
@@ -1133,41 +1143,41 @@ const editingModel = (function() {
         return self.findSrcType(wire) + label;
       }
 
-      function addItems(items) {
-        let inputCount = 0, outputCount = 0;
-        items.forEach(function(item, index) {
-          if (!isElement(item))
-            return;
-          if (isInput(item)) {
-            const y = renderer.pinToPoint(item, 0, false).y;
-            inputs.push(makePin(item, getInputType(item), y));
-          } else if (isOutput(item)) {
-            const y = renderer.pinToPoint(item, 0, true).y;
-            outputs.push(makePin(item, getOutputType(item), y));
-          } else if (isElement(item)) {
-            const type = getType(item),
-                  inputWires = graphInfo.inputMap.get(item),
-                  outputWires = graphInfo.outputMap.get(item);
-            type.inputs.forEach(function(pin, i) {
-              if (!inputWires[i]) {
-                const y = renderer.pinToPoint(item, i, true).y;
-                inputs.push(makePin(item, pin.type, y));
-              }
-            });
-            type.outputs.forEach(function(pin, i) {
-              if (outputWires[i].length == 0) {
-                const y = renderer.pinToPoint(item, i, false).y;
-                outputs.push(makePin(item, pin.type, y));
-              }
-            });
-            graphInfo.incomingWires.forEach(function(wire) {
+      // Add pins for inputs, outputs, and disconnected pins on elements.
+      items.forEach(function(item, index) {
+        if (!isElement(item))
+          return;
+        if (isInput(item)) {
+          const y = renderer.pinToPoint(item, 0, false).y;
+          inputs.push(makePin(item, getInputType(item), y));
+        } else if (isOutput(item)) {
+          const y = renderer.pinToPoint(item, 0, true).y;
+          outputs.push(makePin(item, getOutputType(item), y));
+        } else if (isElement(item)) {
+          const type = getType(item),
+                inputWires = graphInfo.inputMap.get(item),
+                outputWires = graphInfo.outputMap.get(item);
+          type.inputs.forEach(function(pin, i) {
+            if (!inputWires[i]) {
+              const y = renderer.pinToPoint(item, i, true).y;
+              inputs.push(makePin(item, pin.type, y));
+            }
+          });
+          type.outputs.forEach(function(pin, i) {
+            if (outputWires[i].length == 0) {
+              const y = renderer.pinToPoint(item, i, false).y;
+              outputs.push(makePin(item, pin.type, y));
+            }
+          });
+        }
+      });
 
-            });
-          }
-        });
-      }
-
-      addItems(items);
+      // graphInfo.incomingWires.forEach(function(wire) {
+      //   const src = self.getWireSrc(wire),
+      //         srcPin = getType(src).outputs[wire.srcPin],
+      //         y = renderer.pinToPoint(src, wire.srcPin, true).y;
+      //   inputs.push(makePin(src, srcPin.type, y));
+      // });
 
       // Sort pins so we encounter them in increasing y-order. This lets us lay
       // out the group in an intuitively consistent way.
@@ -1228,7 +1238,7 @@ const editingModel = (function() {
       return info;
     },
 
-    build: function(items) {
+    build: function(items, parent) {
       const self = this, model = this.model,
             dataModel = model.dataModel,
             observableModel = model.observableModel,
@@ -1250,15 +1260,14 @@ const editingModel = (function() {
       };
 
       const id = dataModel.assignId(group);
-
       Object.assign(group, this.getGroupTypeInfo(items));
-
       model.dataModel.initialize(group);
-
-      groupItems.forEach(function(item) {
+      // Add the group before reparenting the items.
+      this.addItem(group, parent);
+      items.forEach(function(item) {
+        // Re-parent group items; wires should remain connected.
         self.addItem(item, group);
       });
-
       return group;
     },
 
@@ -1358,14 +1367,15 @@ const editingModel = (function() {
     },
 
     doBuild: function() {
-      let model = this.model;
+      const self = this,
+            model = this.model;
       this.reduceSelection();
       model.transactionModel.beginTransaction('build');
-      let items = model.selectionModel.contents().filter(isElementOrGroup),
-          parent = items.length === 1 ?
-              null : model.hierarchicalModel.getLowestCommonAncestor(...items),
-          group = this.build(items);
-      this.addItem(group, parent);
+      const items = model.selectionModel.contents().filter(isElementOrGroup),
+            parent = items.length === 1 ?
+                null : model.hierarchicalModel.getLowestCommonAncestor(...items),
+            group = this.build(items, parent);
+
       model.selectionModel.set(group);
       model.transactionModel.endTransaction();
     },
@@ -2218,7 +2228,8 @@ Editor.prototype.draw = function() {
   let renderer = this.renderer, diagram = this.diagram,
       model = this.model, ctx = this.ctx,
       canvasController = this.canvasController;
-  //TODO fix layout
+  // Updates wires as elements are dragged, and graph structure if any change
+  // have occurred.
   model.circuitModel.updateLayout();
   renderer.begin(model, ctx);
   canvasController.applyTransform();
@@ -2528,6 +2539,7 @@ Editor.prototype.onDrag = function(p0, p) {
       observableModel.changeValue(dragItem, 'srcId', srcId);
       if (srcId) {
         observableModel.changeValue(dragItem, 'srcPin', hitInfo.output);
+        dragItem[_p1] = undefined;
       } else {
         // Change private property through model to update observers.
         observableModel.changeValue(dragItem, _p1, cp);
@@ -2539,6 +2551,7 @@ Editor.prototype.onDrag = function(p0, p) {
       observableModel.changeValue(dragItem, 'dstId', dstId);
       if (dstId) {
         observableModel.changeValue(dragItem, 'dstPin', hitInfo.input);
+        dragItem[_p2] = undefined;
       } else {
         // Change private property through model to update observers.
         observableModel.changeValue(dragItem, _p2, cp);
