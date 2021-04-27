@@ -138,8 +138,8 @@ function doInitialize(item) {
 
 //------------------------------------------------------------------------------
 
-test("circuits.TypeMap.add", function() {
-  const test = new circuits.TypeMap();
+test("circuits.TypeParser.add", function() {
+  const test = new circuits.TypeParser();
   const types = [
     '[vv,v](+)',
     '[v(a)v(b),v(c)]',
@@ -154,8 +154,8 @@ test("circuits.TypeMap.add", function() {
   ok(test.has('[v,vv(q)]'));
 });
 
-test("circuits.TypeMap.splitType", function() {
-  const test = new circuits.TypeMap();
+test("circuits.TypeParser.splitType", function() {
+  const test = new circuits.TypeParser();
   const tuples = [
     { type: '[vv,v](+)', expected: 3 },
     { type: '[v(a)v(b),v(c)]', expected: 9 },
@@ -166,22 +166,22 @@ test("circuits.TypeMap.splitType", function() {
       tuple => deepEqual(test.splitType(tuple.type), tuple.expected));
 });
 
-test("circuits.TypeMap.trimType", function() {
-  const test = new circuits.TypeMap();
+test("circuits.TypeParser.trimType", function() {
+  const test = new circuits.TypeParser();
   deepEqual(test.trimType('[v,vv](foo)'), '[v,vv]');
   deepEqual(test.trimType('[v,vv]'), '[v,vv]');
   deepEqual(test.trimType('[vvv(foo)'), '[vvv');
 });
 
-test("circuits.TypeMap.getUnlabeledType", function() {
-  const test = new circuits.TypeMap();
+test("circuits.TypeParser.getUnlabeledType", function() {
+  const test = new circuits.TypeParser();
   deepEqual(test.getUnlabeledType('[v,vv](foo)'), '[v,vv]');
   deepEqual(test.getUnlabeledType('[v,vv]'), '[v,vv]');
   deepEqual(test.getUnlabeledType('[vvv(foo)'), '[vvv');
 });
 
-test("circuits.TypeMap.addInputToType", function() {
-  const test = new circuits.TypeMap();
+test("circuits.TypeParser.addInputToType", function() {
+  const test = new circuits.TypeParser();
   const tuples = [
     { type: '[,]', innerType: '*(x)', joined: '[*(x),]' },
     { type: '[vv,v](+)', innerType: '*(x)', joined: '[vv*(x),v](+)' },
@@ -190,8 +190,8 @@ test("circuits.TypeMap.addInputToType", function() {
     tuple => deepEqual(test.addInputToType(tuple.type, tuple.innerType), tuple.joined));
 });
 
-test("circuits.TypeMap.addOutputToType", function() {
-  const test = new circuits.TypeMap();
+test("circuits.TypeParser.addOutputToType", function() {
+  const test = new circuits.TypeParser();
   const tuples = [
     { type: '[,]', innerType: '*(x)', joined: '[,*(x)]' },
     { type: '[vv,v](+)', innerType: '*(x)', joined: '[vv,v*(x)](+)' },

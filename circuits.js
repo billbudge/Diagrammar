@@ -105,6 +105,7 @@ const inputElementType = '[,*]',
       outputElementType = '[*,]';
 
 const _type = Symbol('type'),
+      _contextType = Symbol('context type'),
       _x = Symbol('x'),
       _y = Symbol('y'),
       _baseline = Symbol('baseline'),
@@ -120,15 +121,14 @@ const _type = Symbol('type'),
 // A map from type strings to type objects. The type objects are "atomized" so
 // there will only be one type object for each possible type string.
 
-function TypeMap() {
+function TypeParser() {
   this.map_ = new Map();
 }
 
-TypeMap.prototype = {
+// Signature format: [inputs,outputs] with optional names, e.g.
+// [v(a)v(b),v(sum)](+) for a binary addition element.
 
-  // Signature format: [inputs,outputs] with optional names, e.g.
-  // [v(a)v(b),v(sum)](+) for a binary addition element.
-
+TypeParser.prototype = {
   get: function(s) {
     return this.map_.get(s);
   },
@@ -265,7 +265,7 @@ TypeMap.prototype = {
   },
 }
 
-const globalTypeMap_ = new TypeMap();
+const globalTypeParser_ = new TypeParser();
 
 // Gets the type object with information about a pin or element.
 function getType(item) {
@@ -278,7 +278,7 @@ function getType(item) {
 
 function updateType(item) {
   assert(item.type);
-  const type = globalTypeMap_.add(item.type);
+  const type = globalTypeParser_.add(item.type);
   item[_type] = type;
   return type;
 }
@@ -817,8 +817,8 @@ const editingModel = (function() {
       function canRewire(index, pins, newPins) {
         if (index >= newPins.length)
           return false;
-        const type = globalTypeMap_.trimType(pins[index].type),
-              newType = globalTypeMap_.trimType(newPins[index].type);
+        const type = globalTypeParser_.trimType(pins[index].type),
+              newType = globalTypeParser_.trimType(newPins[index].type);
         return type === '*' || type === newType;
       }
       graphInfo.iterators.forInputWires(element, function(wire, pin) {
@@ -940,15 +940,15 @@ const editingModel = (function() {
             type = item.type;
       let result;
       if (isInputPinLabeled(item)) {
-        const j = globalTypeMap_.splitType(type),
+        const j = globalTypeParser_.splitType(type),
               prefix = type.substring(0, j),
               suffix = type.substring(j);
-        result = globalTypeMap_.trimType(prefix) + label + suffix;
+        result = globalTypeParser_.trimType(prefix) + label + suffix;
       } else if (isOutputPinLabeled(item)) {
         const prefix = type.substring(0, type.length - 1);
-        result = globalTypeMap_.trimType(prefix) + label + ']';
+        result = globalTypeParser_.trimType(prefix) + label + ']';
       } else {
-        result = globalTypeMap_.trimType(type) + label;
+        result = globalTypeParser_.trimType(type) + label;
       }
       return result;
     },
@@ -983,9 +983,9 @@ const editingModel = (function() {
         y: element.y,
       };
       const id = dataModel.assignId(newElement),
-            trimmedType = globalTypeMap_.trimType(element.type),
-            innerType = globalTypeMap_.getUnlabeledType(trimmedType),
-            newType = globalTypeMap_.addInputToType(trimmedType, innerType);
+            trimmedType = globalTypeParser_.trimType(element.type),
+            innerType = globalTypeParser_.getUnlabeledType(trimmedType),
+            newType = globalTypeParser_.addInputToType(trimmedType, innerType);
       newElement.type = newType;
       dataModel.initialize(newElement);
       debugValue = newElement; //////////////////
@@ -1061,7 +1061,7 @@ const editingModel = (function() {
       if (type.name) {
         closedType += '(' + type.name + ')';
       }
-      typeString = globalTypeMap_.addOutputToType(typeString, closedType);
+      typeString = globalTypeParser_.addOutputToType(typeString, closedType);
 
       newElement.type = typeString;
       dataModel.initialize(newElement);
@@ -1441,7 +1441,7 @@ const editingModel = (function() {
           return;
         }
         const oldType = group.type,
-              oldSig = globalTypeMap_.trimType(group.type),
+              oldSig = globalTypeParser_.trimType(group.type),
               info = self.getGroupTypeInfo(group.items);
         if (oldSig !== info.type) {
           let label = oldType.substring(oldSig.length);
@@ -2749,7 +2749,7 @@ return {
   editingModel: editingModel,
   getType: getType,
 
-  TypeMap: TypeMap,
+  TypeParser: TypeParser,
   Renderer: Renderer,
 
   Editor: Editor,
