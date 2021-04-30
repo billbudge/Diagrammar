@@ -105,8 +105,9 @@ const inputElementType = '[,*]',
       outputElementType = '[*,]';
 
 const _type = Symbol('type'),
-      _contextType = Symbol('context type'),
-      _x = Symbol('x'),
+      _contextType = Symbol('context type');
+
+const _x = Symbol('x'),
       _y = Symbol('y'),
       _baseline = Symbol('baseline'),
       _width = Symbol('width'),
@@ -287,10 +288,7 @@ function updateType(item) {
 
 const _definitionId = 'definitionId',
       _definition = Symbol('definition'),
-      _definitionsAttr = 'definitions',
-      _definitions = Symbol(_definitionsAttr);
-
-assert(_definition != _definitions);
+      _definitionsAttr = 'definitions';
 
 function getDefinition(item) {
   return item[_definition];
@@ -653,6 +651,7 @@ const editingModel = (function() {
       model.selectionModel.set(model.hierarchicalModel.reduceSelection());
     },
 
+    // TODO move to circuitModel?
     getConnectedElements: function(items, upstream, downstream) {
       const self = this,
             model = this.model,
@@ -699,6 +698,21 @@ const editingModel = (function() {
     newItems: function(items) {
       const self = this;
       items.forEach(item => self.newItem(item));
+    },
+
+    newElement: function(type, x, y) {
+      const element = {
+        kind: 'element',
+        type: type,
+        state: 'normal',
+      }
+      this.newItem(element);
+      return element;
+    },
+
+    newGroupInstance: function(type, x, y) {
+      const element = this.newElement(type, x, y);
+      return element;
     },
 
     deleteItem: function(item) {
@@ -988,7 +1002,6 @@ const editingModel = (function() {
             newType = globalTypeParser_.addInputToType(trimmedType, innerType);
       newElement.type = newType;
       dataModel.initialize(newElement);
-      debugValue = newElement; //////////////////
       return newElement;
     },
 
@@ -1088,7 +1101,14 @@ const editingModel = (function() {
       });
     },
 
-    getGroupTypeInfo: function(items) {
+    isInstanceOfGroup: function(element, group) {
+      assert(isElement(element));
+      // Recursive group instances aren't included in the signature.
+      return isGroupInstance(element) &&
+             element.groupId == this.model.dataModel.getId(group);
+    },
+
+    getGroupTypeInfo: function(items, group) {
       const self = this, model = this.model,
             dataModel = model.dataModel,
             circuitModel = model.circuitModel,
@@ -1123,8 +1143,6 @@ const editingModel = (function() {
 
       // Add pins for inputs, outputs, and disconnected pins on elements.
       items.forEach(function(item, index) {
-        if (!isElement(item))
-          return;
         if (isInput(item)) {
           const y = renderer.pinToPoint(item, 0, false).y;
           inputs.push(makePin(item, getInputType(item), y));
@@ -1132,6 +1150,9 @@ const editingModel = (function() {
           const y = renderer.pinToPoint(item, 0, true).y;
           outputs.push(makePin(item, getOutputType(item), y));
         } else if (isElement(item)) {
+          // Recursive group instances aren't included in the signature.
+          if (group && self.isInstanceOfGroup(item, group))
+            return;
           const type = getType(item),
                 inputWires = graphInfo.inputMap.get(item),
                 outputWires = graphInfo.outputMap.get(item);
@@ -1147,6 +1168,9 @@ const editingModel = (function() {
               outputs.push(makePin(item, pin.type, y));
             }
           });
+        } else if (isGroup(item)) {
+          const y = renderer.getBounds(item).y;
+          outputs.push(makePin(item, item.type, y));
         }
       });
 
@@ -1245,13 +1269,13 @@ const editingModel = (function() {
       // Create the new group element.
       const group = {
         kind: 'group',
+        type: '',  // makeConsistent will set the type and other fields.
         x: x,
         y: y,
         items: new Array(),
       };
 
       const id = dataModel.assignId(group);
-      Object.assign(group, this.getGroupTypeInfo(items));
       model.dataModel.initialize(group);
       // Add the group before reparenting the items.
       this.addItem(group, parent);
@@ -1264,6 +1288,7 @@ const editingModel = (function() {
 
     createGroupInstance: function(group, element) {
       const model = this.model,
+            dataModel = model.dataModel,
             items = model.copyPasteModel.cloneItems(group.items, new Map()),
             newGroupItems = {
               id: 0,  // Temporary id, so deepEqual will match non-identically.
@@ -1271,6 +1296,7 @@ const editingModel = (function() {
               items: items,
             };
       const groupItems = model.canonicalInstanceModel.internalize(newGroupItems);
+      element.groupId = dataModel.getId(group);
       element[_definitionId] = model.dataModel.getId(groupItems);
     },
 
@@ -1442,11 +1468,24 @@ const editingModel = (function() {
         }
         const oldType = group.type,
               oldSig = globalTypeParser_.trimType(group.type),
-              info = self.getGroupTypeInfo(group.items);
+              info = self.getGroupTypeInfo(group.items, group);
         if (oldSig !== info.type) {
+          // Maintain the label of the group.
           let label = oldType.substring(oldSig.length);
-          observableModel.changeValue(group, 'type', info.type + label);
-          observableModel.changeValue(group, 'passThroughs', info.passThroughs);
+          info.type += label;
+          // Assign info properties.
+          for (let attr in info) {
+            observableModel.changeValue(group, attr, info[attr]);
+          }
+          group.items.forEach(function(item) {
+            if (isElement(item) && self.isInstanceOfGroup(item, group)) {
+              const newElement = self.newElement(info.type, item.x, item.y);
+              updateType(newElement);
+              newElement.groupId = item.groupId;
+              newElement[_definitionId] = item[_definitionId];
+              self.replaceElement(item, newElement);
+            }
+          });
         }
       }, isGroup);
 
@@ -1545,6 +1584,8 @@ Renderer.prototype = {
       return { x: x, y: y, w: type[_width], h: type[_height] };
     }
     if (isGroup(item)) {
+      if (!item[_has_layout])
+        this.layoutGroup(item);
       return { x: x, y: y, w: item[_width], h: item[_height] };
     }
   },
@@ -1640,15 +1681,15 @@ Renderer.prototype = {
   },
 
   layoutPin: function(pin) {
-    const theme = this.theme, shrink = theme.shrink;
+    const theme = this.theme;
     if (pin.type === 'v' || pin.type === '*') {
       pin[_width] = pin[_height] = 2 * theme.knobbyRadius;
     } else {
       const type = getType(pin);
       if (!type[_has_layout])
         this.layoutType(type);
-      pin[_width] = type[_width] * shrink;
-      pin[_height] = type[_height] * shrink;
+      pin[_width] = type[_width];
+      pin[_height] = type[_height];
     }
   },
 
@@ -1699,7 +1740,7 @@ Renderer.prototype = {
     group[_has_layout] = true;
   },
 
-  drawType: function(type, x, y) {
+  drawType: function(type, x, y, fillOutputs) {
     if (!type[_has_layout])
       this.layoutType(type);
 
@@ -1717,7 +1758,7 @@ Renderer.prototype = {
     }
     type.inputs.forEach(function(pin, i) {
       const name = pin.name;
-      self.drawPin(pin, x, y + pin[_y]);
+      self.drawPin(pin, x, y + pin[_y], false);
       if (name) {
         ctx.textAlign = 'left';
         ctx.fillText(name, x + pin[_width] + spacing, y + pin[_baseline]);
@@ -1726,7 +1767,7 @@ Renderer.prototype = {
     type.outputs.forEach(function(pin) {
       const name = pin.name,
             pinLeft = right - pin[_width];
-      self.drawPin(pin, pinLeft, y + pin[_y]);
+      self.drawPin(pin, pinLeft, y + pin[_y], fillOutputs);
       if (name) {
         ctx.textAlign = 'right';
         ctx.fillText(name, pinLeft - spacing, y + pin[_baseline]);
@@ -1734,7 +1775,7 @@ Renderer.prototype = {
     });
   },
 
-  drawPin: function(pin, x, y) {
+  drawPin: function(pin, x, y, fill) {
     const theme = this.theme;
     ctx.strokeStyle = theme.strokeColor;
     if (pin.type === 'v' || pin.type === '*') {
@@ -1748,24 +1789,20 @@ Renderer.prototype = {
       }
       ctx.stroke();
     } else {
-      const shrink = theme.shrink, invShrink = theme.invShrink,
-            type = getType(pin),
+      const type = getType(pin),
             width = type[_width], height = type[_height];
-      this.ctx.scale(shrink, shrink);
-      x *= invShrink;
-      y *= invShrink;
       ctx.beginPath();
       ctx.rect(x, y, width, height);
+      // if (level == 1) {
+      //   ctx.fillStyle = theme.altBgColor;
+      //   ctx.fill();
+      // }
       ctx.stroke();
       this.drawType(type, x, y);
-      this.ctx.scale(invShrink, invShrink);
     }
   },
 
   drawElement: function(element, mode) {
-    if (debugValue == element) {
-      let foo = 0;
-    }
     const ctx = this.ctx,
           theme = this.theme, spacing = theme.spacing,
           rect = this.getBounds(element),
@@ -1793,7 +1830,7 @@ Renderer.prototype = {
         ctx.lineWidth = 0.5;
         ctx.stroke();
         let type = getType(element);
-        this.drawType(type, x, y);
+        this.drawType(type, x, y, 0);
         break;
       case highlightMode:
         ctx.strokeStyle = theme.highlightColor;
@@ -1869,18 +1906,16 @@ Renderer.prototype = {
         ctx.stroke();
         ctx.setLineDash([]);
 
-        if (group.type) {
-          let type = getType(group),
+        const type = getType(group),
               instanceRect = this.getGroupInstanceBounds(type, right, bottom);
-          ctx.beginPath();
-          ctx.rect(instanceRect.x, instanceRect.y, instanceRect.w, instanceRect.h);
-          ctx.fillStyle = theme.altBgColor;
-          ctx.fill();
-          ctx.strokeStyle = theme.strokeColor;
-          ctx.lineWidth = 0.5;
-          ctx.stroke();
-          this.drawType(type, instanceRect.x, instanceRect.y);
-        }
+        ctx.beginPath();
+        ctx.rect(instanceRect.x, instanceRect.y, instanceRect.w, instanceRect.h);
+        ctx.fillStyle = theme.altBgColor;
+        ctx.fill();
+        ctx.strokeStyle = theme.strokeColor;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+        this.drawType(type, instanceRect.x, instanceRect.y, 0);
         break;
       case highlightMode:
         ctx.strokeStyle = theme.highlightColor;
@@ -2045,7 +2080,6 @@ function createTheme(properties) {
   // Assign default circuit layout and drawing parameters.
   theme = Object.assign(theme, {
     spacing: 6,
-    shrink: 0.7,
     knobbyRadius: 4,
 
     minTypeWidth: 8,
@@ -2055,7 +2089,6 @@ function createTheme(properties) {
   if (properties) {
     theme = Object.assign(theme, properties);
   }
-  theme.invShrink = 1.0 / theme.shrink;
   return theme;
 }
 
@@ -2358,6 +2391,7 @@ Editor.prototype.setEditableText = function() {
 Editor.prototype.onClick = function(p) {
   const model = this.model,
         selectionModel = model.selectionModel,
+        editingModel = model.editingModel,
         shiftKeyDown = this.canvasController.shiftKeyDown,
         cmdKeyDown = this.canvasController.cmdKeyDown,
         hitList = this.hitTest(p),
@@ -2527,6 +2561,7 @@ Editor.prototype.onDrag = function(p0, p) {
     case connectWireSrc:
       hitInfo = this.getFirstHit(hitList, isOutputPin);
       const srcId = hitInfo ? dataModel.getId(hitInfo.item) : 0;  // 0 is invalid id.
+      assert(isWire(dragItem));
       observableModel.changeValue(dragItem, 'srcId', srcId);
       if (srcId) {
         observableModel.changeValue(dragItem, 'srcPin', hitInfo.output);
@@ -2539,6 +2574,7 @@ Editor.prototype.onDrag = function(p0, p) {
     case connectWireDst:
       hitInfo = this.getFirstHit(hitList, isInputPin);
       const dstId = hitInfo ? dataModel.getId(hitInfo.item) : 0;  // 0 is invalid id.
+      assert(isWire(dragItem));
       observableModel.changeValue(dragItem, 'dstId', dstId);
       if (dstId) {
         observableModel.changeValue(dragItem, 'dstPin', hitInfo.input);
