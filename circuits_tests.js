@@ -305,6 +305,27 @@ test("circuits.circuitModel.iterators", function() {
   testIterator(subgraph.iterators.forOutputWires, b, [b0_d0]);
 });
 
+test("circuits.circuitModel.getConnectedElements", function() {
+  const test = newTestCircuitModel(),
+        items = test.model.root.items,
+        a = addElement(test, newTypedElement('[vv,v]')),
+        b = addElement(test, newTypedElement('[vv,v]')),
+        elem3 = addElement(test, newTypedElement('[vv,v]')),
+        wire1 = addWire(test, a, 0, b, 1),
+        wire2 = addWire(test, b, 0, elem3, 1);
+  // Get upstream and downstream connected elements from b.
+  let all = Array.from(test.getConnectedElements([b], true, true));
+  deepEqual(all.length, 3);
+  ok(all.includes(a));
+  ok(all.includes(b));
+  ok(all.includes(elem3));
+  // Get only downstream connected elements from b.
+  let downstream = Array.from(test.getConnectedElements([b], false, true));
+  deepEqual(downstream.length, 2);
+  ok(downstream.includes(b));
+  ok(downstream.includes(elem3));
+});
+
 test("circuits.editingAndTyping", function() {
   const test = newTestEditingModel(),
         circuit = test.model.root,
@@ -463,27 +484,6 @@ test("circuits.editingModel.completeGroup", function() {
   deepEqual(items[2], wire);
 });
 
-test("circuits.editingModel.getConnectedElements", function() {
-  const test = newTestEditingModel(),
-        items = test.model.root.items,
-        a = addElement(test, newTypedElement('[vv,v]')),
-        b = addElement(test, newTypedElement('[vv,v]')),
-        elem3 = addElement(test, newTypedElement('[vv,v]')),
-        wire1 = addWire(test, a, 0, b, 1),
-        wire2 = addWire(test, b, 0, elem3, 1);
-  // Get upstream and downstream connected elements from b.
-  let all = Array.from(test.getConnectedElements([b], true, true));
-  deepEqual(all.length, 3);
-  ok(all.includes(a));
-  ok(all.includes(b));
-  ok(all.includes(elem3));
-  // Get only downstream connected elements from b.
-  let downstream = Array.from(test.getConnectedElements([b], false, true));
-  deepEqual(downstream.length, 2);
-  ok(downstream.includes(b));
-  ok(downstream.includes(elem3));
-});
-
 test("circuits.editingModel.openElements", function() {
   const test = newTestEditingModel(),
         items = test.model.root.items,
@@ -501,24 +501,6 @@ test("circuits.editingModel.openElements", function() {
   deepEqual(wire.dstPin, 1);
   let openElement = items[2];
   deepEqual(openElement.type, '[v(a)v(b)[vv,v],v(c)]');
-});
-
-test("circuits.editingModel.closeFunction", function() {
-  const test = newTestEditingModel(),
-        items = test.model.root.items,
-        a = addElement(test, newTypedElement('[vv,v]')),
-        b = addElement(test, newTypedElement('[vv,v]')),
-        wire = addWire(test, a, 0, b, 1);
-  // Close element #2.
-  test.closeElements([b]);
-  deepEqual(items.length, 3);
-  deepEqual(items[0], a);
-  deepEqual(test.getWireSrc(wire), a);
-  deepEqual(wire.srcPin, 0);
-  deepEqual(test.getWireDst(wire), items[2]);
-  deepEqual(wire.dstPin, 0);
-  let closedElement = items[2];
-  deepEqual(closedElement.type, '[v,[v,v]]');
 });
 
 test("circuits.editingModel.replaceElement", function() {
