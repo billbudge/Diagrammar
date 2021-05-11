@@ -9,7 +9,8 @@ function newCircuit() {
       kind: 'circuit',
       x: 0,
       y: 0,
-      items: []
+      items: [],
+      definitions: [],
     }
   };
 }
@@ -356,19 +357,52 @@ test("circuits.editingModel.newItem", function() {
   ok(a.initalized);
 });
 
-test("circuits.editingModel.addDeleteItem", function() {
+test("circuits.editingModel.newElement", function() {
+  const test = newTestEditingModel();
+  test.model.dataModel.addInitializer(doInitialize);
+  let a = test.newElement('[v,v]', 10, 20, 'foo');
+  ok(a.id);
+  ok(a.initalized);
+  deepEqual(a.x, 10);
+  deepEqual(a.y, 20);
+  deepEqual(a.elementKind, 'foo');
+});
+
+test("circuits.editingModel.addItem", function() {
   const test = newTestEditingModel(),
         model = test.model,
         circuit = model.root;
   // Add an item.
   const a = newElement();
   test.newItem(a);
+
+  model.transactionModel.beginTransaction();
   test.addItem(a, circuit);
+  model.transactionModel.endTransaction();
+
   deepEqual(circuit.items, [a]);
   deepEqual(model.hierarchicalModel.getParent(a), circuit);
-  // Delete the item.
-  test.deleteItem(a);
+
+  model.transactionHistory.undo();
   deepEqual(circuit.items, []);
+});
+
+test("circuits.editingModel.deleteItem", function() {
+  const test = newTestEditingModel(),
+        model = test.model,
+        circuit = model.root;
+  const a = newElement();
+  test.newItem(a);
+  test.addItem(a, circuit);
+
+  model.transactionModel.beginTransaction();
+  test.deleteItem(a);
+  model.transactionModel.endTransaction();
+
+  deepEqual(circuit.items, []);
+
+  model.transactionHistory.undo();
+  deepEqual(circuit.items, [a]);
 });
 
 test("circuits.editingModel.connectInput", function() {
@@ -379,14 +413,21 @@ test("circuits.editingModel.connectInput", function() {
   const a = newElement();
   test.newItem(a);
   test.addItem(a, circuit);
+
+  model.transactionModel.beginTransaction();
   // Connect input 0.
   test.connectInput(a, 0);
+  model.transactionModel.endTransaction();
+
   deepEqual(circuit.items.length, 3);
   let junction = circuit.items[1],
       wire = circuit.items[2];
   deepEqual(junction.elementKind, 'input');
   deepEqual(test.getWireSrc(wire), junction);
   deepEqual(test.getWireDst(wire), a);
+
+  model.transactionHistory.undo();
+  deepEqual(circuit.items, [a]);
 });
 
 test("circuits.editingModel.connectOutput", function() {
@@ -397,14 +438,21 @@ test("circuits.editingModel.connectOutput", function() {
   const a = newElement();
   test.newItem(a);
   test.addItem(a, circuit);
+
+  model.transactionModel.beginTransaction();
   // Connect output 0.
   test.connectOutput(a, 0);
+  model.transactionModel.endTransaction();
+
   deepEqual(circuit.items.length, 3);
   let junction = circuit.items[1],
       wire = circuit.items[2];
   deepEqual(junction.elementKind, 'output');
   deepEqual(test.getWireSrc(wire), a);
   deepEqual(test.getWireDst(wire), junction);
+
+  model.transactionHistory.undo();
+  deepEqual(circuit.items, [a]);
 });
 
 test("circuits.editingModel.getLabel", function() {
@@ -472,16 +520,23 @@ test("circuits.editingModel.changeType", function() {
 
 test("circuits.editingModel.completeGroup", function() {
   const test = newTestEditingModel(),
-        items = test.model.root.items,
+        model = test.model,
+        items = model.root.items,
         a = addElement(test, newTypedElement('[vv,v]')),
         b = addElement(test, newTypedElement('[vv,v]')),
         wire = addWire(test, a, 0, b, 1);
+  model.transactionModel.beginTransaction();
   // Complete the two element group.
   test.completeGroup([a, b]);
+  model.transactionModel.endTransaction();
+
   deepEqual(items.length, 11);
   deepEqual(items[0], a);
   deepEqual(items[1], b);
   deepEqual(items[2], wire);
+
+  model.transactionHistory.undo();
+  deepEqual(items, [a, b, wire]);
 });
 
 test("circuits.editingModel.openElements", function() {
@@ -497,38 +552,46 @@ test("circuits.editingModel.openElements", function() {
   deepEqual(items.length, 3);
   deepEqual(test.getWireSrc(wire), a);
   deepEqual(wire.srcPin, 0);
-  deepEqual(test.getWireDst(wire), items[2]);
+  deepEqual(test.getWireDst(wire), items[1]);
   deepEqual(wire.dstPin, 1);
-  let openElement = items[2];
+  let openElement = items[1];
   deepEqual(openElement.type, '[v(a)v(b)[vv,v],v(c)]');
 });
 
 test("circuits.editingModel.replaceElement", function() {
   const test = newTestEditingModel(),
-        items = test.model.root.items,
+        model = test.model,
+        items = model.root.items,
         a = addElement(test, newTypedElement('[vv,v]')),
         b = addElement(test, newTypedElement('[v(a)v(b),v(c)]')),
         wire = addWire(test, a, 0, b, 1),
         replacement1 = addElement(test, newTypedElement('[vv,v]')),
         replacement2 = addElement(test, newTypedElement('[,v]'));
+  model.transactionModel.beginTransaction();
   // Replace a with replacement1. The wire should still be connected.
   test.replaceElement(a, replacement1);
-  deepEqual(items.length, 4);
-  ok (!items.includes(a));
-  ok(items.includes(replacement1));
-  ok(items.includes(wire));
+  model.transactionModel.endTransaction();
+
+  deepEqual(items, [replacement1, b, wire, replacement2]);
   deepEqual(test.getWireSrc(wire), replacement1);
   deepEqual(wire.srcPin, 0);
+
+  model.transactionModel.beginTransaction();
+  // Replace b with replacement2. The wire should be disconnected.
   test.replaceElement(b, replacement2);
-  deepEqual(items.length, 2);
-  ok(!items.includes(b));
-  ok(items.includes(replacement2));
-  ok(!items.includes(wire));
+  model.transactionModel.endTransaction();
+
+  deepEqual(items, [replacement1, replacement2]);
+
+  model.transactionHistory.undo();
+  model.transactionHistory.undo();
+  deepEqual(items, [a, b, wire, replacement1, replacement2]);
 });
 
 test("circuits.editingModel.build", function() {
   const test = newTestEditingModel(),
-        items = test.model.root.items,
+        model = test.model,
+        items = model.root.items,
         elem = addElement(test, newTypedElement('[vv,v]')),
         input1 = addElement(test, newInputJunction('[*,v]')),
         input2 = addElement(test, newInputJunction('[*,v(f)]')),
@@ -536,23 +599,86 @@ test("circuits.editingModel.build", function() {
         wire1 = addWire(test, input1, 0, elem, 0),
         wire2 = addWire(test, input2, 0, elem, 1),
         wire3 = addWire(test, elem, 0, output, 0);
+  model.transactionModel.beginTransaction();
   const groupElement = test.build([input1, input2, elem, output]);
+  model.transactionModel.endTransaction();
+
+  deepEqual(items, [groupElement]);
   deepEqual(groupElement.type, '[vv(f),v]');
-  // console.log(items);
-  // deepEqual(items.length, 1);
+
+  model.transactionHistory.undo();
+  deepEqual(items, [elem, input1, input2, output, wire1, wire2, wire3]);
 });
 
 test("circuits.editingModel.wireConsistency", function() {
   const test = newTestEditingModel(),
-        items = test.model.root.items,
+        model = test.model,
+        items = model.root.items,
         a = addElement(test, newInputJunction('[,v]')),
         b = addElement(test, newTypedElement('[vv,v]')),
         wire = addWire(test, a, 0, b, 1);
 
   // Remove element and make sure dependent wire is also deleted.
+  model.transactionModel.beginTransaction();
   test.deleteItem(a);
-  test.makeConsistent();
-  ok(!items.includes(wire));
+  model.transactionModel.endTransaction();
+
+  deepEqual(items, [b]);
+
+  model.transactionHistory.undo();
+  deepEqual(items, [a, b, wire]);
+});
+
+test("circuits.editingModel.groupConsistency", function() {
+  const test = newTestEditingModel(),
+        model = test.model,
+        items = model.root.items,
+        a = addElement(test, newTypedElement('[vv,v]'));
+
+  // Make a group, and add two 'self' instances to it.
+  model.transactionModel.beginTransaction();
+  const group = test.build([a]),
+        inst1 = test.newElement(group.type, 10, 20),
+        inst2 = test.newElement(group.type, 30, 40);
+  deepEqual(group.items, [a]);
+  test.createGroupInstance(group, inst1);
+  test.addItem(inst1, group);
+  test.createGroupInstance(group, inst2);
+  deepEqual(inst1.groupId, inst2.groupId);
+  // TODO update group items too.
+  // deepEqual(inst1.definitionId, inst2.definitionId);
+  test.addItem(inst2, group);
+  model.transactionModel.endTransaction();
+
+  // Add an interior wire connecting the 'self' instances. Make sure it's
+  // reparented to the group.
+  model.transactionModel.beginTransaction();
+  const wire1 = test.addItem(test.newWire(inst1.id, 0, inst2.id, 0));
+  model.transactionModel.endTransaction();
+
+  deepEqual(group.items, [a, inst1, inst2, wire1]);
+
+  // Add a wire that changes the group type. The instances are replaced.
+  model.transactionModel.beginTransaction();
+  const wire2 = test.addItem(test.newWire(a.id, 0, inst1.id, 0), group);
+  model.transactionModel.endTransaction();
+
+  const inst1b = group.items[1];
+  const inst2b = group.items[2];
+  const wire1b = group.items[3];
+  deepEqual(inst1b.type, '[vv,]');
+  deepEqual(inst2b.type, '[vv,]');
+  deepEqual(group.items, [a, inst1b, inst2b, wire1b]);
+
+  // Undo adding both wires.
+  model.transactionHistory.undo();
+  model.transactionHistory.undo();
+  deepEqual(group.items, [a, inst1, inst2]);
+
+  // Try to create a type-changing wire again.
+  model.transactionModel.beginTransaction();
+  const wire2b = test.addItem(test.newWire(a.id, 0, inst1.id, 0));
+  model.transactionModel.endTransaction();
 });
 
 // TODO fix these tests to work with new grouping

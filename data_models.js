@@ -273,7 +273,7 @@ const transactionModel = (function() {
             observableModel = this.observableModel;
       switch (change.type) {
         case 'change': {
-          const oldValue = change.item[change.attr];
+          const oldValue = item[attr];
           item[attr] = change.oldValue;
           change.oldValue = oldValue;
           observableModel.onChanged(change);  // this change is its own inverse.
@@ -444,15 +444,13 @@ const transactionModel = (function() {
         // Record insert and remove element changes.
         this.recordChange_(change);
       } else {
-        // Coalesce value changes. Only record them if this is the first time
-        // we've observed the (item, attr) change.
+        // Coalesce value changes. Only record them the first time we observe
+        // the (item, attr) change.
         const changedItems = this.changedItems;
         let changedItem = changedItems.get(item),
             snapshot, oldValue;
         if (changedItem) {
           snapshot = changedItem.snapshot;
-          if (snapshot.hasOwnProperty(attr))
-            oldValue = snapshot[attr];
         } else {
           // The snapshot just extends the item, and gradually overrides it as
           // we receive attribute changes for it.
@@ -460,7 +458,7 @@ const transactionModel = (function() {
           changedItem = { item: item, snapshot: snapshot };
           changedItems.set(item, changedItem);
         }
-        if (!oldValue) {
+        if (!snapshot.hasOwnProperty(attr)) {
           snapshot[attr] = change.oldValue;
           this.recordChange_(change);
         }
