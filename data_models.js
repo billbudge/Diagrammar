@@ -1700,10 +1700,6 @@ const changeAggregator = (function() {
     getRemovedItems: function() {
       return Array.from(this.removedItems_);
     },
-    // Items which were removed and reinserted.
-    getReparentedItems: function() {
-      return Array.from(this.reparentedItems_);
-    },
 
     clear: function() {
       this.changedItems_.clear();
@@ -1713,20 +1709,13 @@ const changeAggregator = (function() {
     },
 
     insertItem_: function(item) {
-      if (this.removedItems_.has(item)) {
-        this.removedItems_.delete(item);
-        this.reparentedItems_.add(item);
-      } else {
-        this.insertedItems_.add(item);
-      }
+      this.insertedItems_.add(item);
+      this.removedItems_.delete(item);
     },
 
     removeItem_: function(item) {
       this.removedItems_.add(item);
-
-      this.changedItems_.delete(item);
       this.insertedItems_.delete(item);
-      this.reparentedItems_.delete(item);
     },
 
     onChanged_: function(change) {
@@ -1758,7 +1747,6 @@ const changeAggregator = (function() {
     instance.changedItems_ = new Set();
     instance.insertedItems_ = new Set();
     instance.removedItems_ = new Set();
-    instance.reparentedItems_ = new Set();
     instance.has_changes_ = false;
 
     model.observableModel.addHandler('changed',

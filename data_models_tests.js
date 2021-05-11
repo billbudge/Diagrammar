@@ -619,9 +619,8 @@ test("changeAggregator", function() {
   model.observableModel.onElementInserted(model.root, 'array', 0);
   ok(test.hasChanges());
   deepEqual(test.getChangedItems(), [model.root]);
-  deepEqual(test.getInsertedItems(), []);
+  deepEqual(test.getInsertedItems(), [child]);
   deepEqual(test.getRemovedItems(), []);
-  deepEqual(test.getReparentedItems(), [child]);
   test.clear();
 
   // multiple changed items
