@@ -1681,98 +1681,6 @@ const openingModel = (function() {
 
 //------------------------------------------------------------------------------
 
-// A model for tracking which items in the data model have changed.
-const changeAggregator = (function() {
-  const proto = {
-    hasChanges: function() {
-      return this.has_changes_;
-    },
-
-    // Changed items that are still in the data model.
-    getChangedItems: function() {
-      return Array.from(this.changedItems_);
-    },
-    // Inserted items that are still in the data model.
-    getInsertedItems: function() {
-      return Array.from(this.insertedItems_);
-    },
-    // Items removed from the data model.
-    getRemovedItems: function() {
-      return Array.from(this.removedItems_);
-    },
-    // Items which were removed and reinserted.
-    getReparentedItems: function() {
-      return Array.from(this.reparentedItems_);
-    },
-
-    clear: function() {
-      this.changedItems_.clear();
-      this.insertedItems_.clear();
-      this.removedItems_.clear();
-      this.has_changes_ = false;
-    },
-
-    insertItem_: function(item) {
-      if (this.removedItems_.has(item)) {
-        this.removedItems_.delete(item);
-        this.reparentedItems_.add(item);
-      } else {
-        this.insertedItems_.add(item);
-      }
-    },
-
-    removeItem_: function(item) {
-      this.removedItems_.add(item);
-
-      this.changedItems_.delete(item);
-      this.insertedItems_.delete(item);
-      this.reparentedItems_.delete(item);
-    },
-
-    onChanged_: function(change) {
-      const dataModel = this.model.dataModel,
-            item = change.item,
-            attr = change.attr;
-      // In all cases, the item is considered changed.
-      this.changedItems_.add(item);
-      this.has_changes_ = true;
-      switch (change.type) {
-        case 'insert': {
-          this.insertItem_(item[attr][change.index]);
-          break;
-        }
-        case 'remove': {
-          this.removeItem_(change.oldValue);
-          break;
-        }
-      }
-    },
-  }
-
-  function attach(model) {
-    dataModel.extend(model);
-    observableModel.extend(model);
-
-    const instance = Object.create(proto);
-    instance.model = model;
-    instance.changedItems_ = new Set();
-    instance.insertedItems_ = new Set();
-    instance.removedItems_ = new Set();
-    instance.reparentedItems_ = new Set();
-    instance.has_changes_ = false;
-
-    model.observableModel.addHandler('changed',
-                                     change => instance.onChanged_(change));
-    return instance;
-  }
-
-  return {
-    attach: attach,
-  };
-})();
-
-//------------------------------------------------------------------------------
-
 // const myModel = (function() {
 //   const proto = {
 //     foo: function(item) {
@@ -1823,6 +1731,5 @@ const changeAggregator = (function() {
     translatableModel: translatableModel,
     transformableModel: transformableModel,
     openingModel: openingModel,
-    changeAggregator: changeAggregator,
   }
 })();

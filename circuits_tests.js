@@ -102,9 +102,9 @@ function addWire(test, src, srcPin, dst, dstPin) {
         parent = dataModel.root;
   let wire = {
     kind: 'wire',
-    srcId: dataModel.getId(src),
+    srcId: src ? dataModel.getId(src) : undefined,
     srcPin: srcPin,
-    dstId: dataModel.getId(dst),
+    dstId: dst ? dataModel.getId(dst) : undefined,
     dstPin: dstPin,
   }
   observableModel.insertElement(parent, 'items', parent.items.length, wire);
@@ -627,6 +627,24 @@ test("circuits.editingModel.wireConsistency", function() {
 
   model.transactionHistory.undo();
   deepEqual(items, [a, b, wire]);
+});
+
+test("circuits.editingModel.wireRollback", function() {
+  const test = newTestEditingModel(),
+        model = test.model,
+        items = model.root.items,
+        a = addElement(test, newInputJunction('[,v]')),
+        b = addElement(test, newTypedElement('[vv,v]'));
+
+  // Rollback new wire transaction.
+  model.transactionModel.beginTransaction();
+  const wire = addWire(test, a, 0 /* , undefined, undefined */);
+  model.observableModel.changeValue(wire, 'dstId', model.dataModel.getId(b));
+  model.observableModel.changeValue(wire, 'dstPin', 0);
+  model.transactionModel.cancelTransaction();
+  ok(model.circuitModel.checkConsistency());
+
+  deepEqual(items, [a, b]);
 });
 
 test("circuits.editingModel.groupConsistency", function() {

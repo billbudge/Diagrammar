@@ -82,17 +82,20 @@ let getTransitionSrc,
 
 //------------------------------------------------------------------------------
 
-// Use dataModels.changeAggregator to maintain:
+// Maintains:
 // - maps from element to connected transitions.
 // - information about graphs and subgraphs.
 // - iterators for walking the graph.
+
+const _inTransitions = Symbol('inTransitions'),
+      _outTransitions = Symbol('outTransitions');
 
 const statechartModel = (function() {
 
   function iterators(self) {
 
     function forInTransitions(state, fn) {
-      const inputs = self.inputMap_.get(state);
+      const inputs = self.getInTransitions(state);
       if (!inputs)
         return;
       for (let i = 0; i < inputs.length; i++) {
@@ -101,7 +104,7 @@ const statechartModel = (function() {
     }
 
     function forOutTransitions(state, fn) {
-      const outputs = self.outputMap_.get(state);
+      const outputs = self.getOutTransitions(state);
       if (!outputs)
         return;
       for (let i = 0; i < outputs.length; i++) {
@@ -116,14 +119,20 @@ const statechartModel = (function() {
   }
 
   const proto = {
-    getGraphInfo: function() {
-      this.update_();
+    getInTransitions: function(state) {
+      assert(isState(state));
+      return state[_inTransitions];
+    },
 
+    getOutTransitions: function(state) {
+      assert(isState(state));
+      return state[_outTransitions];
+    },
+
+    getGraphInfo: function() {
       return {
         statesAndStatecharts: this.statesAndStatecharts_,
         transitions: this.transitions_,
-        inputMap: this.inputMap_,
-        outputMap: this.outputMap_,
         interiorTransitions: this.transitions_,
         inTransitions: new diagrammar.collections.EmptySet(),
         outTransitions: new diagrammar.collections.EmptySet(),
@@ -132,8 +141,6 @@ const statechartModel = (function() {
     },
 
     getSubgraphInfo: function(items) {
-      this.update_();
-
       const self = this,
             statesAndStatecharts = new Set(),
             transitions = new Set(),
@@ -173,8 +180,6 @@ const statechartModel = (function() {
       return {
         statesAndStatecharts: statesAndStatecharts,
         transitions: transitions,
-        inputMap: this.inputMap_,
-        outputMap: this.outputMap_,
         interiorTransitions: interiorTransitions,
         inTransitions: inTransitions,
         outTransitions: outTransitions,
@@ -195,26 +200,17 @@ const statechartModel = (function() {
 
     insertState_: function(state) {
       this.statesAndStatecharts_.add(state);
-      // inputMap_ takes state to array of incoming transitions.
-      if (!this.inputMap_.has(state))
-        this.inputMap_.set(state, new Array());
-      // outputMap_ takes state to array of outgoing transitions.
-      if (!this.outputMap_.has(state))
-        this.outputMap_.set(state, new Array());
+      if (state[_inTransitions] === undefined) {
+        assert(state[_outTransitions] === undefined);
+        state[_inTransitions] = new Array();
+        state[_outTransitions] = new Array();
+      }
     },
 
-    insertStatechart_: function(state) {
-      this.statesAndStatecharts_.add(state);
-    },
-
-    removeState_: function(state) {
-      this.statesAndStatecharts_.delete(state);
-      this.inputMap_.delete(state);
-      this.outputMap_.delete(state);
-    },
-
-    removeStatechart_: function(state) {
-      this.statesAndStatecharts_.delete(state);
+    insertStatechart_: function(stateChart) {
+      this.statesAndStatecharts_.add(stateChart);
+      const self = this;
+      stateChart.items.forEach(subItem => self.insertItem_(subItem));
     },
 
     insertTransition_: function(transition) {
@@ -222,15 +218,35 @@ const statechartModel = (function() {
       const src = this.getTransitionSrc(transition),
             dst = this.getTransitionDst(transition);
       if (src) {
-        const outputs = this.outputMap_.get(src);
+        const outputs = this.getOutTransitions(src);
         if (outputs)
           outputs.push(transition);
       }
       if (dst) {
-        const inputs = this.inputMap_.get(dst);
+        const inputs = this.getInTransitions(dst);
         if (inputs)
           inputs.push(transition);
       }
+    },
+
+    insertItem_: function(item) {
+      if (isState(item)) {
+        this.insertState_(item);
+      } else if (isTransition(item)) {
+        this.insertTransition_(item);
+      } else if (isStatechart(item)) {
+        this.insertStatechart_(item);
+      }
+    },
+
+    removeState_: function(state) {
+      this.statesAndStatecharts_.delete(state);
+    },
+
+    removeStatechart_: function(stateChart) {
+      this.statesAndStatecharts_.delete(stateChart);
+      const self = this;
+      stateChart.items.forEach(subItem => self.removeItem_(subItem));
     },
 
     removeTransition_: function(transition) {
@@ -239,69 +255,55 @@ const statechartModel = (function() {
             dst = this.getTransitionDst(transition);
       function remove(array, item) {
         const index = array.indexOf(item);
-        if (index > -1) {
+        if (index >= 0) {
           array.splice(index, 1);
         }
       }
       if (src) {
-        const outputs = this.outputMap_.get(src);
+        const outputs = this.getOutTransitions(src);
         if (outputs)
           remove(outputs, transition);
       }
       if (dst) {
-        const inputs = this.inputMap_.get(dst);
+        const inputs = this.getInTransitions(dst);
         if (inputs)
           remove(inputs, transition);
       }
     },
 
-    // Update the model to incorporate pending changes.
-    update_: function() {
-      const changeAggregator = this.changeAggregator;
-      if (!changeAggregator.hasChanges())
-        return;
+    removeItem_: function(item) {
+      if (isState(item)) {
+        this.removeState_(item);
+      } else if (isTransition(item)) {
+        this.removeTransition_(item);
+      } else if (isStatechart(item)) {
+        this.removeStatechart_(item);
+      }
+    },
 
-      const self = this,
-            removedItems = changeAggregator.getRemovedItems(),
-            insertedItems = changeAggregator.getInsertedItems(),
-            changedItems = changeAggregator.getChangedItems();
-
-      // Remove transitions, then states.
-      removedItems.forEach(function(item) {
-        if (isTransition(item)) {
-          self.removeTransition_(item);
+    onChanged_: function (change) {
+      const item = change.item,
+            attr = change.attr;
+      switch (change.type) {
+        case 'change': {
+          if (isTransition(item)) {
+            // Remove and reinsert changed transitions.
+            this.removeTransition_(item);
+            this.insertTransition_(item);
+          }
+          break;
         }
-      });
-      removedItems.forEach(function(item) {
-        if (isState(item)) {
-          self.removeState_(item);
-        } else if (isStatechart(item)) {
-          self.removeStatechart_(item);
+        case 'insert': {
+          const newValue = item[attr][change.index];
+          this.insertItem_(newValue);
+          break;
         }
-      });
-      // Add states, then transitions.
-      insertedItems.forEach(function(item) {
-        if (isState(item)) {
-          self.insertState_(item);
-        } else if (isStatechart(item)) {
-          self.insertStatechart_(item);
+        case 'remove': {
+          const oldValue = change.oldValue;
+          this.removeItem_(oldValue);
         }
-      });
-      insertedItems.forEach(function(item) {
-        if (isTransition(item)) {
-          self.insertTransition_(item);
-        }
-      });
-      // For changed wires, remove them and then re-insert them.
-      changedItems.forEach(function(item) {
-        if (isTransition(item)) {
-          self.removeTransition_(item);
-          self.insertTransition_(item);
-        }
-      });
-
-      changeAggregator.clear();
-    }
+      }
+    },
   }
 
   function extend(model) {
@@ -315,12 +317,11 @@ const statechartModel = (function() {
     instance.model = model;
     instance.statechart = model.root;
 
-    instance.inputMap_ = new Map();   // state -> incoming transitions
-    instance.outputMap_ = new Map();  // state -> outgoing transitions
     instance.statesAndStatecharts_ = new Set();
     instance.transitions_ = new Set();
 
-    instance.changeAggregator = dataModels.changeAggregator.attach(model);
+    model.observableModel.addHandler('changed',
+                                     change => instance.onChanged_(change));
 
     instance.getTransitionSrc = model.referencingModel.getReferenceFn('srcId');
     instance.getTransitionDst = model.referencingModel.getReferenceFn('dstId');
@@ -978,6 +979,7 @@ const layoutModel = (function() {
         this.addTopLevelState_(item);
       } else if (isStatechart(item)) {
         this.addTopLevelState_(item);
+        item.items.forEach(subItem => self.update(subItem));
       } else if (isProperty(item)) {
         this.changedProperties_.add(item);
       }
