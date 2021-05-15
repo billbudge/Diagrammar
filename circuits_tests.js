@@ -37,7 +37,7 @@ function stringifyType(type) {
 
 function newElement(x, y) {
   return {
-    kind: "element",
+    kind: 'element',
     x: x || 0,
     y: y || 0,
     type: '[v,v]',
@@ -245,6 +245,8 @@ test("circuits.circuitModel.getGraphInfo", function() {
   deepEqual(graph.interiorWires.size, 3);
   deepEqual(graph.incomingWires.size, 0);
   deepEqual(graph.outgoingWires.size, 0);
+
+  test.checkConsistency();
 });
 
 test("circuits.circuitModel.getSubgraphInfo", function() {
@@ -278,6 +280,8 @@ test("circuits.circuitModel.getSubgraphInfo", function() {
   deepEqual(subgraph.interiorWires.size, 1);
   deepEqual(subgraph.incomingWires.size, 1);
   deepEqual(subgraph.outgoingWires.size, 1);
+
+  test.checkConsistency();
 });
 
 function testIterator(fn, element, items) {

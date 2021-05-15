@@ -451,15 +451,13 @@ const circuitModel = (function() {
     addWireToInputs_: function(wire, element, pin) {
       if (!element || pin === undefined) return;
       const inputs = this.getInputs(element);
-      if (inputs && pin !== undefined)
-        inputs[pin] = wire;
+      inputs[pin] = wire;
     },
 
     addWireToOutputs_: function(wire, element, pin) {
       if (!element || pin === undefined) return;
       const outputs = this.getOutputs(element);
-      if (outputs && pin !== undefined)
-        outputs[pin].push(wire);
+      outputs[pin].push(wire);
     },
 
     insertWire_: function(wire) {
@@ -521,23 +519,6 @@ const circuitModel = (function() {
       }
     },
 
-    updateWires_: function() {
-      const self = this,
-            referencingModel = this.model.referencingModel;
-
-      this.changedWires_.forEach(function(oldValues, wire) {
-        // Remove the old wire.
-        self.removeWireFromOutputs_(
-            wire, referencingModel.resolveId(oldValues.srcId), oldValues.srcPin);
-        self.removeWireFromInputs_(
-            wire, referencingModel.resolveId(oldValues.dstId), oldValues.dstPin);
-        // Insert the new wire.
-        self.addWireToOutputs_(wire, self.getWireSrc(wire), wire.srcPin);
-        self.addWireToInputs_(wire, self.getWireDst(wire), wire.dstPin);
-      });
-      this.changedWires_.clear();
-    },
-
     // May be called inside transactions, to update wires during drags.
     updateLayout: function() {
       const self = this,
@@ -550,7 +531,6 @@ const circuitModel = (function() {
         graphInfo.iterators.forOutputWires(element, markWire);
       });
       this.changedElements_.clear();
-      this.changedWires_.clear();
     },
 
     // Called at the end of transactions and undo/redo, to update bounds.
@@ -596,19 +576,23 @@ const circuitModel = (function() {
           if (isWire(item)) {
             // Changed wires need layout.
             item[_has_layout] = false;
-            // Wires may be in invalid during editing. Collect changes for
-            // update at the end of each transaction.
+            // Wires may pass through invalid states, since each connection
+            // requires two edits to change. insertWire_ and removeWire_ should
+            // handle non-existent connections.
             if (attr == 'srcId' || attr == 'srcPin' ||
                 attr == 'dstId' || attr == 'dstPin') {
-              let oldValues = this.changedWires_.get(item);
-              if (!oldValues) {
-                oldValues = {
-                  srcId: item.srcId, srcPin: item.srcPin,
-                  dstId: item.dstId, dstPin: item.dstPin
-                };
-                this.changedWires_.set(item, oldValues);
-              }
-              oldValues[attr] = change.oldValue;
+              const referencingModel = this.model.referencingModel,
+                    oldValue = change.oldValue,
+                    newValue = item[attr];
+              item[attr] = oldValue;
+              referencingModel.resolveReference(item, 'srcId');
+              referencingModel.resolveReference(item, 'dstId');
+              this.removeWire_(item);
+
+              item[attr] = newValue;
+              referencingModel.resolveReference(item, 'srcId');
+              referencingModel.resolveReference(item, 'dstId');
+              this.insertWire_(item);
             }
           } else if (isElementOrGroup(item) && attr == 'type') {
             // Type changed due to update or relabeling.
@@ -631,36 +615,19 @@ const circuitModel = (function() {
     },
 
     checkConsistency: function() {
-      // function equalSets(a, b) {
-      //   for (let as of a) {
-      //     if (!b.has(as)) {
-      //       console.log(as);
-      //       return false;
-      //     }
-      //   }
-      //   for (let bs of b) {
-      //     if (!a.has(bs)) {
-      //       console.log(bs);
-      //       return false;
-      //     }
-      //   }
-      //   return true;
-      // }
-
-      // const mappedWires = new Set();
-      // this.inputMap_.forEach(function(wires, element) {
-      //   wires.forEach(function(wire) {
-      //     if (wire) mappedWires.add(wire);
-      //   });
-      // });
-      // this.outputMap_.forEach(function(arrays, element) {
-      //   arrays.forEach(function(wires) {
-      //     wires.forEach(function(wire) {
-      //       if (wire) mappedWires.add(wire);
-      //     });
-      //   });
-      // });
-      // assert(equalSets(this.wires_, mappedWires));
+      const self = this,
+            mappedWires = new Set();
+      this.elementsAndGroups_.forEach(function(element) {
+        if (!isElement(element)) return;
+        self.getInputs(element).forEach(function(wire) {
+          if (wire) mappedWires.add(wire);
+        });
+        self.getOutputs(element).forEach(function(wires) {
+          wires.forEach(function(wire) {
+            if (wire) mappedWires.add(wire);
+          });
+        });
+      });
       return true;
     },
   }
@@ -680,7 +647,6 @@ const circuitModel = (function() {
     instance.elementsAndGroups_ = new Set();
     instance.wires_ = new Set();
 
-    instance.changedWires_ = new Map();
     instance.changedElements_ = new Set();
     instance.changedTopLevelGroups_ = new Set();
 
@@ -692,7 +658,6 @@ const circuitModel = (function() {
     const transactionModel = model.transactionModel;
     if (transactionModel) {
       function update() {
-        instance.updateWires_();
         instance.updateGroupLayout();
       }
       transactionModel.addHandler('transactionEnded', update);
@@ -1083,11 +1048,15 @@ const editingModel = (function() {
       // Add pins for inputs, outputs, and disconnected pins on elements.
       items.forEach(function(item, index) {
         if (isInput(item)) {
-          const y = renderer.pinToPoint(item, 0, false).y;
-          inputs.push(makePin(item, getInputType(item), y));
+          const y = renderer.pinToPoint(item, 0, false).y,
+                type = getInputType(item);
+          if (globalTypeParser_.trimType(type) != '*')
+            inputs.push(makePin(item, type, y));
         } else if (isOutput(item)) {
-          const y = renderer.pinToPoint(item, 0, true).y;
-          outputs.push(makePin(item, getOutputType(item), y));
+          const y = renderer.pinToPoint(item, 0, true).y,
+                type = getOutputType(item);
+          if (globalTypeParser_.trimType(type) != '*')
+            outputs.push(makePin(item, type, y));
         } else if (isElement(item)) {
           // Recursive group instances aren't included in the signature.
           if (group && self.isInstanceOfGroup(item, group))
@@ -1392,8 +1361,6 @@ const editingModel = (function() {
             observableModel = model.observableModel,
             circuitModel = model.circuitModel;
 
-      circuitModel.checkConsistency();
-
 // TODO don't mutate while iterating???
       let graphInfo, elementsAndGroups, wires;
       function refreshGraphInfo() {
@@ -1469,7 +1436,7 @@ const editingModel = (function() {
         }
       });
 
-      circuitModel.checkConsistency();
+      assert(circuitModel.checkConsistency());
     },
   }
 

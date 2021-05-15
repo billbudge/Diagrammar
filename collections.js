@@ -397,6 +397,21 @@ function EmptySet() {
 }
 
 //------------------------------------------------------------------------------
+// Collection utilities.
+
+function equalSets(a, b) {
+  if (a.size != b.size)
+    return false;
+
+  for (let element of a) {
+    if (!b.has(element)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+//------------------------------------------------------------------------------
 
 return {
   LinkedListNode: LinkedListNode,
@@ -409,6 +424,8 @@ return {
   DisjointSet: DisjointSet,
   EmptyArray: EmptyArray,
   EmptySet: EmptySet,
+
+  equalSets: equalSets,
 };
 
 })();  // diagrammar.collections
