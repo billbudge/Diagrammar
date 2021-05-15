@@ -1502,26 +1502,24 @@ const normalMode = 1,
 
 function Renderer(theme, model, ctx) {
   this.theme = theme;
-  // Tests set these globally, TODO Set model globally only. begin/end is cumbersome.
   this.model = model;
   this.ctx = ctx;
+
+  const translatableModel = model.translatableModel,
+        referencingModel = model.referencingModel;
+
+  assert(translatableModel);
+  assert(referencingModel);
+
+  this.translatableModel = translatableModel;
+  this.referencingModel = referencingModel;
+
+  this.getWireSrc = referencingModel.getReferenceFn('srcId');
+  this.getWireDst = referencingModel.getReferenceFn('dstId');
 }
 
 Renderer.prototype = {
-  begin: function(model, ctx) {
-    const translatableModel = model.translatableModel,
-          referencingModel = model.referencingModel;
-
-    assert(translatableModel);
-    assert(referencingModel);
-
-    this.model = model;
-    this.translatableModel = translatableModel;
-    this.referencingModel = referencingModel;
-
-    this.getWireSrc = referencingModel.getReferenceFn('srcId');
-    this.getWireDst = referencingModel.getReferenceFn('dstId');
-
+  begin: function(ctx) {
     this.ctx = ctx;
 
     ctx.save();
@@ -2055,13 +2053,13 @@ function Editor(model, theme, textInputController) {
   this.model = model;
   this.diagram = model.root;
   this.theme = theme = createTheme(theme);
-  this.renderer = new Renderer(theme);
-  // TODO fix layout/renderer dependency
-  model.renderer = this.renderer;
-
   this.textInputController = textInputController;
 
   this.hitTolerance = 4;
+
+  editingModel.extend(model, theme);
+
+  model.renderer = new Renderer(theme, model);
 
   let junctions = [
     { kind: 'element',
@@ -2134,8 +2132,6 @@ function Editor(model, theme, textInputController) {
   // });
 
   this.primitives = primitives;
-
-  editingModel.extend(model, theme);
 }
 
 Editor.prototype.initialize = function(canvasController) {
@@ -2146,9 +2142,9 @@ Editor.prototype.initialize = function(canvasController) {
   this.ctx = ctx;
 
   let model = this.model,
-      renderer = this.renderer;
+      renderer = model.renderer;
 
-  renderer.begin(model, ctx);
+  renderer.begin(ctx);
 
   model.dataModel.initialize();
 
@@ -2188,13 +2184,15 @@ Editor.prototype.initialize = function(canvasController) {
 }
 
 Editor.prototype.draw = function() {
-  let renderer = this.renderer, diagram = this.diagram,
-      model = this.model, ctx = this.ctx,
-      canvasController = this.canvasController;
+  let diagram = this.diagram,
+      ctx = this.ctx,
+      canvasController = this.canvasController,
+      model = this.model,
+      renderer = model.renderer;
   // Updates wires as elements are dragged, and graph structure if any change
   // have occurred.
   model.circuitModel.updateLayout();
-  renderer.begin(model, ctx);
+  renderer.begin(ctx);
   canvasController.applyTransform();
 
   // Draw registration frame for generating screen shots.
@@ -2235,8 +2233,8 @@ Editor.prototype.draw = function() {
 }
 
 Editor.prototype.hitTest = function(p) {
-  let renderer = this.renderer,
-      model = this.model,
+  let model = this.model,
+      renderer = model.renderer,
       canvasController = this.canvasController,
       cp = canvasController.viewToCanvas(p),
       scale = canvasController.scale,
@@ -2251,7 +2249,7 @@ Editor.prototype.hitTest = function(p) {
       hitList.push(info);
   }
 
-  renderer.begin(model, ctx)
+  renderer.begin(ctx)
   model.selectionModel.forEach(function(item) {
     item => pushHit(renderer.hitTest(item, cp, cTol, normalMode));
   });
@@ -2632,8 +2630,9 @@ Editor.prototype.onEndHover = function(p) {
 }
 
 Editor.prototype.onKeyDown = function(e) {
-  let model = this.model,
-      diagram = this.diagram,
+  let diagram = this.diagram,
+      model = this.model,
+      renderer = model.renderer,
       selectionModel = model.selectionModel,
       editingModel = model.editingModel,
       transactionHistory = model.transactionHistory,
@@ -2641,7 +2640,7 @@ Editor.prototype.onKeyDown = function(e) {
       cmdKey = e.ctrlKey || e.metaKey,
       shiftKey = e.shiftKey;
 
-  this.renderer.begin(model, ctx);
+  renderer.begin(ctx);
 
   if (keyCode === 8) {  // 'delete'
     editingModel.doDelete();
@@ -2717,7 +2716,7 @@ Editor.prototype.onKeyDown = function(e) {
         return true;
     }
   }
-  this.renderer.end();
+  renderer.end();
 }
 
 return {

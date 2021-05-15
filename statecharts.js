@@ -43,8 +43,6 @@ function isPaletted(item) {
   return item.state === 'palette';
 }
 
-const _master = Symbol('master');
-
 // Visits in pre-order.
 function visitItem(item, fn, filter) {
   if (!filter || filter(item)) {
@@ -74,6 +72,13 @@ function reverseVisitItems(items, fn, filter) {
     reverseVisitItem(items[i], fn, filter);
   }
 }
+
+const _bezier = Symbol('bezier'),
+      _p1 = Symbol('p1'),
+      _p2 = Symbol('p2'),
+      _pt = Symbol('pt'),  // transition attachment point;
+      _text = Symbol('text'),
+      _textWidth = Symbol('textWidth');
 
 // Initialized by editor.
 // TODO remove these globals
@@ -696,13 +701,6 @@ const editingModel = (function() {
 })();
 
 //------------------------------------------------------------------------------
-
-const _bezier = Symbol('bezier'),
-      _p1 = Symbol('p1'),
-      _p2 = Symbol('p2'),
-      _pt = Symbol('pt'),  // transition attachment point;
-      _text = Symbol('text'),
-      _textWidth = Symbol('textWidth');
 
 const layoutModel = (function() {
   const proto = {
