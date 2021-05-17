@@ -105,7 +105,7 @@ const inputElementType = '[,*]',
       outputElementType = '[*,]';
 
 const _type = Symbol('type'),
-      _contextType = Symbol('context type');
+      _contextType = Symbol('contextType');
 
 const _x = Symbol('x'),
       _y = Symbol('y'),
@@ -115,17 +115,17 @@ const _x = Symbol('x'),
       _p1 = Symbol('p1'),
       _p2 = Symbol('p2'),
       _bezier = Symbol('bezier'),
-      _has_layout = Symbol('has layout');
+      _hasLayout = Symbol('hasLayout');
 
 function makeTheme(theme) {
-  const base = {
+  const extensions = {
     spacing: 6,
     knobbyRadius: 4,
 
     minTypeWidth: 8,
     minTypeHeight: 8,
   }
-  return Object.assign(base, diagrams.theme.createDefault(), theme);
+  return Object.assign(diagrams.theme.createDefault(), extensions, theme);
 }
 
 //------------------------------------------------------------------------------
@@ -536,7 +536,7 @@ const circuitModel = (function() {
             graphInfo = this.model.circuitModel.getGraphInfo();
       this.changedElements_.forEach(function(element) {
         function markWire(wire) {
-          wire[_has_layout] = false;
+          wire[_hasLayout] = false;
         }
         graphInfo.iterators.forInputWires(element, markWire);
         graphInfo.iterators.forOutputWires(element, markWire);
@@ -546,7 +546,7 @@ const circuitModel = (function() {
 
     // Called at the end of transactions and undo/redo, to update bounds.
     updateGroupLayout: function() {
-      this.changedTopLevelGroups_.forEach(group => group[_has_layout] = false);
+      this.changedTopLevelGroups_.forEach(group => group[_hasLayout] = false);
       this.changedTopLevelGroups_.clear();
     },
 
@@ -566,7 +566,7 @@ const circuitModel = (function() {
     updateLayout_: function(item) {
       const self = this;
       if (isWire(item)) {
-        item[_has_layout] = false;
+        item[_hasLayout] = false;
       } else if (isElement(item)) {
         this.changedElements_.add(item);
         this.addTopLevelGroup_(item);
@@ -586,7 +586,7 @@ const circuitModel = (function() {
         case 'change': {
           if (isWire(item)) {
             // Changed wires need layout.
-            item[_has_layout] = false;
+            item[_hasLayout] = false;
             // Wires may pass through invalid states, since each connection
             // requires two edits to change. insertWire_ and removeWire_ should
             // handle non-existent connections.
@@ -608,7 +608,7 @@ const circuitModel = (function() {
           } else if (isElementOrGroup(item) && attr == 'type') {
             // Type changed due to update or relabeling.
             updateType(item);
-            item[_has_layout] = false;
+            item[_hasLayout] = false;
           }
           break;
         }
@@ -816,7 +816,6 @@ const editingModel = (function() {
       return copies;
     },
 
-    // TODO add an index at which to insert.
     addItem: function(item, parent, index) {
       const model = this.model,
             translatableModel = model.translatableModel,
@@ -846,9 +845,13 @@ const editingModel = (function() {
     },
 
     addItems: function(items, parent) {
-      const self = this;
-      // Append items to the end of the list.
-      items.forEach(item => self.addItem(item, parent));
+      // Add elements and groups first, then wires, so circuitModel can update.
+      for (let item of items) {
+        if (!isWire(item)) this.addItem(item, parent);
+      }
+      for (let item of items) {
+        if (isWire(item)) this.addItem(item, parent);
+      }
     },
 
     replaceElement: function(element, newElement) {
@@ -1547,12 +1550,12 @@ Renderer.prototype = {
           y = translatableModel.globalY(item);
     if (isElement(item)) {
       const type = getType(item);
-      if (!type[_has_layout])
+      if (!type[_hasLayout])
         this.layoutType(type);
       return { x: x, y: y, w: type[_width], h: type[_height] };
     }
     if (isGroup(item)) {
-      if (!item[_has_layout])
+      if (!item[_hasLayout])
         this.layoutGroup(item);
       return { x: x, y: y, w: item[_width], h: item[_height] };
     }
@@ -1600,7 +1603,7 @@ Renderer.prototype = {
 
   // Compute sizes for an element type.
   layoutType: function(type) {
-    assert(!type[_has_layout]);
+    assert(!type[_hasLayout]);
     const self = this,
           model = this.model,
           ctx = this.ctx, theme = this.theme,
@@ -1645,7 +1648,7 @@ Renderer.prototype = {
       Math.round(Math.max(width, wIn + 2 * spacing + wOut, theme.minTypeWidth)),
       Math.round(Math.max(yIn, yOut, theme.minTypeHeight) + spacing / 2));
 
-    type[_has_layout] = true;
+    type[_hasLayout] = true;
   },
 
   layoutPin: function(pin) {
@@ -1654,7 +1657,7 @@ Renderer.prototype = {
       pin[_width] = pin[_height] = 2 * theme.knobbyRadius;
     } else {
       const type = getType(pin);
-      if (!type[_has_layout])
+      if (!type[_hasLayout])
         this.layoutType(type);
       pin[_width] = type[_width];
       pin[_height] = type[_height];
@@ -1662,7 +1665,7 @@ Renderer.prototype = {
   },
 
   layoutWire: function(wire) {
-    assert(!wire[_has_layout]);
+    assert(!wire[_hasLayout]);
     let src = this.getWireSrc(wire),
         dst = this.getWireDst(wire),
         p1 = wire[_p1],
@@ -1678,12 +1681,12 @@ Renderer.prototype = {
     if (p1 && p2) {
       wire[_bezier] = diagrams.getEdgeBezier(p1, p2);
     }
-    wire[_has_layout] = true;
+    wire[_hasLayout] = true;
   },
 
   // Make sure a group is big enough to enclose its contents.
   layoutGroup: function(group) {
-    assert(!group[_has_layout]);
+    assert(!group[_hasLayout]);
     const self = this, spacing = this.theme.spacing;
     function layout(group) {
       const extents = self.getUnionBounds(group.items),
@@ -1694,7 +1697,7 @@ Renderer.prototype = {
             type = getType(group);
       let width = extents.x + extents.w - groupX + margin,
           height = extents.y + extents.h - groupY + margin;
-      if (!type[_has_layout])
+      if (!type[_hasLayout])
         self.layoutType(type);
       width += type[_width];
       height = Math.max(height, type[_height] + margin);
@@ -1705,11 +1708,11 @@ Renderer.prototype = {
       layout(group);
     }, isGroup);
 
-    group[_has_layout] = true;
+    group[_hasLayout] = true;
   },
 
   drawType: function(type, x, y, fillOutputs) {
-    if (!type[_has_layout])
+    if (!type[_hasLayout])
       this.layoutType(type);
 
     const self = this, ctx = this.ctx, theme = this.theme,
@@ -1856,7 +1859,7 @@ Renderer.prototype = {
   },
 
   drawGroup: function(group, mode) {
-    if (!group[_has_layout])
+    if (!group[_hasLayout])
       this.layoutGroup(group);
     const ctx = this.ctx,
           theme = this.theme,
@@ -1904,7 +1907,7 @@ Renderer.prototype = {
           hitInfo = diagrams.hitTestRect(x, y, width, height, p, tol);
     if (hitInfo) {
       const type = getType(element);
-      assert(type[_has_layout]);
+      assert(type[_hasLayout]);
       type.inputs.forEach(function(input, i) {
         if (diagrams.hitTestRect(x, y + input[_y],
                                  input[_width], input[_height], p, 0)) {
@@ -1926,7 +1929,7 @@ Renderer.prototype = {
           x = rect.x, y = rect.y, w = rect.w , h = rect.h,
           hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol);
     if (hitInfo) {
-      assert(group[_has_layout]);
+      assert(group[_hasLayout]);
       const type = getType(group),
             instanceRect = this.getGroupInstanceBounds(type, x + w, y + h);
       if (diagrams.hitTestRect(instanceRect.x, instanceRect.y,
@@ -1941,7 +1944,7 @@ Renderer.prototype = {
   },
 
   drawWire: function(wire, mode) {
-    if (!wire[_has_layout])
+    if (!wire[_hasLayout])
       this.layoutWire(wire);
     const ctx = this.ctx;
     diagrams.bezierEdgePath(wire[_bezier], ctx, 0);
@@ -1964,7 +1967,7 @@ Renderer.prototype = {
 
   hitTestWire: function(wire, p, tol, mode) {
     // TODO don't hit test new wire as it's dragged!
-    if (!wire[_has_layout])
+    if (!wire[_hasLayout])
       return;
     return diagrams.hitTestBezier(wire[_bezier], p, tol);
   },
