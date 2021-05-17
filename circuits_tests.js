@@ -120,16 +120,17 @@ function newTestCircuitModel() {
 
 function newTestEditingModel() {
   const model = newCircuit(),
-        theme = circuits.createTheme(),
-        test = circuits.editingModel.extend(model, theme);
+        test = circuits.editingModel.extend(model);
   circuits.circuitModel.extend(model);
   model.dataModel.initialize();
 
+  model.renderer = new circuits.Renderer(model);
   // Context sufficient for tests.
   const ctx = {
     measureText: () => { return { width: 10, height: 10 }},
+    save: () => {},
   };
-  model.renderer = new circuits.Renderer(theme, model, ctx);
+  model.renderer.begin(ctx);
   return test;
 }
 

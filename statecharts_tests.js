@@ -74,11 +74,18 @@ function newTestStatechartModel() {
 
 function newTestEditingModel() {
   let statechart = newStatechart();
-  let test = statecharts.editingModel.extend(statechart);
-  statecharts.layoutModel.extend(statechart);
+  let test = statecharts.editingModel.extend(statechart),
+      model = test.model;
   statecharts.statechartModel.extend(statechart);
   test.model.dataModel.initialize();
-  test.model.layoutModel.initialize();
+
+  // Context sufficient for tests.
+  const ctx = {
+    measureText: () => { return { width: 10, height: 10 }},
+    save: () => {},
+  };
+  model.renderer = new statecharts.Renderer(model);
+  model.renderer.begin(ctx);
   return test;
 }
 

@@ -117,6 +117,17 @@ const _x = Symbol('x'),
       _bezier = Symbol('bezier'),
       _has_layout = Symbol('has layout');
 
+function makeTheme(theme) {
+  const base = {
+    spacing: 6,
+    knobbyRadius: 4,
+
+    minTypeWidth: 8,
+    minTypeHeight: 8,
+  }
+  return Object.assign(base, diagrams.theme.createDefault(), theme);
+}
+
 //------------------------------------------------------------------------------
 
 // A map from type strings to type objects. The type objects are "atomized" so
@@ -1476,7 +1487,7 @@ const editingModel = (function() {
     let instance = Object.create(proto);
     instance.model = model;
     instance.diagram = model.root;
-    instance.theme = theme;
+    instance.theme = makeTheme(theme);
 
     instance.getWireSrc = model.referencingModel.getReferenceFn('srcId');
     instance.getWireDst = model.referencingModel.getReferenceFn('dstId');
@@ -1500,10 +1511,9 @@ const normalMode = 1,
     highlightMode = 2,
     hotTrackMode = 3;
 
-function Renderer(theme, model, ctx) {
-  this.theme = theme;
+function Renderer(model, theme) {
   this.model = model;
-  this.ctx = ctx;
+  this.theme = makeTheme(theme);
 
   const translatableModel = model.translatableModel,
         referencingModel = model.referencingModel;
@@ -2031,35 +2041,18 @@ Renderer.prototype = {
 
 //------------------------------------------------------------------------------
 
-function createTheme(properties) {
-  let theme = diagrams.theme.createDefault();
-  // Assign default circuit layout and drawing parameters.
-  theme = Object.assign(theme, {
-    spacing: 6,
-    knobbyRadius: 4,
-
-    minTypeWidth: 8,
-    minTypeHeight: 8,
-  });
-  // Assign custom properties.
-  if (properties) {
-    theme = Object.assign(theme, properties);
-  }
-  return theme;
-}
-
 function Editor(model, theme, textInputController) {
   const self = this;
   this.model = model;
   this.diagram = model.root;
-  this.theme = theme = createTheme(theme);
+  this.theme = makeTheme(theme);
   this.textInputController = textInputController;
 
   this.hitTolerance = 4;
 
-  editingModel.extend(model, theme);
+  editingModel.extend(model, this.theme);
 
-  model.renderer = new Renderer(theme, model);
+  model.renderer = new Renderer(model, this.theme);
 
   let junctions = [
     { kind: 'element',
@@ -2189,8 +2182,7 @@ Editor.prototype.draw = function() {
       canvasController = this.canvasController,
       model = this.model,
       renderer = model.renderer;
-  // Updates wires as elements are dragged, and graph structure if any change
-  // have occurred.
+  // Update wires as elements are dragged.
   model.circuitModel.updateLayout();
   renderer.begin(ctx);
   canvasController.applyTransform();
@@ -2728,7 +2720,6 @@ return {
   Renderer: Renderer,
 
   Editor: Editor,
-  createTheme: createTheme,
 };
 })();
 

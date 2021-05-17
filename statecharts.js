@@ -78,12 +78,28 @@ const _bezier = Symbol('bezier'),
       _p2 = Symbol('p2'),
       _pt = Symbol('pt'),  // transition attachment point;
       _text = Symbol('text'),
-      _textWidth = Symbol('textWidth');
+      _textWidth = Symbol('textWidth'),
+      _has_layout = Symbol('has layout');
 
 // Initialized by editor.
 // TODO remove these globals
 let getTransitionSrc,
     getTransitionDst;
+
+function makeTheme(theme, properties) {
+  const base = {
+    radius: 8,
+    textIndent: 8,
+    textLeading: 6,
+    arrowSize: 8,
+    knobbyRadius: 4,
+    padding: 8,
+
+    stateMinWidth: 100,
+    stateMinHeight: 60,
+  }
+  return Object.assign(base, diagrams.theme.createDefault(), theme);
+}
 
 //------------------------------------------------------------------------------
 
@@ -286,9 +302,66 @@ const statechartModel = (function() {
       }
     },
 
+    updateLayout: function() {
+      const self = this,
+            graphInfo = this.model.statechartModel.getGraphInfo();
+      this.changedStates_.forEach(function(state) {
+        function markTransition(transition) {
+          transition[_has_layout] = false;
+        }
+        graphInfo.iterators.forInTransitions(state, markTransition);
+        graphInfo.iterators.forOutTransitions(state, markTransition);
+      });
+      this.changedStates_.clear();
+
+      this.changedProperties_.forEach(
+          property => { property[_has_layout] = false; });
+      this.changedProperties_.clear();
+    },
+
+    updateStatechartLayout: function() {
+      // Mark all states and statecharts that require layout.
+      this.changedTopLevelStates_.forEach(function(state) {
+        visitItem(state, item => { item[_has_layout] = false; });
+      });
+      this.changedTopLevelStates_.clear();
+    },
+
+    addTopLevelState_: function(item) {
+      let hierarchicalModel = this.model.hierarchicalModel,
+          statechart = this.statechart,
+          ancestor = item;
+      do {
+        item = ancestor;
+        ancestor = hierarchicalModel.getParent(ancestor);
+      } while (ancestor && ancestor !== statechart);
+
+      if (ancestor === statechart) {
+        this.changedTopLevelStates_.add(item);
+      }
+    },
+
+    update_: function (item) {
+      const self = this;
+      if (isTransition(item)) {
+        item[_has_layout] = false;
+      } else if (isState(item)) {
+        visitItem(item, function(state) {
+          self.changedStates_.add(state);
+        }, isState);
+        this.addTopLevelState_(item);
+      } else if (isStatechart(item)) {
+        this.addTopLevelState_(item);
+        item.items.forEach(subItem => self.update_(subItem));
+      } else if (isProperty(item)) {
+        this.changedProperties_.add(item);
+      }
+    },
+
     onChanged_: function (change) {
       const item = change.item,
             attr = change.attr;
+      this.update_(item);
       switch (change.type) {
         case 'change': {
           if (isTransition(item)) {
@@ -301,6 +374,7 @@ const statechartModel = (function() {
         case 'insert': {
           const newValue = item[attr][change.index];
           this.insertItem_(newValue);
+          this.update_(newValue);
           break;
         }
         case 'remove': {
@@ -315,6 +389,7 @@ const statechartModel = (function() {
     if (model.statechartModel)
       return model.statechartModel;
 
+    dataModels.hierarchicalModel.extend(model);
     dataModels.observableModel.extend(model);
     dataModels.referencingModel.extend(model);
 
@@ -324,6 +399,9 @@ const statechartModel = (function() {
 
     instance.statesAndStatecharts_ = new Set();
     instance.transitions_ = new Set();
+    instance.changedStates_ = new Set();
+    instance.changedTopLevelStates_ = new Set();
+    instance.changedProperties_ = new Set();
 
     model.observableModel.addHandler('changed',
                                      change => instance.onChanged_(change));
@@ -488,7 +566,7 @@ const editingModel = (function() {
         if (!state.items)
           this.setAttr(state, 'items', new Array());
         i = state.items.length;
-        const y = this.model.layoutModel.getNextStatechartY(state);
+        const y = this.model.renderer.getNextStatechartY(state);
         const statechart = this.createStatechart(y);
         this.model.observableModel.insertElement(state, 'items', i, statechart);
       }
@@ -702,363 +780,37 @@ const editingModel = (function() {
 
 //------------------------------------------------------------------------------
 
-const layoutModel = (function() {
-  const proto = {
-    initialize: function(ctx) {
-      this.ctx = ctx ||
-        {
-          save: function() {},
-          restore: function() {},
-          measureText: () => { return { width: 10, height: 10 }},
-        };
-    },
-
-    getSize: function(item) {
-      let w, h;
-      switch (item.type) {
-        case 'state':
-        case 'statechart':
-          w = item.width;
-          h = item.height;
-          break;
-        case 'start':
-          w = h = 2 * this.theme.radius;
-          break;
-        case 'event':
-        case 'guard':
-        case 'action':
-          h = this.theme.fontSize + this.theme.padding;
-          w = item[_textWidth];
-          break;
-      }
-      return { w: w, h: h };
-    },
-
-    getItemRect: function (item) {
-      const size = this.getSize(item),
-            translatableModel = this.model.translatableModel,
-            x = translatableModel.globalX(item),
-            y = translatableModel.globalY(item);
-
-      return { x: x, y: y, w: size.w, h: size.h };
-    },
-
-    getBounds: function(items) {
-      let xMin = Number.POSITIVE_INFINITY, yMin = Number.POSITIVE_INFINITY,
-          xMax = -Number.POSITIVE_INFINITY, yMax = -Number.POSITIVE_INFINITY;
-      for (let item of items) {
-        if (isTransition(item))
-          continue;
-        const x = item.x, y = item.y,
-              size = this.getSize(item);
-        xMin = Math.min(xMin, x);
-        yMin = Math.min(yMin, y);
-        xMax = Math.max(xMax, x + size.w);
-        yMax = Math.max(yMax, y + size.h);
-      }
-      return { x: xMin, y: yMin, w: xMax - xMin, h: yMax - yMin };
-    },
-
-    statePointToParam: function(state, p) {
-      const r = this.theme.radius,
-            rect = this.getItemRect(state);
-      if (isTrueState(state))
-        return diagrams.rectPointToParam(rect.x, rect.y, rect.w, rect.h, p);
-
-      return diagrams.circlePointToParam(rect.x + r, rect.y + r, p);
-    },
-
-    stateParamToPoint: function(state, t) {
-      const r = this.theme.radius,
-            rect = this.getItemRect(state);
-      if (isTrueState(state))
-        return diagrams.roundRectParamToPoint(rect.x, rect.y, rect.w, rect.h, r, t);
-
-      return diagrams.circleParamToPoint(rect.x + r, rect.y + r, r, t);
-    },
-
-    getStateMinSize: function(state) {
-      const ctx = this.ctx, theme = this.theme,
-            r = theme.radius;
-      let width = theme.stateMinWidth, height = theme.stateMinHeight;
-      if (state.type !== 'state')
-        return;
-      width = Math.max(width, ctx.measureText(state.name).width + 2 * r);
-      height = Math.max(height, theme.fontSize + this.textLeading);
-      return { width: width, height: height };
-    },
-
-    getNextStatechartY: function(state) {
-      let y = 0;
-      if (state.items && state.items.length > 0) {
-        const lastStatechart = state.items[state.items.length - 1];
-        y = lastStatechart.y + lastStatechart.height;
-      }
-      return y;
-    },
-
-    updateLayout: function() {
-      const self = this,
-            graphInfo = this.model.statechartModel.getGraphInfo();
-      this.changedStates_.forEach(function(state) {
-        function addTransition(transition) {
-          self.changedTransitions_.add(transition);
-        }
-        graphInfo.iterators.forInTransitions(state, addTransition);
-        graphInfo.iterators.forOutTransitions(state, addTransition);
-      });
-      this.changedStates_.clear();
-
-      this.changedProperties_.forEach(
-          property => self.layoutProperty_(property));
-      this.changedProperties_.clear();
-
-      this.changedTransitions_.forEach(
-          transition => self.layoutTransition_(transition));
-      this.changedTransitions_.clear();
-    },
-
-    updateStatechartLayout: function() {
-      const self = this;
-      this.changedTopLevelStates_.forEach(function(state) {
-        reverseVisitItem(state, state => self.layout_(state));
-      });
-      this.changedTopLevelStates_.clear();
-    },
-
-    // Layout a state or statechart.
-    layout_: function(item) {
-      if (isTrueState(item)) {
-        this.layoutState_(item);
-      } else if (isStatechart(item)) {
-        this.layoutStatechart_(item);
-      } else if (isProperty(item)) {
-        this.layoutProperty_(item);
-      }
-    },
-
-    // Layout a property item.
-    layoutProperty_: function(property) {
-      const ctx = this.ctx, theme = this.theme;
-      let text = property.text;
-      switch (property.type) {
-        case 'event':
-          break;
-        case 'guard':
-          text = '[ ' + text + ' ]';
-          break;
-        case 'action':
-          text = '/ ' + text;
-          break;
-      }
-      property[_text] = text;
-      property[_textWidth] = ctx.measureText(text).width + 2 * theme.padding;
-    },
-
-    // Layout a state.
-    layoutState_: function(state) {
-      const theme = this.theme,
-            observableModel = this.model.observableModel;
-      let width = Math.max(state.width, theme.stateMinWidth),
-          height = Math.max(state.height, theme.stateMinHeight);
-
-      const statecharts = state.items;
-      let statechartOffsetY = 0;
-      if (statecharts && statecharts.length > 0) {
-        // Layout the child statecharts vertically within the parent state.
-        // TODO handle horizontal flow.
-        statecharts.forEach(function(statechart) {
-          width = Math.max(width, statechart.width);
-        });
-        let statechartOffsetY = 0;
-        statecharts.forEach(function(statechart) {
-          observableModel.changeValue(statechart, 'y', statechartOffsetY);
-          observableModel.changeValue(statechart, 'width', width);
-          statechartOffsetY += statechart.height;
-        });
-
-        height = Math.max(height, statechartOffsetY);
-
-        // Expand the last statechart to fill its parent state.
-        const lastStatechart = statecharts[statecharts.length - 1];
-        observableModel.changeValue(lastStatechart, 'height',
-              lastStatechart.height + height - statechartOffsetY);
-
-      }
-      width = Math.max(width, state.width);
-      height = Math.max(height, state.height);
-      observableModel.changeValue(state, 'width', width);
-      observableModel.changeValue(state, 'height', height);
-    },
-
-    // Make sure a statechart is big enough to enclose its contents. Statecharts
-    // are always sized automatically.
-    layoutStatechart_: function(statechart) {
-      const padding = this.theme.padding,
-            items = statechart.items;
-      if (items) {
-        // Get extents of child states.
-        const r = this.getBounds(items),
-              observableModel = this.model.observableModel;
-        let xMin = Math.min(0, r.x - padding),
-            yMin = Math.min(0, r.y - padding),
-            xMax = r.x + r.w + padding,
-            yMax = r.y + r.h + padding;
-        if (xMin < 0) {
-          xMax -= xMin;
-          for (let i = 0; i < items.length; i++) {
-            const item = items[i];
-            if (isTransition(item)) continue;
-            observableModel.changeValue(item, 'x', item.x - xMin);
-          }
-        }
-        if (yMin < 0) {
-          yMax -= yMin;
-          for (let i = 0; i < items.length; i++) {
-            const item = items[i];
-            if (isTransition(item)) continue;
-            observableModel.changeValue(item, 'y', item.y - yMin);
-          }
-        }
-        observableModel.changeValue(statechart, 'x', 0);
-        observableModel.changeValue(statechart, 'y', 0);
-        observableModel.changeValue(statechart, 'width', xMax - xMin);
-        observableModel.changeValue(statechart, 'height', yMax - yMin);
-      }
-    },
-
-    layoutTransition_: function(transition) {
-      const src = this.getTransitionSrc(transition),
-            dst = this.getTransitionDst(transition),
-            p1 = src ? this.stateParamToPoint(src, transition.t1) : transition[_p1],
-            p2 = dst ? this.stateParamToPoint(dst, transition.t2) : transition[_p2];
-      if (p1 && p2) {
-        transition[_bezier] = diagrams.getEdgeBezier(p1, p2);
-        transition[_pt] = geometry.evaluateBezier(transition[_bezier], transition.pt);
-        let text = "";
-        if (transition.event) {
-          this.layoutProperty_(transition.event);
-          text += transition.event[_text];
-        }
-        if (transition.guard) {
-          this.layoutProperty_(transition.guard);
-          text += transition.guard[_text];
-        }
-        if (transition.action) {
-          this.layoutProperty_(transition.action);
-          text += transition.action[_text];
-        }
-        transition[_text] = text;
-      }
-    },
-
-    addTopLevelState_: function(item) {
-      let hierarchicalModel = this.model.hierarchicalModel,
-          statechart = this.statechart,
-          ancestor = item;
-      do {
-        item = ancestor;
-        ancestor = hierarchicalModel.getParent(ancestor);
-      } while (ancestor && ancestor !== statechart);
-
-      if (ancestor === statechart) {
-        this.changedTopLevelStates_.add(item);
-      }
-    },
-
-    update: function (item) {
-      const self = this;
-      if (isTransition(item)) {
-        this.changedTransitions_.add(item);
-      } else if (isState(item)) {
-        visitItem(item, function(state) {
-          self.changedStates_.add(state);
-        }, isState);
-        this.addTopLevelState_(item);
-      } else if (isStatechart(item)) {
-        this.addTopLevelState_(item);
-        item.items.forEach(subItem => self.update(subItem));
-      } else if (isProperty(item)) {
-        this.changedProperties_.add(item);
-      }
-    },
-
-    onChanged_: function (change) {
-      const item = change.item,
-            attr = change.attr;
-      switch (change.type) {
-        case 'change':
-        case 'remove': {
-          this.update(item);
-          break;
-        }
-        case 'insert': {
-          const newValue = item[attr][change.index];
-          this.update(newValue);
-          break;
-        }
-      }
-    },
-  }
-
-  function extend(model, theme) {
-    dataModels.dataModel.extend(model);
-    dataModels.observableModel.extend(model);
-    dataModels.referencingModel.extend(model);
-    dataModels.hierarchicalModel.extend(model);
-    dataModels.translatableModel.extend(model);
-
-    let instance = Object.create(proto);
-    instance.model = model;
-    instance.statechart = model.root;
-    instance.theme = theme;
-
-    instance.changedTransitions_ = new Set();
-    instance.changedStates_ = new Set();
-    instance.changedTopLevelStates_ = new Set();
-    instance.changedProperties_ = new Set();
-
-    instance.getTransitionSrc = model.referencingModel.getReferenceFn('srcId');
-    instance.getTransitionDst = model.referencingModel.getReferenceFn('dstId');
-
-    model.observableModel.addHandler('changed',
-                                     change => instance.onChanged_(change));
-
-    // Initialize our data.
-    visitItem(instance.statechart, item => instance.update(item));
-
-    model.layoutModel = instance;
-    return instance;
-  }
-
-  return {
-    extend: extend,
-  }
-})();
-
-//------------------------------------------------------------------------------
-
 const normalMode = 1,
       highlightMode = 2,
       hotTrackMode = 3;
 
-function Renderer(theme) {
-  this.theme = theme;
+function Renderer(model, theme) {
+  this.model = model;
+  model.renderer = this;
+
+  this.theme = makeTheme(theme);
+
+  const translatableModel = model.translatableModel,
+        referencingModel = model.referencingModel;
+
+  assert(translatableModel);
+  assert(referencingModel);
+
+  this.translatableModel = translatableModel;
+  this.referencingModel = referencingModel;
+
+  this.getTransitionSrc = referencingModel.getReferenceFn('srcId');
+  this.getTransitionDst = referencingModel.getReferenceFn('dstId');
 }
 
-Renderer.prototype.beginDraw = function(model, ctx) {
-  this.model = model;
-  this.layoutModel = model.layoutModel;
+Renderer.prototype.begin = function(ctx) {
   this.ctx = ctx;
   ctx.save();
   ctx.font = this.theme.font;
-
-  this.layoutModel.updateLayout();
 }
 
-Renderer.prototype.endDraw = function() {
+Renderer.prototype.end = function() {
   this.ctx.restore();
-  this.model = null;
   this.ctx = null;
 }
 
@@ -1074,10 +826,235 @@ function hitTestArrow(renderer, x, y, p, tol) {
   return diagrams.hitTestRect(x - r, y - r, d, d, p, tol);
 }
 
+Renderer.prototype.getSize = function(item) {
+  if (!item[_has_layout])
+    this.layout(item);
+  let width, height;
+  switch (item.type) {
+    case 'state':
+    case 'statechart':
+      width = item.width;
+      height = item.height;
+      break;
+    case 'start':
+      width = height = 2 * this.theme.radius;
+      break;
+    case 'event':
+    case 'guard':
+    case 'action':
+      height = this.theme.fontSize + this.theme.padding;
+      width = item[_textWidth];
+      break;
+  }
+  return { width: width, height: height };
+}
+
+Renderer.prototype.getItemRect = function (item) {
+  if (!item[_has_layout])
+    this.layout(item);
+  const size = this.getSize(item),
+        translatableModel = this.model.translatableModel,
+        x = translatableModel.globalX(item),
+        y = translatableModel.globalY(item);
+
+  return { x: x, y: y, width: size.width, height: size.height };
+}
+
+Renderer.prototype.getBounds = function(items) {
+  let xMin = Number.POSITIVE_INFINITY, yMin = Number.POSITIVE_INFINITY,
+      xMax = -Number.POSITIVE_INFINITY, yMax = -Number.POSITIVE_INFINITY;
+  for (let item of items) {
+    if (isTransition(item))
+      continue;
+    const x = item.x, y = item.y,
+          size = this.getSize(item);
+    xMin = Math.min(xMin, x);
+    yMin = Math.min(yMin, y);
+    xMax = Math.max(xMax, x + size.width);
+    yMax = Math.max(yMax, y + size.height);
+  }
+  return { x: xMin, y: yMin, width: xMax - xMin, height: yMax - yMin };
+}
+
+Renderer.prototype.statePointToParam = function(state, p) {
+  const r = this.theme.radius,
+        rect = this.getItemRect(state);
+  if (isTrueState(state))
+    return diagrams.rectPointToParam(rect.x, rect.y, rect.width, rect.height, p);
+
+  return diagrams.circlePointToParam(rect.x + r, rect.y + r, p);
+}
+
+Renderer.prototype.stateParamToPoint = function(state, t) {
+  const r = this.theme.radius,
+        rect = this.getItemRect(state);
+  if (isTrueState(state))
+    return diagrams.roundRectParamToPoint(rect.x, rect.y, rect.width, rect.height, r, t);
+
+  return diagrams.circleParamToPoint(rect.x + r, rect.y + r, r, t);
+}
+
+Renderer.prototype.getStateMinSize = function(state) {
+  const ctx = this.ctx, theme = this.theme,
+        r = theme.radius;
+  let width = theme.stateMinWidth, height = theme.stateMinHeight;
+  if (state.type !== 'state')
+    return;
+  width = Math.max(width, ctx.measureText(state.name).width + 2 * r);
+  height = Math.max(height, theme.fontSize + this.textLeading);
+  return { width: width, height: height };
+}
+
+Renderer.prototype.getNextStatechartY = function(state) {
+  let y = 0;
+  if (state.items && state.items.length > 0) {
+    const lastStatechart = state.items[state.items.length - 1];
+    y = lastStatechart.y + lastStatechart.height;
+  }
+  return y;
+}
+
+// Layout a property item.
+Renderer.prototype.layoutProperty = function(property) {
+  const ctx = this.ctx, theme = this.theme;
+  let text = property.text;
+  switch (property.type) {
+    case 'event':
+      break;
+    case 'guard':
+      text = '[ ' + text + ' ]';
+      break;
+    case 'action':
+      text = '/ ' + text;
+      break;
+  }
+  property[_text] = text;
+  property[_textWidth] = ctx.measureText(text).width + 2 * theme.padding;
+}
+
+// Layout a state.
+Renderer.prototype.layoutState = function(state) {
+  assert(!state[_has_layout]);
+  const self = this,
+        theme = this.theme,
+        observableModel = this.model.observableModel;
+  let width = Math.max(state.width, theme.stateMinWidth),
+      height = Math.max(state.height, theme.stateMinHeight);
+
+  const statecharts = state.items;
+  let statechartOffsetY = 0;
+  if (statecharts && statecharts.length > 0) {
+    // Layout the child statecharts vertically within the parent state.
+    // TODO handle horizontal flow.
+    statecharts.forEach(function(statechart) {
+      const size = self.getSize(statechart);
+      width = Math.max(width, size.width);
+    });
+    let statechartOffsetY = 0;
+    statecharts.forEach(function(statechart) {
+      observableModel.changeValue(statechart, 'y', statechartOffsetY);
+      observableModel.changeValue(statechart, 'width', width);
+      statechartOffsetY += statechart.height;
+    });
+
+    height = Math.max(height, statechartOffsetY);
+
+    // Expand the last statechart to fill its parent state.
+    const lastStatechart = statecharts[statecharts.length - 1];
+    observableModel.changeValue(lastStatechart, 'height',
+          lastStatechart.height + height - statechartOffsetY);
+
+  }
+  width = Math.max(width, state.width);
+  height = Math.max(height, state.height);
+  observableModel.changeValue(state, 'width', width);
+  observableModel.changeValue(state, 'height', height);
+  state[_has_layout] = true;
+}
+
+// Make sure a statechart is big enough to enclose its contents. Statecharts
+// are always sized automatically.
+Renderer.prototype.layoutStatechart = function(statechart) {
+  assert(!statechart[_has_layout]);
+  const padding = this.theme.padding,
+        items = statechart.items;
+  if (items) {
+    // Get extents of child states.
+    const r = this.getBounds(items),
+          observableModel = this.model.observableModel;
+    let xMin = Math.min(0, r.x - padding),
+        yMin = Math.min(0, r.y - padding),
+        xMax = r.x + r.width + padding,
+        yMax = r.y + r.height + padding;
+    if (xMin < 0) {
+      xMax -= xMin;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (isTransition(item)) continue;
+        observableModel.changeValue(item, 'x', item.x - xMin);
+      }
+    }
+    if (yMin < 0) {
+      yMax -= yMin;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (isTransition(item)) continue;
+        observableModel.changeValue(item, 'y', item.y - yMin);
+      }
+    }
+    observableModel.changeValue(statechart, 'x', 0);
+    observableModel.changeValue(statechart, 'y', 0);
+    observableModel.changeValue(statechart, 'width', xMax - xMin);
+    observableModel.changeValue(statechart, 'height', yMax - yMin);
+  }
+  statechart[_has_layout] = true;
+}
+
+Renderer.prototype.layoutTransition = function(transition) {
+  assert(!transition[_has_layout]);
+  const src = this.getTransitionSrc(transition),
+        dst = this.getTransitionDst(transition),
+        p1 = src ? this.stateParamToPoint(src, transition.t1) : transition[_p1],
+        p2 = dst ? this.stateParamToPoint(dst, transition.t2) : transition[_p2];
+  if (p1 && p2) {
+    transition[_bezier] = diagrams.getEdgeBezier(p1, p2);
+    transition[_pt] = geometry.evaluateBezier(transition[_bezier], transition.pt);
+    let text = "";
+    if (transition.event) {
+      this.layoutProperty(transition.event);
+      text += transition.event[_text];
+    }
+    if (transition.guard) {
+      this.layoutProperty(transition.guard);
+      text += transition.guard[_text];
+    }
+    if (transition.action) {
+      this.layoutProperty(transition.action);
+      text += transition.action[_text];
+    }
+    transition[_text] = text;
+  }
+  transition[_has_layout] = true;
+}
+
+// Layout a state or statechart.
+Renderer.prototype.layout = function(item) {
+  if (isTrueState(item)) {
+    this.layoutState(item);
+  } else if (isStatechart(item)) {
+    this.layoutStatechart(item);
+  } else if (isProperty(item)) {
+    this.layoutProperty(item);
+  }
+}
+
 Renderer.prototype.drawState = function(state, mode) {
+  if (!state[_has_layout])
+    this.layoutState(state);
+
   const ctx = this.ctx, theme = this.theme, r = theme.radius,
-        rect = this.layoutModel.getItemRect(state),
-        x = rect.x, y = rect.y, w = rect.w, h = rect.h,
+        rect = this.getItemRect(state),
+        x = rect.x, y = rect.y, w = rect.width, h = rect.height,
         knobbyRadius = theme.knobbyRadius, textSize = theme.fontSize,
         lineBase = y + textSize + theme.textLeading;
   diagrams.roundRectPath(x, y, w, h, r, ctx);
@@ -1129,8 +1106,8 @@ Renderer.prototype.drawState = function(state, mode) {
 
 Renderer.prototype.hitTestState = function(state, p, tol, mode) {
   const theme = this.theme, r = theme.radius,
-        rect = this.layoutModel.getItemRect(state),
-        x = rect.x, y = rect.y, w = rect.w, h = rect.h,
+        rect = this.getItemRect(state),
+        x = rect.x, y = rect.y, w = rect.width, h = rect.height,
         result = diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
   if (result) {
     const lineBase = y + theme.fontSize + theme.textLeading;
@@ -1142,7 +1119,7 @@ Renderer.prototype.hitTestState = function(state, p, tol, mode) {
 
 Renderer.prototype.drawPseudoState = function(state, mode) {
   const ctx = this.ctx, theme = this.theme, r = theme.radius,
-        rect = this.layoutModel.getItemRect(state),
+        rect = this.getItemRect(state),
         x = rect.x, y = rect.y;
   // TODO handle other psuedo state types.
   diagrams.diskPath(x + r, y + r, r, ctx);
@@ -1171,7 +1148,7 @@ Renderer.prototype.drawPseudoState = function(state, mode) {
 Renderer.prototype.hitTestPseudoState = function(state, p, tol, mode) {
   const theme = this.theme,
         r = theme.radius,
-        rect = this.layoutModel.getItemRect(state),
+        rect = this.getItemRect(state),
         x = rect.x, y = rect.y;
   if (hitTestArrow(this, x + 2 * r + theme.arrowSize, y + r, p, tol))
     return { arrow: true };
@@ -1180,6 +1157,9 @@ Renderer.prototype.hitTestPseudoState = function(state, p, tol, mode) {
 }
 
 Renderer.prototype.drawStatechart = function(statechart, mode) {
+  if (!statechart[_has_layout])
+    this.layoutStatechart(statechart);
+
   switch (mode) {
     case normalMode:
       break;
@@ -1187,8 +1167,8 @@ Renderer.prototype.drawStatechart = function(statechart, mode) {
       break;
     case hotTrackMode:
       const ctx = this.ctx, theme = this.theme, r = theme.radius,
-            rect = this.layoutModel.getItemRect(statechart),
-            x = rect.x, y = rect.y, w = rect.w, h = rect.h;
+            rect = this.getItemRect(statechart),
+            x = rect.x, y = rect.y, w = rect.width, h = rect.height;
       diagrams.roundRectPath(x, y, w, h, r, ctx);
       ctx.strokeStyle = theme.hotTrackColor;
       ctx.lineWidth = 2;
@@ -1200,15 +1180,15 @@ Renderer.prototype.drawStatechart = function(statechart, mode) {
 Renderer.prototype.hitTestStatechart = function(statechart, p, tol, mode) {
   const theme = this.theme,
         r = theme.radius,
-        rect = this.layoutModel.getItemRect(statechart),
-        x = rect.x, y = rect.y, w = rect.w, h = rect.h;
+        rect = this.getItemRect(statechart),
+        x = rect.x, y = rect.y, w = rect.width, h = rect.height;
   return diagrams.hitTestRect(x, y, w, h, p, tol); // TODO hitTestRoundRect
 }
 
 Renderer.prototype.drawProperty = function(property, mode) {
   const ctx = this.ctx, theme = this.theme, r = theme.radius,
-        rect = this.layoutModel.getItemRect(property),
-        x = rect.x, y = rect.y, w = rect.w, h = rect.h,
+        rect = this.getItemRect(property),
+        x = rect.x, y = rect.y, w = rect.width, h = rect.height,
         textSize = theme.fontSize,
         lineBase = y + textSize;// + theme.textLeading;
   ctx.beginPath();
@@ -1238,12 +1218,15 @@ Renderer.prototype.drawProperty = function(property, mode) {
 Renderer.prototype.hitTestProperty = function(property, p, tol, mode) {
   const theme = this.theme,
         r = theme.radius,
-        rect = this.layoutModel.getItemRect(property),
-        x = rect.x, y = rect.y, w = rect.w, h = rect.h;
+        rect = this.getItemRect(property),
+        x = rect.x, y = rect.y, w = rect.width, h = rect.height;
   return diagrams.hitTestRect(x, y, w, h, p, tol);
 }
 
 Renderer.prototype.drawTransition = function(transition, mode) {
+  if (!transition[_has_layout])
+    this.layoutTransition(transition);
+
   const ctx = this.ctx,
         theme = this.theme,
         r = theme.knobbyRadius,
@@ -1254,7 +1237,7 @@ Renderer.prototype.drawTransition = function(transition, mode) {
       ctx.strokeStyle = theme.strokeColor;
       ctx.lineWidth = 1;
       ctx.stroke();
-      let src = getTransitionSrc(transition);
+      let src = this.getTransitionSrc(transition);
       if (src && !isPseudostate(src)) {
         const pt = transition[_pt];
         diagrams.roundRectPath(pt.x - theme.radius,
@@ -1363,36 +1346,35 @@ Renderer.prototype.drawHoverText = function(item, p) {
 
 //------------------------------------------------------------------------------
 
-function createTheme(properties) {
-  let theme = diagrams.theme.createDefault();
-  // Assign default statechart layout and drawing parameters.
-  theme = Object.assign(theme, {
-    radius: 8,
-    textIndent: 8,
-    textLeading: 6,
-    arrowSize: 8,
-    knobbyRadius: 4,
-    padding: 8,
-
-    stateMinWidth: 100,
-    stateMinHeight: 60,
-  });
-  // Assign custom properties.
-  if (properties) {
-    theme = Object.assign(theme, properties);
-  }
-  return theme;
-}
-
 function Editor(model, theme) {
   const self = this;
   this.model = model;
   this.statechart = model.root;
 
-  this.theme = theme = createTheme(theme);
-  this.renderer = new Renderer(theme);
+  this.theme = makeTheme(theme);
 
   this.hitTolerance = 8;
+
+  statechartModel.extend(model);
+  editingModel.extend(model);
+
+  this.renderer = new Renderer(model, this.theme);
+
+  model.dataModel.initialize();
+
+  getTransitionSrc = model.referencingModel.getReferenceFn('srcId');
+  getTransitionDst = model.referencingModel.getReferenceFn('dstId');
+
+  function updateLayout() {
+    self.model.statechartModel.updateLayout();
+  }
+  function updateBounds() {
+    self.model.statechartModel.updateStatechartLayout();
+  }
+  const transactionModel = model.transactionModel;
+  transactionModel.addHandler('transactionEnding', updateBounds);
+  transactionModel.addHandler('didUndo', updateLayout);
+  transactionModel.addHandler('didRedo', updateLayout);
 
   this.items = [
     {
@@ -1431,29 +1413,7 @@ function Editor(model, theme) {
       y: 164,
       text: 'Action',
     },
-  ]
-
-  editingModel.extend(model);
-
-  getTransitionSrc = model.referencingModel.getReferenceFn('srcId');
-  getTransitionDst = model.referencingModel.getReferenceFn('dstId');
-
-  statechartModel.extend(model);
-
-  model.dataModel.initialize();
-
-  layoutModel.extend(model, theme);
-
-  function updateLayout() {
-    self.model.layoutModel.updateLayout();
-  }
-  function updateBounds() {
-    self.model.layoutModel.updateStatechartLayout();
-  }
-  const transactionModel = model.transactionModel;
-  transactionModel.addHandler('transactionEnding', updateBounds);
-  transactionModel.addHandler('didUndo', updateLayout);
-  transactionModel.addHandler('didRedo', updateLayout);
+  ];
 }
 
 Editor.prototype.initialize = function(canvasController) {
@@ -1462,12 +1422,9 @@ Editor.prototype.initialize = function(canvasController) {
   this.ctx = canvasController.ctx;
 
   const model = this.model,
-        layoutModel = model.layoutModel,
         ctx = this.ctx,
         editingModel = model.editingModel,
         statechart = this.statechart;
-
-  layoutModel.initialize(ctx, theme);
 
   this.items.forEach(function(item) {
     editingModel.addItem(item, statechart);
@@ -1478,7 +1435,9 @@ Editor.prototype.draw = function() {
   const renderer = this.renderer, statechart = this.statechart,
         model = this.model,
         ctx = this.ctx, canvasController = this.canvasController;
-  renderer.beginDraw(model, ctx);
+  // Update transitions and properties as states are dragged.
+  model.statechartModel.updateLayout();
+  renderer.begin(ctx);
   canvasController.applyTransform();
 
   visitItem(statechart, function(item) {
@@ -1493,19 +1452,18 @@ Editor.prototype.draw = function() {
   });
   if (this.hotTrackInfo)
     renderer.draw(this.hotTrackInfo.item, hotTrackMode);
-  renderer.endDraw();
 
   const hoverHitInfo = this.hoverHitInfo;
   if (hoverHitInfo) {
-    renderer.beginDraw(model, ctx);
     renderer.drawHoverText(hoverHitInfo.item, hoverHitInfo.p);
-    renderer.endDraw();
   }
+  renderer.end();
 }
 
 Editor.prototype.hitTest = function(p) {
   const renderer = this.renderer,
-        canvasController = this.canvasController,
+        model = this.model,
+        ctx = this.ctx, canvasController = this.canvasController,
         cp = canvasController.viewToCanvas(p),
         scale = canvasController.scale,
         zoom = Math.max(scale.x, scale.y),
@@ -1516,6 +1474,7 @@ Editor.prototype.hitTest = function(p) {
     if (info)
       hitList.push(info);
   }
+  renderer.begin(ctx);
   // TODO hit test selection first, in highlight, first.
   reverseVisitItem(statechart, function(transition) {
     pushInfo(renderer.hitTest(transition, cp, cTol, normalMode));
@@ -1523,6 +1482,7 @@ Editor.prototype.hitTest = function(p) {
   reverseVisitItem(statechart, function(item) {
     pushInfo(renderer.hitTest(item, cp, cTol, normalMode));
   }, isContainable);
+  renderer.end();
   return hitList;
 }
 
@@ -1677,7 +1637,6 @@ Editor.prototype.onDrag = function(p0, p) {
         transactionModel = model.transactionModel,
         referencingModel = model.referencingModel,
         selectionModel = model.selectionModel,
-        layoutModel = model.layoutModel,
         renderer = this.renderer,
         canvasController = this.canvasController,
         cp0 = canvasController.viewToCanvas(p0),
@@ -1721,29 +1680,29 @@ Editor.prototype.onDrag = function(p0, p) {
       observableModel.changeValue(dragItem, 'srcId', srcId);
       const src = getTransitionSrc(dragItem);
       if (src) {
-        const t1 = layoutModel.statePointToParam(src, cp);
+        const t1 = renderer.statePointToParam(src, cp);
         observableModel.changeValue(dragItem, 't1', t1);
       } else {
         dragItem[_p1] = cp;
-        layoutModel.update(dragItem);  // manually force layout.
+        renderer.update(dragItem);  // manually force layout.
       }
       break;
     case connectTransitionDst:
       // Adjust position on src state to track the new transition.
       if (drag.newItem) {
         const src = referencingModel.getReference(dragItem, 'srcId');
-        observableModel.changeValue(dragItem, 't1', layoutModel.statePointToParam(src, cp));
+        observableModel.changeValue(dragItem, 't1', renderer.statePointToParam(src, cp));
       }
       hitInfo = this.getFirstHit(hitList, isStateBorder);
       const dstId = hitInfo ? dataModel.getId(hitInfo.item) : 0;  // 0 is invalid id
       observableModel.changeValue(dragItem, 'dstId', dstId);
       const dst = getTransitionDst(dragItem);
       if (dst) {
-        const t2 = layoutModel.statePointToParam(dst, cp);
+        const t2 = renderer.statePointToParam(dst, cp);
         observableModel.changeValue(dragItem, 't2', t2);
       } else {
         dragItem[_p2] = cp;
-        layoutModel.update(dragItem);  // manually force layout.
+        this.model.statechartModel.update_(dragItem);  // manually force layout. TODO eliminate
       }
       break;
     case moveTransitionPoint: {
@@ -1885,9 +1844,9 @@ Editor.prototype.onKeyDown = function(e) {
 
 return {
   editingModel: editingModel,
-  layoutModel: layoutModel,
   statechartModel: statechartModel,
 
+  Renderer: Renderer,
   Editor: Editor,
 };
 })();
