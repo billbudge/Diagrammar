@@ -199,6 +199,35 @@ const statechartModel = (function() {
       }
     },
 
+    getConnectedStates: function(items, upstream, downstream) {
+      const self = this,
+            iters = iterators(this),
+            result = new Set();
+      while (items.length > 0) {
+        const item = items.pop();
+        if (!isState(item))
+          continue;
+
+        result.add(item);
+
+        if (upstream) {
+          iters.forInTransitions(item, function(transition) {
+            const src = self.getTransitionSrc(transition);
+            if (!result.has(src))
+              items.push(src);
+          });
+        }
+        if (downstream) {
+          iters.forOutTransitions(item, function(transition) {
+            const dst = self.getTransitionDst(transition);
+            if (!result.has(dst))
+              items.push(dst);
+          });
+        }
+      }
+      return result;
+    },
+
     getTopLevelState: function(item) {
       const hierarchicalModel = this.model.hierarchicalModel,
             topLevelStatechart = this.statechart;
@@ -443,32 +472,15 @@ const editingModel = (function() {
       selectionModel.add(graphInfo.interiorTransitions);
     },
 
-    deleteItem: function(item) {
-      const model = this.model,
-            hierarchicalModel = model.hierarchicalModel,
-            parent = hierarchicalModel.getParent(item);
-      if (parent) {
-        const items = parent.items;
-        for (let i = 0; i < items.length; i++) {
-          const subItem = items[i];
-          if (subItem === item) {
-            model.observableModel.removeElement(parent, 'items', i);
-            model.selectionModel.remove(item);
-            break;
-          }
-        }
-      }
+    newItem: function(item) {
+      const dataModel = this.model.dataModel;
+      dataModel.assignId(item);
+      dataModel.initialize(item);
     },
 
-    deleteItems: function(items) {
+    newItems: function(items) {
       const self = this;
-      // // TODO makeConsistent should
-      // this.getConnectedConnections(items, true).forEach(function(item) {
-      //   this.deleteItem(item);
-      // }, this);
-      items.forEach(function(item) {
-        this.deleteItem(item);
-      }, this);
+      items.forEach(item => self.newItem(item));
     },
 
     copyItems: function(items, map) {
@@ -493,38 +505,28 @@ const editingModel = (function() {
       return copies;
     },
 
-    // Creates a new statechart.
-    createStatechart: function(y) {
-      const statechart = {
-        type: 'statechart',
-        x: 0,
-        y: y || 0,
-        width: 0,
-        height: 0,
-        items: new Array(),
-      };
-      this.model.dataModel.initialize(statechart);
-      return statechart;
+    deleteItem: function(item) {
+      const model = this.model,
+            hierarchicalModel = model.hierarchicalModel,
+            parent = hierarchicalModel.getParent(item);
+      if (parent) {
+        const items = parent.items;
+        for (let i = 0; i < items.length; i++) {
+          const subItem = items[i];
+          if (subItem === item) {
+            model.observableModel.removeElement(parent, 'items', i);
+            model.selectionModel.remove(item);
+            break;
+          }
+        }
+      }
     },
 
-    setAttr: function(item, attr, value) {
-      this.model.observableModel.changeValue(item, attr, value);
-    },
-
-    newItem: function(item) {
-      const dataModel = this.model.dataModel;
-      dataModel.assignId(item);
-      dataModel.initialize(item);
-    },
-
-    newItems: function(items) {
+    deleteItems: function(items) {
       const self = this;
-      items.forEach(item => self.newItem(item));
-    },
-
-    isTopLevelStatechart: function(item) {
-      return isStatechart(item) &&
-             !this.model.hierarchicalModel.getParent(item);
+      items.forEach(function(item) {
+        self.deleteItem(item);
+      }, this);
     },
 
     // Returns a value indicating if the item can be added to the state
@@ -545,29 +547,6 @@ const editingModel = (function() {
           return true;
         }
       }
-    },
-
-    findChildStatechart: function(state, newItem) {
-      if (state.items) {
-        for (let i = 0; i < state.items.length; i++) {
-          if (this.canAddItemToStatechart(newItem, state.items[i]))
-            return i;
-        }
-      }
-      return -1;
-    },
-
-    findOrCreateChildStatechart: function(state, newItem) {
-      let i = this.findChildStatechart(state, newItem);
-      if (i < 0) {
-        if (!state.items)
-          this.setAttr(state, 'items', new Array());
-        i = state.items.length;
-        const y = this.model.renderer.getNextStatechartY(state);
-        const statechart = this.createStatechart(y);
-        this.model.observableModel.insertElement(state, 'items', i, statechart);
-      }
-      return state.items[i];
     },
 
     addItem: function(item, parent) {
@@ -625,34 +604,50 @@ const editingModel = (function() {
       }
     },
 
-    getConnectedStates: function(items, upstream, downstream) {
-      const self = this,
-            model = this.model,
-            graphInfo = model.statechartModel.getSubgraphInfo(items),
-            result = new Set();
-      while (items.length > 0) {
-        const item = items.pop();
-        if (!isState(item))
-          continue;
+    // Creates a new statechart.
+    createStatechart: function(y) {
+      const statechart = {
+        type: 'statechart',
+        x: 0,
+        y: y || 0,
+        width: 0,
+        height: 0,
+        items: new Array(),
+      };
+      this.model.dataModel.initialize(statechart);
+      return statechart;
+    },
 
-        result.add(item);
+    setAttr: function(item, attr, value) {
+      this.model.observableModel.changeValue(item, attr, value);
+    },
 
-        if (upstream) {
-          graphInfo.iterators.forInTransitions(item, function(transition) {
-            const src = self.getTransitionSrc(transition);
-            if (!result.has(src))
-              items.push(src);
-          });
-        }
-        if (downstream) {
-          graphInfo.iterators.forOutTransitions(item, function(transition) {
-            const dst = self.getTransitionDst(transition);
-            if (!result.has(dst))
-              items.push(dst);
-          });
+    isTopLevelStatechart: function(item) {
+      return isStatechart(item) &&
+             !this.model.hierarchicalModel.getParent(item);
+    },
+
+    findChildStatechart: function(state, newItem) {
+      if (state.items) {
+        for (let i = 0; i < state.items.length; i++) {
+          if (this.canAddItemToStatechart(newItem, state.items[i]))
+            return i;
         }
       }
-      return result;
+      return -1;
+    },
+
+    findOrCreateChildStatechart: function(state, newItem) {
+      let i = this.findChildStatechart(state, newItem);
+      if (i < 0) {
+        if (!state.items)
+          this.setAttr(state, 'items', new Array());
+        i = state.items.length;
+        const y = this.model.renderer.getNextStatechartY(state);
+        const statechart = this.createStatechart(y);
+        this.model.observableModel.insertElement(state, 'items', i, statechart);
+      }
+      return state.items[i];
     },
 
     doDelete: function() {
@@ -690,9 +685,12 @@ const editingModel = (function() {
     },
 
     doSelectConnectedStates: function(upstream) {
-      let selectionModel = this.model.selectionModel,
-          selection = selectionModel.contents(),
-          newSelection = this.getConnectedStates(selection, upstream, true);
+      const model = this.model,
+            selectionModel = model.selectionModel,
+            selection = selectionModel.contents(),
+            statechartModel = model.statechartModel,
+            newSelection =
+                statechartModel.getConnectedStates(selection, upstream, true);
       selectionModel.set(newSelection);
     },
 
