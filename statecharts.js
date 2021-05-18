@@ -114,18 +114,14 @@ const statechartModel = (function() {
       const inputs = self.getInTransitions(state);
       if (!inputs)
         return;
-      for (let i = 0; i < inputs.length; i++) {
-        fn(inputs[i], i);
-      }
+      inputs.forEach((input, i) => fn(input, i));
     }
 
     function forOutTransitions(state, fn) {
       const outputs = self.getOutTransitions(state);
       if (!outputs)
         return;
-      for (let i = 0; i < outputs.length; i++) {
-        fn(outputs[i], i);
-      }
+      outputs.forEach((output, i) => fn(output, i));
     }
 
     return {
@@ -222,14 +218,25 @@ const statechartModel = (function() {
         state[_outTransitions] = new Array();
       }
       if (state.items) {
+        const self = this;
         state.items.forEach(subItem => self.insertItem_(subItem));
       }
+    },
+
+    removeState_: function(state) {
+      this.statesAndStatecharts_.delete(state);
     },
 
     insertStatechart_: function(statechart) {
       this.statesAndStatecharts_.add(statechart);
       const self = this;
       statechart.items.forEach(subItem => self.insertItem_(subItem));
+    },
+
+    removeStatechart_: function(stateChart) {
+      this.statesAndStatecharts_.delete(stateChart);
+      const self = this;
+      stateChart.items.forEach(subItem => self.removeItem_(subItem));
     },
 
     insertTransition_: function(transition) {
@@ -246,26 +253,6 @@ const statechartModel = (function() {
         if (inputs)
           inputs.push(transition);
       }
-    },
-
-    insertItem_: function(item) {
-      if (isState(item)) {
-        this.insertState_(item);
-      } else if (isTransition(item)) {
-        this.insertTransition_(item);
-      } else if (isStatechart(item)) {
-        this.insertStatechart_(item);
-      }
-    },
-
-    removeState_: function(state) {
-      this.statesAndStatecharts_.delete(state);
-    },
-
-    removeStatechart_: function(stateChart) {
-      this.statesAndStatecharts_.delete(stateChart);
-      const self = this;
-      stateChart.items.forEach(subItem => self.removeItem_(subItem));
     },
 
     removeTransition_: function(transition) {
@@ -290,6 +277,16 @@ const statechartModel = (function() {
       }
     },
 
+    insertItem_: function(item) {
+      if (isState(item)) {
+        this.insertState_(item);
+      } else if (isTransition(item)) {
+        this.insertTransition_(item);
+      } else if (isStatechart(item)) {
+        this.insertStatechart_(item);
+      }
+    },
+
     removeItem_: function(item) {
       if (isState(item)) {
         this.removeState_(item);
@@ -300,6 +297,7 @@ const statechartModel = (function() {
       }
     },
 
+    // Call during editing for updating the layout of transitions.
     updateLayout: function() {
       const self = this,
             graphInfo = this.model.statechartModel.getGraphInfo();
@@ -317,15 +315,12 @@ const statechartModel = (function() {
       this.changedProperties_.clear();
     },
 
-    markSubtreeForLayout_: function(item) {
-      visitItem(item, item => { item[_hasLayout] = false; });
-    },
-
+    // Call after transactions to update statechart bounds.
     updateStatechartLayout: function() {
       const self = this;
       // Mark all states and statecharts that require layout.
       this.changedTopLevelStates_.forEach(
-        state => self.markSubtreeForLayout_(state));
+        state => visitItem(state, item => item[_hasLayout] = false ));
       this.changedTopLevelStates_.clear();
     },
 
@@ -377,7 +372,6 @@ const statechartModel = (function() {
           const newValue = item[attr][change.index];
           this.insertItem_(newValue);
           this.update_(newValue);
-          this.markSubtreeForLayout_(newValue);
           break;
         }
         case 'remove': {

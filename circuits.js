@@ -117,7 +117,7 @@ const _x = Symbol('x'),
       _bezier = Symbol('bezier'),
       _hasLayout = Symbol('hasLayout');
 
-function makeTheme(theme) {
+function extendTheme(theme) {
   const extensions = {
     spacing: 6,
     knobbyRadius: 4,
@@ -322,23 +322,14 @@ const circuitModel = (function() {
       const inputs = self.getInputs(element);
       if (!inputs)
         return;
-      for (let i = 0; i < inputs.length; i++) {
-        if (inputs[i])
-          fn(inputs[i], i);
-      }
+      inputs.forEach((input, i) => { if (input) fn(input, i); });
     }
 
     function forOutputWires(element, fn) {
       const arrays = self.getOutputs(element);
       if (!arrays)
         return;
-      for (let i = 0; i < arrays.length; i++) {
-        let outputs = arrays[i];
-        if (outputs.length > 0) {
-          for (let j = 0; j < outputs.length; j++)
-            fn(outputs[j], i);
-        }
-      }
+      arrays.forEach((outputs, i) => outputs.forEach(output => fn(output, i)));
     }
 
     return {
@@ -1176,14 +1167,10 @@ const editingModel = (function() {
     },
 
     build: function(items, parent) {
-      const self = this, model = this.model,
-            dataModel = model.dataModel,
-            observableModel = model.observableModel,
-            renderer = this.model.renderer,
-            circuitModel = model.circuitModel,
-            graphInfo = circuitModel.getSubgraphInfo(items),
-            groupItems = items.concat(Array.from(graphInfo.interiorWires)),
-            extents = renderer.getUnionBounds(graphInfo.elementsAndGroups),
+      const self = this,
+            model = this.model,
+            graphInfo = model.circuitModel.getSubgraphInfo(items),
+            extents = model.renderer.getUnionBounds(graphInfo.elementsAndGroups),
             spacing = this.theme.spacing,
             x = extents.x - spacing,
             y = extents.y - spacing;
@@ -1203,7 +1190,6 @@ const editingModel = (function() {
 
     createGroupInstance: function(group, element) {
       const model = this.model,
-            dataModel = model.dataModel,
             items = model.copyPasteModel.cloneItems(group.items, new Map()),
             newGroupItems = {
               id: 0,  // Temporary id, so deepEqual will match non-identically.
@@ -1211,7 +1197,7 @@ const editingModel = (function() {
               items: items,
             };
       const groupItems = model.canonicalInstanceModel.internalize(newGroupItems);
-      element.groupId = dataModel.getId(group);
+      element.groupId = model.dataModel.getId(group);
       element.definitionId = model.dataModel.getId(groupItems);
     },
 
@@ -1490,7 +1476,7 @@ const editingModel = (function() {
     let instance = Object.create(proto);
     instance.model = model;
     instance.diagram = model.root;
-    instance.theme = makeTheme(theme);
+    instance.theme = extendTheme(theme);
 
     instance.getWireSrc = model.referencingModel.getReferenceFn('srcId');
     instance.getWireDst = model.referencingModel.getReferenceFn('dstId');
@@ -1516,7 +1502,7 @@ const normalMode = 1,
 
 function Renderer(model, theme) {
   this.model = model;
-  this.theme = makeTheme(theme);
+  this.theme = extendTheme(theme);
 
   const translatableModel = model.translatableModel,
         referencingModel = model.referencingModel;
@@ -2048,7 +2034,7 @@ function Editor(model, theme, textInputController) {
   const self = this;
   this.model = model;
   this.diagram = model.root;
-  this.theme = makeTheme(theme);
+  this.theme = extendTheme(theme);
   this.textInputController = textInputController;
 
   this.hitTolerance = 4;
