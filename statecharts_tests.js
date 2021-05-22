@@ -198,35 +198,14 @@ test("statecharts.statechartModel.iterators", function() {
         transition3 = addTransition(test, newTransition(input, state2)),
         transition4 = addTransition(test, newTransition(state2, output));
 
-  let subgraph = test.getSubgraphInfo([state1, state2]);
-  testIterator(subgraph.iterators.forInTransitions, input, []);
-  testIterator(subgraph.iterators.forOutTransitions, input, [transition2, transition3]);
-  testIterator(subgraph.iterators.forInTransitions, state1, [transition2]);
-  testIterator(subgraph.iterators.forOutTransitions, state1, [transition1]);
-  testIterator(subgraph.iterators.forInTransitions, state2, [transition1, transition3]);
-  testIterator(subgraph.iterators.forOutTransitions, state2, [transition4]);
-});
-
-test("statecharts.statechartModel.getTopLevelState", function() {
-  const test = newTestStatechartModel(),
-        model = test.model,
-        items = model.root.items,
-        state1 = addState(test, newState()),
-        state2 = addState(test, newState()),
-        transition1 = addTransition(test, newTransition(state1, state2)),
-        input = addState(test, newState()),
-        output = addState(test, newState()),
-        transition2 = addTransition(test, newTransition(input, state1)),
-        transition3 = addTransition(test, newTransition(input, state2)),
-        transition4 = addTransition(test, newTransition(state2, output));
-
-  let subgraph = test.getSubgraphInfo([state1, state2]);
-  testIterator(subgraph.iterators.forInTransitions, input, []);
-  testIterator(subgraph.iterators.forOutTransitions, input, [transition2, transition3]);
-  testIterator(subgraph.iterators.forInTransitions, state1, [transition2]);
-  testIterator(subgraph.iterators.forOutTransitions, state1, [transition1]);
-  testIterator(subgraph.iterators.forInTransitions, state2, [transition1, transition3]);
-  testIterator(subgraph.iterators.forOutTransitions, state2, [transition4]);
+  const inputFn = test.forInTransitions.bind(test),
+        outputFn = test.forOutTransitions.bind(test);
+  testIterator(inputFn, input, []);
+  testIterator(outputFn, input, [transition2, transition3]);
+  testIterator(inputFn, state1, [transition2]);
+  testIterator(outputFn, state1, [transition1]);
+  testIterator(inputFn, state2, [transition1, transition3]);
+  testIterator(outputFn, state2, [transition4]);
 });
 
 test("statecharts.editingModel", function() {

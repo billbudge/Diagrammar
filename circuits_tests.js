@@ -291,7 +291,7 @@ function testIterator(fn, element, items) {
   deepEqual(items, iterated);
 }
 
-test("circuits.circuitModel.iterators", function() {
+test("circuits.circuitModel.inputOutputWireIteration", function() {
   const test = newTestCircuitModel(),
         a = addElement(test, newTypedElement('[vv,v]')),
         b = addElement(test, newTypedElement('[vv,v]')),
@@ -302,13 +302,14 @@ test("circuits.circuitModel.iterators", function() {
         c0_b1 = addWire(test, c, 0, b, 1),
         b0_d0 = addWire(test, b, 0, d, 0);
 
-  const subgraph = test.getSubgraphInfo([a, b]);
-  testIterator(subgraph.iterators.forInputWires, c, []);
-  testIterator(subgraph.iterators.forOutputWires, c, [c0_a1, c0_b1]);
-  testIterator(subgraph.iterators.forInputWires, a, [c0_a1]);
-  testIterator(subgraph.iterators.forOutputWires, a, [a0_b0]);
-  testIterator(subgraph.iterators.forInputWires, b, [a0_b0, c0_b1]);
-  testIterator(subgraph.iterators.forOutputWires, b, [b0_d0]);
+  const inputFn = test.forInputWires.bind(test),
+        outputFn = test.forOutputWires.bind(test);
+  testIterator(inputFn, c, []);
+  testIterator(outputFn, c, [c0_a1, c0_b1]);
+  testIterator(inputFn, a, [c0_a1]);
+  testIterator(outputFn, a, [a0_b0]);
+  testIterator(inputFn, b, [a0_b0, c0_b1]);
+  testIterator(outputFn, b, [b0_d0]);
 });
 
 test("circuits.circuitModel.getConnectedElements", function() {

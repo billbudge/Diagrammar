@@ -101,34 +101,11 @@ function extendTheme(theme) {
 // Maintains:
 // - maps from element to connected transitions.
 // - information about graphs and subgraphs.
-// - iterators for walking the graph.
 
 const _inTransitions = Symbol('inTransitions'),
       _outTransitions = Symbol('outTransitions');
 
 const statechartModel = (function() {
-
-  function iterators(self) {
-
-    function forInTransitions(state, fn) {
-      const inputs = self.getInTransitions(state);
-      if (!inputs)
-        return;
-      inputs.forEach((input, i) => fn(input, i));
-    }
-
-    function forOutTransitions(state, fn) {
-      const outputs = self.getOutTransitions(state);
-      if (!outputs)
-        return;
-      outputs.forEach((output, i) => fn(output, i));
-    }
-
-    return {
-      forInTransitions: forInTransitions,
-      forOutTransitions: forOutTransitions,
-    }
-  }
 
   const proto = {
     getInTransitions: function(state) {
@@ -141,6 +118,16 @@ const statechartModel = (function() {
       return state[_outTransitions];
     },
 
+    forInTransitions: function(state, fn) {
+      const inputs = this.getInTransitions(state);
+      inputs.forEach((input, i) => fn(input, i));
+    },
+
+    forOutTransitions: function(state, fn) {
+      const outputs = this.getOutTransitions(state);
+      outputs.forEach((output, i) => fn(output, i));
+    },
+
     getGraphInfo: function() {
       return {
         statesAndStatecharts: this.statesAndStatecharts_,
@@ -148,7 +135,6 @@ const statechartModel = (function() {
         interiorTransitions: this.transitions_,
         inTransitions: new diagrammar.collections.EmptySet(),
         outTransitions: new diagrammar.collections.EmptySet(),
-        iterators: iterators(this),
       }
     },
 
@@ -158,14 +144,13 @@ const statechartModel = (function() {
             transitions = new Set(),
             interiorTransitions = new Set(),
             inTransitions = new Set(),
-            outTransitions = new Set(),
-            iters = iterators(this);
+            outTransitions = new Set();
       // First collect states and statecharts.
       visitItems(items, function(item) {
         statesAndStatecharts.add(item);
       }, isStateOrStatechart);
       // Now collect and classify transitions that connect to them.
-      visitItems(items, function(item) {
+      visitItems(items, function(state) {
         function addTransition(transition) {
           transitions.add(transition);
           const src = self.getTransitionSrc(transition),
@@ -185,8 +170,8 @@ const statechartModel = (function() {
             }
           }
         }
-        iters.forInTransitions(item, addTransition);
-        iters.forOutTransitions(item, addTransition);
+        self.forInTransitions(state, addTransition);
+        self.forOutTransitions(state, addTransition);
       }, isState);
 
       return {
@@ -195,13 +180,11 @@ const statechartModel = (function() {
         interiorTransitions: interiorTransitions,
         inTransitions: inTransitions,
         outTransitions: outTransitions,
-        iterators: iters,
       }
     },
 
     getConnectedStates: function(items, upstream, downstream) {
       const self = this,
-            iters = iterators(this),
             result = new Set();
       while (items.length > 0) {
         const item = items.pop();
@@ -211,14 +194,14 @@ const statechartModel = (function() {
         result.add(item);
 
         if (upstream) {
-          iters.forInTransitions(item, function(transition) {
+          this.forInTransitions(item, function(transition) {
             const src = self.getTransitionSrc(transition);
             if (!result.has(src))
               items.push(src);
           });
         }
         if (downstream) {
-          iters.forOutTransitions(item, function(transition) {
+          this.forOutTransitions(item, function(transition) {
             const dst = self.getTransitionDst(transition);
             if (!result.has(dst))
               items.push(dst);
@@ -329,13 +312,13 @@ const statechartModel = (function() {
     // Call during editing for updating the layout of transitions.
     updateLayout: function() {
       const self = this,
-            graphInfo = this.model.statechartModel.getGraphInfo();
+            statechartModel = this.model.statechartModel;
       this.changedStates_.forEach(function(state) {
         function markTransition(transition) {
           transition[_hasLayout] = false;
         }
-        graphInfo.iterators.forInTransitions(state, markTransition);
-        graphInfo.iterators.forOutTransitions(state, markTransition);
+        statechartModel.forInTransitions(state, markTransition);
+        statechartModel.forOutTransitions(state, markTransition);
       });
       this.changedStates_.clear();
 
@@ -476,6 +459,7 @@ const editingModel = (function() {
       const dataModel = this.model.dataModel;
       dataModel.assignId(item);
       dataModel.initialize(item);
+      return item;
     },
 
     newItems: function(items) {
@@ -605,7 +589,7 @@ const editingModel = (function() {
     },
 
     // Creates a new statechart.
-    createStatechart: function(y) {
+    newStatechart: function(y) {
       const statechart = {
         type: 'statechart',
         x: 0,
@@ -614,8 +598,7 @@ const editingModel = (function() {
         height: 0,
         items: new Array(),
       };
-      this.model.dataModel.initialize(statechart);
-      return statechart;
+      return this.newItem(statechart);
     },
 
     setAttr: function(item, attr, value) {
@@ -644,7 +627,7 @@ const editingModel = (function() {
           this.setAttr(state, 'items', new Array());
         i = state.items.length;
         const y = this.model.renderer.getNextStatechartY(state);
-        const statechart = this.createStatechart(y);
+        const statechart = this.newStatechart(y);
         this.model.observableModel.insertElement(state, 'items', i, statechart);
       }
       return state.items[i];
