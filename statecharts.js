@@ -120,11 +120,15 @@ const statechartModel = (function() {
 
     forInTransitions: function(state, fn) {
       const inputs = this.getInTransitions(state);
+      if (!inputs)
+        return;
       inputs.forEach((input, i) => fn(input, i));
     },
 
     forOutTransitions: function(state, fn) {
       const outputs = this.getOutTransitions(state);
+      if (!outputs)
+        return;
       outputs.forEach((output, i) => fn(output, i));
     },
 

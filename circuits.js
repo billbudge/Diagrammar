@@ -328,11 +328,15 @@ const circuitModel = (function() {
 
     forInputWires: function(element, fn) {
       const inputs = this.getInputs(element);
+      if (!inputs)
+        return;
       inputs.forEach((input, i) => { if (input) fn(input, i); });
     },
 
     forOutputWires: function(element, fn) {
       const arrays = this.getOutputs(element);
+      if (!arrays)
+        return;
       arrays.forEach((outputs, i) => outputs.forEach(output => fn(output, i)));
     },
 
@@ -745,18 +749,20 @@ const editingModel = (function() {
       return this.newItem(result);
     },
 
+    getItemIndex: function(item) {
+      const parent = this.getParent(item);
+      assert(parent);
+      return parent.items.indexOf(item);
+    },
+
     deleteItem: function(item) {
       const model = this.model,
-            parent = this.getParent(item);
-      if (parent) {
-        const items = parent.items,
-              index = items.indexOf(item);
-        if (index >= 0) {
-          model.observableModel.removeElement(parent, 'items', index);
-          model.selectionModel.remove(item);
-          return index;
-        }
-      }
+            parent = this.getParent(item),
+            index = this.getItemIndex(item);
+      assert(index >= 0);
+      model.observableModel.removeElement(parent, 'items', index);
+      model.selectionModel.remove(item);
+      return index;
     },
 
     deleteItems: function(items) {
@@ -834,7 +840,22 @@ const editingModel = (function() {
             circuitModel = model.circuitModel,
             type = getType(element),
             newId = model.dataModel.getId(newElement),
-            newType = getType(newElement);
+            newType = getType(newElement),
+            parent = this.getParent(newElement),
+            newParent = this.getParent(element),
+            index = this.getItemIndex(element);
+      // Add newElement right after element. Both should be present as we
+      // rewire them.
+      if (parent) {
+        self.deleteItem(newElement);
+      }
+      self.addItem(newElement, newParent, index + 1);
+      observableModel.changeValue(newElement, 'x', element.x);
+      observableModel.changeValue(newElement, 'y', element.y);
+
+      // Update all incoming and outgoing wires if possible, otherwise they
+      // will be deleted as dangling wires by makeConsistent.
+      const srcChange = [], dstChange = [];
       function canRewire(index, pins, newPins) {
         if (index >= newPins.length)
           return false;
@@ -844,27 +865,22 @@ const editingModel = (function() {
       }
       circuitModel.forInputWires(element, function(wire, pin) {
         if (canRewire(wire.dstPin, type.inputs, newType.inputs)) {
-          observableModel.changeValue(wire, 'dstId', newId);
-        } else {
-          self.deleteItem(wire);
+          dstChange.push(wire);
         }
       });
       circuitModel.forOutputWires(element, function(wire, pin) {
         if (canRewire(wire.srcPin, type.outputs, newType.outputs)) {
-          observableModel.changeValue(wire, 'srcId', newId);
-        } else {
-          self.deleteItem(wire);
+          srcChange.push(wire);
         }
       });
-      const parent = this.getParent(newElement),
-            newParent = this.getParent(element);
-      if (parent) {
-        self.deleteItem(newElement);
-      }
-      const index = self.deleteItem(element);
-      self.addItem(newElement, newParent, index);
-      observableModel.changeValue(newElement, 'x', element.x);
-      observableModel.changeValue(newElement, 'y', element.y);
+      srcChange.forEach(function(wire) {
+        observableModel.changeValue(wire, 'srcId', newId);
+      });
+      dstChange.forEach(function(wire) {
+        observableModel.changeValue(wire, 'dstId', newId);
+      });
+
+      this.deleteItem(element);
     },
 
     connectInput: function(element, pin, p) {
