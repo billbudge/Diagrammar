@@ -979,6 +979,33 @@ const editingModel = (function() {
       return result;
     },
 
+    exportElement: function(element) {
+      const model = this.model,
+            dataModel = model.dataModel,
+            observableModel = model.observableModel,
+            type = element.type,
+            newType = '[,' + type + ']';
+
+      const result = this.newElement(newType, element.x, element.y, 'element');
+      return result;
+    },
+
+    exportElements: function(elements) {
+      const self = this,
+            selectionModel = this.model.selectionModel;
+
+      // Open each non-input/output element.
+      elements.forEach(function(element) {
+        selectionModel.remove(element);
+        if (isInput(element) || isOutput(element) ||
+            isLiteral(element) || isGroup(element) || isWire(element))
+          return;
+        const newElement = self.exportElement(element);
+        self.replaceElement(element, newElement);
+        selectionModel.add(newElement);
+      });
+    },
+
     openElement: function(element) {
       const model = this.model,
             dataModel = model.dataModel,
@@ -1079,10 +1106,10 @@ const editingModel = (function() {
               outputs.push(makePin(item, pin.type, y));
             }
           });
-        } else if (isGroup(item)) {
+        }/* else if (isGroup(item)) {
           const y = renderer.getBounds(item).y;
           outputs.push(makePin(item, item.type, y));
-        }
+        }*/
       });
 
       // Incoming wires become part of the enclosing context type. Use the
@@ -1294,6 +1321,14 @@ const editingModel = (function() {
       model.transactionModel.beginTransaction('complete');
       this.completeGroup(model.selectionModel.contents());
       model.transactionModel.endTransaction();
+    },
+
+    doExport: function() {
+      let transactionModel = this.model.transactionModel;
+      this.reduceSelection();
+      transactionModel.beginTransaction('export');
+      this.exportElements(this.model.selectionModel.contents());
+      transactionModel.endTransaction();
     },
 
     doAbstract: function() {
@@ -2538,22 +2573,20 @@ Editor.prototype.onEndDrag = function(p) {
           const srcType = getType(src),
                 pinIndex = srcPin,
                 pin = srcType.outputs[pinIndex];
-          // Add the appropriate destination junction, or for function outputs,
-          // add a new abstract function to connect.
-          if (isFunctionType(pin.type)) {
-            const element = editingModel.newElement(pin.type, p.x, p.y);
-            editingModel.addItem(element, diagram);
-            const newElement = editingModel.openElement(element);
-            editingModel.replaceElement(element, newElement);
-            const dstPin = getType(newElement).inputs.length - 1,
-                  wire = editingModel.newWire(
-                      src.id, pinIndex, newElement.id, dstPin);
-            editingModel.addItem(wire, diagram);
-            selectionModel.set(newElement, wire)
-          } else {
-            const connection = editingModel.connectOutput(src, srcPin, p);
-            selectionModel.set(connection.junction, connection.wire);
-          }
+          // Add the appropriate destination junction.
+          // if (isFunctionType(pin.type)) {
+          //   const element = editingModel.newElement(pin.type, p.x, p.y);
+          //   editingModel.addItem(element, diagram);
+          //   const newElement = editingModel.openElement(element);
+          //   editingModel.replaceElement(element, newElement);
+          //   const dstPin = getType(newElement).inputs.length - 1,
+          //         wire = editingModel.newWire(
+          //             src.id, pinIndex, newElement.id, dstPin);
+          //   editingModel.addItem(wire, diagram);
+          //   selectionModel.set(newElement, wire)
+          // } else {
+          const connection = editingModel.connectOutput(src, srcPin, p);
+          selectionModel.set(connection.junction, connection.wire);
         } else {
           const newWire = editingModel.newWire(srcId, srcPin, dstId, dstPin);
           editingModel.addItem(newWire);
@@ -2668,7 +2701,7 @@ Editor.prototype.onKeyDown = function(e) {
         editingModel.doComplete();
         return true;
       case 75:  // 'k'
-        // available: editingModel.doClose();
+        editingModel.doExport();
         return true;
       case 76:  // 'l'
         editingModel.doAbstract();

@@ -8,41 +8,42 @@ diagrammar.collections = (function() {
 //------------------------------------------------------------------------------
 // Linked list.
 
-function LinkedListNode(value) {
-  this.next = null;
-  this.prev = null;
-  if (value)
+class LinkedListNode {
+  constructor(value) {
+    this.next = null;
+    this.prev = null;
     this.value = value;
+  }
 }
 
-function LinkedList() {
-  this.clear();
-}
+class LinkedList {
+  constructor() {
+    this.clear();
+  }
 
-LinkedList.prototype = {
-  empty: function() {
+  empty() {
     return this.length === 0;
-  },
+  }
 
-  pushBack: function(value) {
+  pushBack(value) {
     return this.insertAfter(value, null);
-  },
+  }
 
-  pushFront: function(value) {
+  pushFront(value) {
     return this.insertBefore(value, null);
-  },
+  }
 
-  popBack: function() {
+  popBack() {
     const node = this.back;
     return node ? this.remove(node) : null;
-  },
+  }
 
-  popFront: function() {
+  popFront() {
     const node = this.front;
     return node ? this.remove(node) : null;
-  },
+  }
 
-  remove: function(node) {
+  remove(node) {
     if (node.next)
       node.next.prev = node.prev;
     else
@@ -55,27 +56,27 @@ LinkedList.prototype = {
     node.next = node.prev = null;
     this.length -= 1;
     return node;
-  },
+  }
 
-  insertAfter: function(value, prev) {
+  insertAfter(value, prev) {
     const node = (value instanceof LinkedListNode) ? value : new LinkedListNode(value);
     if (!prev)
       prev = this.back;
     const next = prev ? prev.next : null;
     this.insert_(node, prev, next);
     return node;
-  },
+  }
 
-  insertBefore: function(value, next) {
+  insertBefore(value, next) {
     const node = (value instanceof LinkedListNode) ? value : new LinkedListNode(value);
     if (!next)
       next = this.front;
     const prev = next ? next.prev : null;
     this.insert_(node, prev, next);
     return node;
-  },
+  }
 
-  insert_: function(node, prev, next) {
+  insert_(node, prev, next) {
     if (prev)
       prev.next = node;
     else
@@ -87,30 +88,30 @@ LinkedList.prototype = {
     node.prev = prev;
     node.next = next;
     this.length += 1;
-  },
+  }
 
-  clear: function() {
+  clear() {
     this.front = this.back = null;
     this.length = 0;
-  },
+  }
 
-  forEach: function(fn) {
+  forEach(fn) {
     let node = this.front;
     while (node) {
       fn(node.value);
       node = node.next;
     }
-  },
+  }
 
-  forEachReverse: function(fn) {
+  forEachReverse(fn) {
     let node = this.back;
     while (node) {
       fn(node.value);
       node = node.prev;
     }
-  },
+  }
 
-  find: function(value) {
+  find(value) {
     let node = this.front;
     while (node) {
       if (value === node.value)
@@ -118,7 +119,7 @@ LinkedList.prototype = {
       node = node.next;
     }
     return null;
-  },
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -127,77 +128,72 @@ LinkedList.prototype = {
 // The head of the queue is indicated by head_, limited by
 // headLimit_.
 
-const _array = Symbol('array'),
-      _head = Symbol('head');
+class Queue {
+  constructor() {
+    this.clear();
+  }
 
-function Queue() {
-  this[_array] = new Array();
-  // Index past unused portion.
-  this[_head] = 0;
-}
-
-Queue.prototype = {
-  enqueue: function(item) {
-    this[_array].push(item);
+  enqueue(item) {
+    this.array.push(item);
     return this;
-  },
+  }
 
-  dequeue: function() {
+  dequeue() {
     const headLimit = 1000, // Size limit for unused portion
           sliceMin = 10;    // Minimum size to discard array
 
     let result;
     if (!this.empty()) {
-      result = this[_array][this[_head]];
-      this[_head]++;
-      if (this[_head] >= headLimit
-          || this[_head] > sliceMin && this[_head] > this.length) {
-        this[_array] = this[_array].slice(this[_head]);
-        this[_head] = 0;
+      result = this.array[this.head];
+      this.head++;
+      if (this.head >= headLimit
+          || this.head > sliceMin && this.head > this.length) {
+        this.array = this.array.slice(this.head);
+        this.head = 0;
       }
     }
     return result;
-  },
-
-  empty: function() {
-    return this[_array].length - this[_head] === 0;
-  },
-
-  clear: function() {
-    this[_array] = new Array();
-    this[_head] = 0;
   }
-};
+
+  empty() {
+    return this.array.length - this.head === 0;
+  }
+
+  clear() {
+    this.array = new Array();
+    this.head = 0;
+  }
+}
 
 //------------------------------------------------------------------------------
 // Priority Queue.
 
-function PriorityQueue(compareFn, array) {
-  this.compareFn_ = compareFn;
-  if (array) {
-    this[_array] = array.slice(0);
-    this.heapify_();
-  } else {
-    this[_array] = new Array();
+class PriorityQueue {
+  constructor(compareFn, array) {
+    this.compareFn_ = compareFn;
+    if (array) {
+      this.array = array.slice(0);
+      this.heapify_();
+    } else {
+      this.array = new Array();
+    }
   }
-}
 
-PriorityQueue.prototype = {
-  empty: function() {
-    return this[_array].length === 0;
-  },
+  empty() {
+    return this.array.length === 0;
+  }
 
-  front: function() {
-    return !empty() ? this[_array][0] : null;
-  },
+  front() {
+    return !empty() ? this.array[0] : null;
+  }
 
-  push: function(value) {
-    this[_array].push(value);
+  push(value) {
+    this.array.push(value);
     this.siftUp_();
-  },
+  }
 
-  pop: function() {
-    const array = this[_array];
+  pop() {
+    const array = this.array;
     if (!array.length)
       return null;
     const value = array[0];
@@ -212,10 +208,10 @@ PriorityQueue.prototype = {
     }
     array.pop();
     return value;
-  },
+  }
 
-  heapify_: function() {
-    const array = this[_array];
+  heapify_() {
+    const array = this.array;
     for (let i = array.length - 1; i > 0; i--) {
       const value = array[i],
             parentIndex = Math.floor((i - 1) / 2),
@@ -225,10 +221,10 @@ PriorityQueue.prototype = {
         array[parentIndex] = value;
       }
     }
-  },
+  }
 
-  siftUp_: function() {
-    const array = this[_array];
+  siftUp_() {
+    const array = this.array;
     let i = array.length - 1;
     while (i > 0) {
       const value = array[i],
@@ -241,130 +237,124 @@ PriorityQueue.prototype = {
       i = parentIndex;
     }
   }
-};
+}
 
 //------------------------------------------------------------------------------
 // Set that orders elements by the order in which they were added. Note that
 // adding an element already in the set makes it the most recently added.
 
-const _list = Symbol('list'),
-      _map = Symbol('map');
+class SelectionSet {
+  constructor() {
+    this.list= new LinkedList();
+    this.map = new Map();
+    this.length = 0;
+  }
 
-function SelectionSet() {
-  this[_list]= new LinkedList();
-  this[_map] = new Map();
-  this.length = 0;
-}
-
-SelectionSet.prototype = {
-  empty: function() {
+  empty() {
     return this.length === 0;
-  },
+  }
 
-  contains: function(element) {
-    return this[_map].has(element);
-  },
+  contains(element) {
+    return this.map.has(element);
+  }
 
-  lastSelected: function() {
-    return !this[_list].empty() ? this[_list].front.value : null;
-  },
+  lastSelected() {
+    return !this.list.empty() ? this.list.front.value : null;
+  }
 
-  add: function(element) {
-    let node = this[_map].get(element);
+  add(element) {
+    let node = this.map.get(element);
     if (node) {
-      this[_list].remove(node);
-      this[_list].pushFront(node);
+      this.list.remove(node);
+      this.list.pushFront(node);
     } else {
-      node = this[_list].pushFront(element);
-      this[_map].set(element, node);
+      node = this.list.pushFront(element);
+      this.map.set(element, node);
       this.length += 1;
     }
     return true;
-  },
+  }
 
-  remove: function(element) {
-    const node = this[_map].get(element);
+  remove(element) {
+    const node = this.map.get(element);
     if (node) {
-      this[_map].delete(element);
-      this[_list].remove(node);
+      this.map.delete(element);
+      this.list.remove(node);
       this.length -= 1;
       return true;
     }
     return false;
-  },
+  }
 
-  toggle: function(element) {
+  toggle(element) {
     if (this.contains(element))
       this.remove(element);
     else
       this.add(element);
-  },
+  }
 
-  clear: function() {
-    this[_list].clear();
-    this[_map].clear();
+  clear() {
+    this.list.clear();
+    this.map.clear();
     this.length = 0;
-  },
+  }
 
-  forEach: function(fn) {
-    return this[_list].forEach(function(item) {
+  forEach(fn) {
+    return this.list.forEach(function(item) {
       fn(item);
     });
-  },
+  }
 
-  forEachReverse: function(fn) {
-    return this[_list].forEachReverse(function(item) {
+  forEachReverse(fn) {
+    return this.list.forEachReverse(function(item) {
       fn(item);
     });
-  },
-};
+  }
+}
 
 //------------------------------------------------------------------------------
 // DisjointSet, a simple Union-Find implementation.
 
-const _parent = Symbol('parent'),
-      _rank = Symbol('rank');
+class DisjointSet {
+  constructor() {
+    this.sets = [];
+  }
 
-function DisjointSet() {
-  this.sets = [];
-}
-
-DisjointSet.prototype = {
-  makeSet: function(item) {
+  makeSet(item) {
     const set = {
       item: item,
-      [_rank]: 0,
+      rank: 0,
     }
-    set[_parent] = set;
+    set.parent = set;
     this.sets.push(set);
     return set;
-  },
+  }
 
-  find: function(set) {
+  find(set) {
     // Path splitting rather than path compression for simplicity.
-    while (set[_parent] != set) {
-      const next = set[_parent];
-      set[_parent] = next[_parent];
+    while (set.parent != set) {
+      const next = set.parent;
+      set.parent = next.parent;
       set = next;
     }
     return set;
-  },
+  }
 
-  union: function(set1, set2) {
+  union(set1, set2) {
    let root1 = this.find(set1),
        root2 = this.find(set2);
 
    if (root1 === root2)
        return;
 
-   if (root1[_rank] < root2[_rank])
+   if (root1.rank < root2.rank)
      root1, root2 = root2, root1;
 
-   root2[_parent] = root1;
-   if (root1[_rank] === root2[_rank])
-     root1[_rank] += 1;
-  },
-};
+   root2.parent = root1;
+   if (root1.rank === root2.rank)
+     root1.rank += 1;
+  }
+}
 
 //------------------------------------------------------------------------------
 // EmptyArray instance.
@@ -414,7 +404,6 @@ function equalSets(a, b) {
 //------------------------------------------------------------------------------
 
 return {
-  LinkedListNode: LinkedListNode,
   LinkedList: LinkedList,
 
   Queue: Queue,
