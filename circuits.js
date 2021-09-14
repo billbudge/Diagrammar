@@ -1533,36 +1533,36 @@ const normalMode = 1,
     highlightMode = 2,
     hotTrackMode = 3;
 
-function Renderer(model, theme) {
-  this.model = model;
-  this.theme = extendTheme(theme);
+class Renderer {
+  constructor(model, theme) {
+    this.model = model;
+    this.theme = extendTheme(theme);
 
-  const translatableModel = model.translatableModel,
-        referencingModel = model.referencingModel;
+    const translatableModel = model.translatableModel,
+          referencingModel = model.referencingModel;
 
-  assert(translatableModel);
-  assert(referencingModel);
+    assert(translatableModel);
+    assert(referencingModel);
 
-  this.translatableModel = translatableModel;
-  this.referencingModel = referencingModel;
+    this.translatableModel = translatableModel;
+    this.referencingModel = referencingModel;
 
-  this.getWireSrc = referencingModel.getReferenceFn('srcId');
-  this.getWireDst = referencingModel.getReferenceFn('dstId');
-}
+    this.getWireSrc = referencingModel.getReferenceFn('srcId');
+    this.getWireDst = referencingModel.getReferenceFn('dstId');
+  }
 
-Renderer.prototype = {
-  begin: function(ctx) {
+  begin(ctx) {
     this.ctx = ctx;
 
     ctx.save();
     ctx.font = this.theme.font;
-  },
+  }
 
-  end: function() {
+  end() {
     this.ctx.restore();
-  },
+  }
 
-  getBounds: function (item) {
+  getBounds(item) {
     assert(!isWire(item));
     const translatableModel = this.model.translatableModel,
           x = translatableModel.globalX(item),
@@ -1578,15 +1578,15 @@ Renderer.prototype = {
         this.layoutGroup(item);
       return { x: x, y: y, w: item[_width], h: item[_height] };
     }
-  },
+  }
 
-  setBounds: function (item, width, height) {
+  setBounds(item, width, height) {
     assert(!isWire(item));
     item[_width] = width;
     item[_height] = height;
-  },
+  }
 
-  getUnionBounds: function(items) {
+  getUnionBounds(items) {
     let xMin = Number.POSITIVE_INFINITY, yMin = Number.POSITIVE_INFINITY,
         xMax = -Number.POSITIVE_INFINITY, yMax = -Number.POSITIVE_INFINITY;
     for (let item of items) {
@@ -1599,9 +1599,9 @@ Renderer.prototype = {
       yMax = Math.max(yMax, rect.y + rect.h);
     }
     return { x: xMin, y: yMin, w: xMax - xMin, h: yMax - yMin };
-  },
+  }
 
-  pinToPoint: function(element, index, isInput) {
+  pinToPoint(element, index, isInput) {
     assert(isElement(element));
     const rect = this.getBounds(element),
         w = rect.w, h = rect.h,
@@ -1618,10 +1618,10 @@ Renderer.prototype = {
     }
     y += pin[_y] + pin[_height] / 2;
     return { x: x, y: y, nx: nx, ny: 0 }
-  },
+  }
 
   // Compute sizes for an element type.
-  layoutType: function(type) {
+  layoutType(type) {
     assert(!type[_hasLayout]);
     const self = this,
           model = this.model,
@@ -1668,9 +1668,9 @@ Renderer.prototype = {
       Math.round(Math.max(yIn, yOut, theme.minTypeHeight) + spacing / 2));
 
     type[_hasLayout] = true;
-  },
+  }
 
-  layoutPin: function(pin) {
+  layoutPin(pin) {
     const theme = this.theme;
     if (pin.type === 'v' || pin.type === '*') {
       pin[_width] = pin[_height] = 2 * theme.knobbyRadius;
@@ -1681,9 +1681,9 @@ Renderer.prototype = {
       pin[_width] = type[_width];
       pin[_height] = type[_height];
     }
-  },
+  }
 
-  layoutWire: function(wire) {
+  layoutWire(wire) {
     assert(!wire[_hasLayout]);
     let src = this.getWireSrc(wire),
         dst = this.getWireDst(wire),
@@ -1701,10 +1701,10 @@ Renderer.prototype = {
       wire[_bezier] = diagrams.getEdgeBezier(p1, p2);
     }
     wire[_hasLayout] = true;
-  },
+  }
 
   // Make sure a group is big enough to enclose its contents.
-  layoutGroup: function(group) {
+  layoutGroup(group) {
     assert(!group[_hasLayout]);
     const self = this, spacing = this.theme.spacing;
     function layout(group) {
@@ -1728,9 +1728,9 @@ Renderer.prototype = {
     }, isGroup);
 
     group[_hasLayout] = true;
-  },
+  }
 
-  drawType: function(type, x, y, fillOutputs) {
+  drawType(type, x, y, fillOutputs) {
     if (!type[_hasLayout])
       this.layoutType(type);
 
@@ -1763,9 +1763,9 @@ Renderer.prototype = {
         ctx.fillText(name, pinLeft - spacing, y + pin[_baseline]);
       }
     });
-  },
+  }
 
-  drawPin: function(pin, x, y, fill) {
+  drawPin(pin, x, y, fill) {
     const theme = this.theme;
     ctx.strokeStyle = theme.strokeColor;
     if (pin.type === 'v' || pin.type === '*') {
@@ -1790,9 +1790,9 @@ Renderer.prototype = {
       ctx.stroke();
       this.drawType(type, x, y);
     }
-  },
+  }
 
-  drawElement: function(element, mode) {
+  drawElement(element, mode) {
     const ctx = this.ctx,
           theme = this.theme, spacing = theme.spacing,
           rect = this.getBounds(element),
@@ -1833,9 +1833,9 @@ Renderer.prototype = {
         ctx.stroke();
         break;
     }
-  },
+  }
 
-  drawElementPin: function(element, input, output, mode) {
+  drawElementPin(element, input, output, mode) {
     const ctx = this.ctx,
           rect = this.getBounds(element),
           type = getType(element);
@@ -1867,17 +1867,17 @@ Renderer.prototype = {
         break;
     }
     ctx.stroke();
-  },
+  }
 
   // Gets the bounding rect for the group instancing element.
-  getGroupInstanceBounds: function(type, groupRight, groupBottom) {
+  getGroupInstanceBounds(type, groupRight, groupBottom) {
     const theme = this.theme, spacing = theme.spacing,
           width = type[_width], height = type[_height],
           x = groupRight - width - spacing, y = groupBottom - height - spacing;
     return { x: x, y: y, w: width, h: height };
-  },
+  }
 
-  drawGroup: function(group, mode) {
+  drawGroup(group, mode) {
     if (!group[_hasLayout])
       this.layoutGroup(group);
     const ctx = this.ctx,
@@ -1918,9 +1918,9 @@ Renderer.prototype = {
         ctx.stroke();
         break;
     }
-  },
+  }
 
-  hitTestElement: function(element, p, tol, mode) {
+  hitTestElement(element, p, tol, mode) {
     const rect = this.getBounds(element),
           x = rect.x, y = rect.y, width = rect.w, height = rect.h,
           hitInfo = diagrams.hitTestRect(x, y, width, height, p, tol);
@@ -1941,9 +1941,9 @@ Renderer.prototype = {
       });
     }
     return hitInfo;
-  },
+  }
 
-  hitTestGroup: function(group, p, tol, mode) {
+  hitTestGroup(group, p, tol, mode) {
     const rect = this.getBounds(group),
           x = rect.x, y = rect.y, w = rect.w , h = rect.h,
           hitInfo = diagrams.hitTestRect(x, y, w, h, p, tol);
@@ -1960,9 +1960,9 @@ Renderer.prototype = {
       }
     }
     return hitInfo;
-  },
+  }
 
-  drawWire: function(wire, mode) {
+  drawWire(wire, mode) {
     if (!wire[_hasLayout])
       this.layoutWire(wire);
     const ctx = this.ctx;
@@ -1982,16 +1982,16 @@ Renderer.prototype = {
         break;
     }
     ctx.stroke();
-  },
+  }
 
-  hitTestWire: function(wire, p, tol, mode) {
+  hitTestWire(wire, p, tol, mode) {
     // TODO don't hit test new wire as it's dragged!
     if (!wire[_hasLayout])
       return;
     return diagrams.hitTestBezier(wire[_bezier], p, tol);
-  },
+  }
 
-  draw: function(item, mode) {
+  draw(item, mode) {
     switch (item.kind) {
       case 'element':
         this.drawElement(item, mode);
@@ -2003,9 +2003,9 @@ Renderer.prototype = {
         this.drawWire(item, mode);
         break;
     }
-  },
+  }
 
-  hitTest: function(item, p, tol, mode) {
+  hitTest(item, p, tol, mode) {
     let hitInfo;
     switch (item.kind) {
       case 'element':
@@ -2021,9 +2021,9 @@ Renderer.prototype = {
     if (hitInfo && !hitInfo.item)
       hitInfo.item = item;
     return hitInfo;
-  },
+  }
 
-  drawHoverInfo: function(item, p) {
+  drawHoverInfo(item, p) {
     const self = this, theme = this.theme, ctx = this.ctx,
           x = p.x, y = p.y;
     ctx.fillStyle = theme.hoverColor;
@@ -2058,7 +2058,7 @@ Renderer.prototype = {
       //   y += textSize;
       // });
     }
-  },
+  }
 }
 
 //------------------------------------------------------------------------------
