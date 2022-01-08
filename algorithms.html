@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Algorithms</title>
+</head>
+<body>
+
+<script type="text/javascript" language="JavaScript">
+'use strict';
+
+function* primes() {
+  let testPrimes = [];
+  function prime(n, maxFactor) {
+    for (p of testPrimes) {
+      if (p > maxFactor) break;
+      if (n % p == 0) return false;
+    }
+    return true;
+  }
+  let n = 2;
+  let lastFactor = 1;
+  while (true) {
+    let maxFactor = Math.floor(Math.sqrt(n));
+    for (let i = maxFactor; i > lastFactor; i--) {
+      if (prime(i, Math.floor(Math.sqrt(i)))) {
+        testPrimes.push(i);
+      }
+    }
+    lastFactor = maxFactor;
+    if (prime(n, maxFactor)) {
+      yield n;
+    }
+    n++;
+  }
+}
+
+const limit = 10;
+let time = performance.now();
+let sum = 0;
+const iterator = primes();
+let lastP = 0;
+while (lastP < limit) {
+  let p = iterator.next().value;
+  sum += p;
+  lastP = p;
+}
+console.log('primes', 'lastP', 'sum: ', lastP, sum, performance.now() - time);
+
+function* primes2(n) {
+  let sieve = new Array(n);
+  for (let i = 0; i < n; i++) sieve[i] = i;
+  for (let i = 2; i < n; i++) {
+    if (sieve[i]) {
+      for (let j = i + i; j < n; j += i)
+        sieve[j] = undefined;
+    }
+  }
+  for (let i = 2; i < n; i++) {
+    if (sieve[i]) yield sieve[i];
+  }
+}
+time = performance.now();
+sum = 0;
+const iterator2 = primes2(lastP + 1);
+for (let p of iterator2) {
+  sum += p;
+}
+// for (let i = 0; i < 100000; i++)
+//   sum += (iterator2.next().value);
+console.log('primes2', 'sum: ', sum, performance.now() - time);
+
+function* primes3() {
+  yield 2;
+  let primes = new Array();
+  primes.push([2, 4]);  // start sieving at 4
+  let n = 3;
+  let sieve = new Array(1000);
+  function erase(prime, multiple) {
+    let i = multiple - n;
+    for (; i < 1000; i += prime) {
+      sieve[i] = undefined;
+    }
+    return i + n;
+  }
+  while (true) {
+    for (let i = 0; i < 1000; i++) sieve[i] = n + i;
+    // knock out all multiples of the existing primes
+    for (let j = 0; j < primes.length; j++) {
+      let [prime, position] = primes[j];
+      position = erase(prime, position);
+      primes[j] = [prime, position];
+    }
+    // yield primes, erasing any multiples of those
+    for (let j = 0; j < 1000; j++) {
+      let p = sieve[j];
+      if (p) {
+        yield p;
+        let k = erase(p, j + p);
+        primes.push([p, k]);
+      }
+    }
+    n += 1000;
+  }
+}
+
+time = performance.now();
+sum = 0;
+const iterator3 = primes3();
+lastP = 0;
+while (lastP < limit) {
+  let p = iterator3.next().value;
+  console.log(p);
+  sum += p;
+  lastP = p;
+}
+console.log('primes3', 'lastP', 'sum: ', lastP, sum, performance.now() - time);
+
+
+function q(a, b, c, x) {
+  return (a * x + b) * x + c;
+}
+function eval4(a, b, c, x1, x2, x3, x4) {
+  return q(a, b, c, x1) +
+         q(a, b, c, x2) +
+         q(a, b, c, x3) +
+         q(a, b, c, x4);
+}
+
+function factorial1(n) {
+  let acc = 1;
+  for (let i = n; i > 0; i--)
+    acc *= i;
+}
+
+function factorial2(n) {
+  let acc = 1;
+  for (let i = 2; i <= n; i++)
+    acc *= i;
+  return acc;
+}
+
+function factorial3(n) {
+  return n <= 1 ? 1 : n * factorial3(n - 1);
+}
+
+function factorial4(n) {
+  let acc = 1;
+  function f(i) {
+    return i > n ? acc : i * f(i + 1);
+  }
+  return f(2);
+}
+
+function fib1(n) {
+  let next = 1, current = 0;
+  for (let i = 0; i < n; i++) {
+    let temp = next;
+    next += current;
+    current = temp;
+  }
+  return current;
+}
+
+function fib2(n) {
+  function f(i, current, next) {
+    if (i >= n) return current;
+    return i >= n ? current : f(i + 1, next, next + current);
+  }
+  return f(0, 0, 1);
+}
+
+console.log(fib1(0), fib1(1), fib1(2), fib1(3), fib1(4), fib1(5), fib1(6), fib1(7), fib1(8));
+console.log(fib2(0), fib2(1), fib2(2), fib2(3), fib2(4), fib2(5), fib2(6), fib2(7), fib2(8));
+
+function partition(a, lo, hi) {
+  let p = a[lo], i = lo - 1, j = hi + 1;
+  while (true) {
+    do {i++} while (a[i] < p);
+    do {j--} while (a[j] > p);
+    if (i >= j) return j;
+    let temp = a[i];
+    a[i] = a[j];
+    a[j] = temp;
+  }
+}
+
+function p(a, i, j) {
+  let p = a[i];
+  while (1) {
+    while (a[i] < p) i++;
+    while (a[j] > p) j--;
+    if (i >= j) return j;
+    [a[i], a[j]] = [a[j], a[i]];
+    i++; j--;
+  }
+}
+function q(a, i, j) {
+  if (i >= j) return;
+  let k = p(a, i, j);
+  q(a, i, k);
+  q(a, k + 1, j);
+}
+
+function qsort(a) {
+  q(a, 0, a.length - 1);
+}
+
+function bubble_sort(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    for (let j = 0; j < i; j++) {
+      if (a[j] > a[j + 1]) {
+        let temp = a[j];
+        a[j] = a[j + 1];
+        a[j + 1] = temp;
+      }
+    }
+  }
+}
+
+for (let i = 0; i < 10000; i++) {
+  let array = [];
+  for (let j = 0; j < 50; j++) {
+    array.push(Math.random() * 1000);
+  }
+  qsort(array);
+      // console.log(array);
+  for (let j = 0; j < 19; j++) {
+    if (array[j] > array[j+1]) {
+      console.log("fail");
+      break;
+    }
+  }
+}
+console.log("sorted 10000");
+
+console.log(0 + 0, 0 + -0, -0 + 0, -0 + -0);
+console.log(0 - 0, 0 - -0, -0 - 0, -0 - -0);
+console.log(0 * 0, 0 * -0, -0 * 0, -0 * -0);
+console.log(Number.POSITIVE_INFINITY * Number.POSITIVE_INFINITY);
+console.log(Number.POSITIVE_INFINITY * 0);
+
+
+let random_array = [4, 4, 4, 4, 4, 4, 4];
+qsort(random_array);
+console.log(random_array);
+
+// function fib(n) {
+//   let next = 1, current = 0;
+//   for (let i = 0; i < n; i++) {
+//     let temp = next;
+//     next += current;
+//     current = temp;
+//   }
+//   return current;
+// }
+
+// console.log(fib(0), fib(1), fib(2), fib(3), fib(4), fib(5), fib(6), fib(7), fib(8));
+
+// function partition(a, lo, hi) {
+//   let p = a[lo], i = lo - 1, j = hi + 1;
+//   while (true) {
+//     do {i++} while (a[i] < p);
+//     do {j--} while (a[j] > p);
+//     if (i >= j) return j;
+//     let temp = a[i];
+//     a[i] = a[j];
+//     a[j] = temp;
+//   }
+// }
+
+// function p(a, i, j) {
+//   let p = a[i];
+//   while (1) {
+//     while (a[i] < p) i++;
+//     while (a[j] > p) j--;
+//     if (i >= j) return j;
+//     [a[i], a[j]] = [a[j], a[i]];
+//     i++; j--;
+//   }
+// }
+// function q(a, i, j) {
+//   if (i >= j) return;
+//   let k = p(a, i, j);
+//   q(a, i, k);
+//   q(a, k + 1, j);
+// }
+
+// function qsort(a) {
+//   q(a, 0, a.length - 1);
+// }
+
+// function bubble_sort(a) {
+//   for (let i = a.length - 1; i > 0; i--) {
+//     for (let j = 0; j < i; j++) {
+//       if (a[j] > a[j + 1]) {
+//         let temp = a[j];
+//         a[j] = a[j + 1];
+//         a[j + 1] = temp;
+//       }
+//     }
+//   }
+// }
+
+// for (let i = 0; i < 10000; i++) {
+//   let array = [];
+//   for (let j = 0; j < 50; j++) {
+//     array.push(Math.random() * 1000);
+//   }
+//   qsort(array);
+//       // console.log(array);
+//   for (let j = 0; j < 19; j++) {
+//     if (array[j] > array[j+1]) {
+//       console.log("fail");
+//       break;
+//     }
+//   }
+// }
+// console.log("sorted 10000");
+
+
+// let random_array = [4, 4, 4, 4, 4, 4, 4];
+// qsort(random_array);
+// console.log(random_array);
+
+
+</script>
+
+</body>
+</html>
