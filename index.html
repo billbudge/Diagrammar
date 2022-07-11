@@ -39,7 +39,7 @@ let theme = diagrams.theme.createDefault(),  // or createBlueprint
 
 document.bgColor = theme.bgColor;
 
-var statechartEditor = new statecharts.Editor(statechartModel, theme),
+var statechartEditor = new statecharts.Editor(statechartModel, theme, textInputController),
     circuitEditor = new circuits.Editor(circuitModel, theme, textInputController),
     panZoomLayer = new diagrams.CanvasPanZoomLayer(),
     shapeEditor = new shapes.Editor(shapeModel);

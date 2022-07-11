@@ -637,6 +637,11 @@ const editingModel = (function() {
       return state.items[i];
     },
 
+    getLabel: function (item) {
+      if (isTrueState(item)) return item.name;
+      else if (isProperty(item)) return item.text;
+    },
+
     doDelete: function() {
       this.reduceSelection();
       this.model.copyPasteModel.doDelete(this.deleteItems.bind(this));
@@ -1331,10 +1336,11 @@ Renderer.prototype.drawHoverText = function(item, p) {
 
 //------------------------------------------------------------------------------
 
-function Editor(model, theme) {
+function Editor(model, theme, textInputController) {
   const self = this;
   this.model = model;
   this.statechart = model.root;
+  this.textInputController = textInputController;
 
   this.theme = extendTheme(theme);
 
@@ -1501,6 +1507,30 @@ function isPropertyDropTarget(hitInfo, model) {
          !model.hierarchicalModel.isItemInSelection(item);
 }
 
+Editor.prototype.setEditableText = function() {
+  let model = this.model,
+      canvasController = this.canvasController,
+      textInputController = this.textInputController,
+      item = model.selectionModel.lastSelected(),
+      editingModel = model.editingModel;
+  let attr;
+  if (item && isTrueState(item)) attr = 'name';
+  else if (item && isProperty(item)) attr = 'text';
+  if (attr) {
+    const oldText = item[attr];
+    textInputController.start(oldText, function(newText) {
+      if (newText !== oldText) {
+        model.transactionModel.beginTransaction('rename');
+        model.observableModel.changeValue(item, attr, newText);
+        model.transactionModel.endTransaction();
+        canvasController.draw();
+      }
+    });
+  } else {
+    textInputController.clear();
+  }
+}
+
 Editor.prototype.onClick = function(p) {
   const model = this.model,
         selectionModel = model.selectionModel,
@@ -1521,6 +1551,7 @@ Editor.prototype.onClick = function(p) {
       selectionModel.clear();
     }
   }
+  this.setEditableText();
   return mouseHitInfo !== null;
 }
 
@@ -1731,6 +1762,8 @@ Editor.prototype.onEndDrag = function(p) {
   }
 
   model.transactionModel.endTransaction();
+
+  this.setEditableText();
 
   this.drag = null;
   this.mouseHitInfo = null;

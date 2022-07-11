@@ -9,45 +9,86 @@
 <script type="text/javascript" language="JavaScript">
 'use strict';
 
+const circum = 2 * 3 * 5 * 7;// * 11 * 13;
+let mods = new Array(circum).fill(false);
+mods[1] = true;
+for (let i = 2; i < circum; i++) {
+  mods[i] = (i % 2 !== 0 && i % 3 !== 0 && i % 5 !== 0 && i % 7);// !== 0 && i % 11 !== 0 && i % 13 !== 0);
+}
+let testPrimes = [];
 function* primes() {
-  let testPrimes = [];
-  function prime(n, maxFactor) {
-    for (p of testPrimes) {
-      if (p > maxFactor) break;
-      if (n % p == 0) return false;
+  // const floorer = Number.MAX_SAFE_INTEGER / 2 + 1;
+  // let testPrimes = [];
+  function prime(n) {
+    for (let p of testPrimes) {
+      if (p * p > n) break;
+      // if (Number.isInteger(n / p)) return false;
+      let div = n / p;
+      // if ((div + floorer) - floorer === div) return false;
+      if (Math.floor(div) === div) return false;
+      // if (n % p == 0) return false;
     }
     return true;
   }
-  let n = 2;
-  let lastFactor = 1;
+  yield 2;
+  yield 3;
+  yield 5;
+  yield 7;
+  // yield 11;
+  // yield 13;
+  let n = 11;
+  let mod = 11;
+  // let mods = [false, true, false, false, false, true];
+  // let mods = [false, true,  false, false, false, false, false, true,  false, false,
+  //             false, true,  false, true,  false, false, false, true,  false, true,
+  //             false, false, false, true,  false, false, false, false, false, true];
+  // let lastFactor = 1;
   while (true) {
-    let maxFactor = Math.floor(Math.sqrt(n));
-    for (let i = maxFactor; i > lastFactor; i--) {
-      if (prime(i, Math.floor(Math.sqrt(i)))) {
-        testPrimes.push(i);
+    if (mods[mod]) {
+      // let maxFactor = Math.floor(Math.sqrt(n));
+      // for (let i = maxFactor; i > lastFactor; i--) {
+      //   if (prime(i, Math.floor(Math.sqrt(i)))) {
+      //     testPrimes.push(i);
+      //   }
+      // }
+      // lastFactor = maxFactor;
+      if (prime(n)) {
+        yield n;
+        testPrimes.push(n);
       }
     }
-    lastFactor = maxFactor;
-    if (prime(n, maxFactor)) {
-      yield n;
-    }
     n++;
+    mod++;
+    if (mod === circum) mod = 0;
   }
 }
 
-const limit = 10;
-let time = performance.now();
-let sum = 0;
-const iterator = primes();
-let lastP = 0;
-while (lastP < limit) {
-  let p = iterator.next().value;
-  sum += p;
-  lastP = p;
-}
-console.log('primes', 'lastP', 'sum: ', lastP, sum, performance.now() - time);
-
 function* primes2(n) {
+  // let bytes = (n + 7) / 8,
+  //     buffer = new ArrayBuffer(bytes),
+  //     sieve = new Int8Array(buffer);
+  // // sieve is initialized to 0's, which will signify prime.
+  // sieve[0] = 3;  // mark 0 and 1 as non-prime.
+
+  // for (let i = 0; i < bytes; i++) {
+  //   let mask = 1;
+  //   for (let j = 0; j < 8; j++) {
+  //     let byte = sieve[i];
+  //     let bit = (byte & mask) >> j;
+  //     if (bit === 0) {
+  //       let p = (i << 3) + j;
+  //       yield p;
+  //       let mp = p + p;
+  //       while (mp < n) {
+  //         let byte = mp >> 3;
+  //         let bit = mp & 7;
+  //         sieve[byte] |= 1 << bit;
+  //         mp += p;
+  //       }
+  //     }
+  //     mask <<= 1;
+  //   }
+  // }
   let sieve = new Array(n);
   for (let i = 0; i < n; i++) sieve[i] = i;
   for (let i = 2; i < n; i++) {
@@ -60,62 +101,106 @@ function* primes2(n) {
     if (sieve[i]) yield sieve[i];
   }
 }
-time = performance.now();
-sum = 0;
-const iterator2 = primes2(lastP + 1);
-for (let p of iterator2) {
-  sum += p;
-}
-// for (let i = 0; i < 100000; i++)
-//   sum += (iterator2.next().value);
-console.log('primes2', 'sum: ', sum, performance.now() - time);
 
 function* primes3() {
   yield 2;
   let primes = new Array();
-  primes.push([2, 4]);  // start sieving at 4
-  let n = 3;
-  let sieve = new Array(1000);
-  function erase(prime, multiple) {
-    let i = multiple - n;
-    for (; i < 1000; i += prime) {
-      sieve[i] = undefined;
+  let blocks = new Array();
+  const blockSize = 1024;
+  let n = 0;
+  let block = 0;
+  let sieve = new Array(blockSize);
+  function erase(prime, position) {
+    for (; position < blockSize; position += prime) {
+      sieve[position] = undefined;
     }
-    return i + n;
+    return position + n;
   }
   while (true) {
-    for (let i = 0; i < 1000; i++) sieve[i] = n + i;
-    // knock out all multiples of the existing primes
-    for (let j = 0; j < primes.length; j++) {
-      let [prime, position] = primes[j];
-      position = erase(prime, position);
-      primes[j] = [prime, position];
+    for (let i = 0; i < blockSize; i++) sieve[i] = n + i;
+    if (n === 0) {
+      // For the first block, erase 0 and 1.
+      sieve[0] = sieve[1] = undefined;
+    } else {
+      // For subsequent blocks, erase all multiples of the previous primes.
+      for (let j = 0; j < primes.length; j++) {
+        let [prime, position] = primes[j];
+        if (position - n > blockSize) continue;
+        position = erase(prime, position - n);
+        primes[j] = [prime, position];
+      }
     }
-    // yield primes, erasing any multiples of those
-    for (let j = 0; j < 1000; j++) {
+    // Yield any primes in the sieve.
+    let first = primes.length;
+    for (let j = 0; j < blockSize; j++) {
       let p = sieve[j];
-      if (p) {
+      if (p !== undefined) {
         yield p;
-        let k = erase(p, j + p);
+        let k = erase(p, p + p - n);
         primes.push([p, k]);
       }
     }
-    n += 1000;
+    blocks.push({
+      counter: block + 1,
+      first: first,
+      size: primes.length - first,
+    });
+    block++;
+    n += blockSize;
   }
 }
 
-time = performance.now();
-sum = 0;
-const iterator3 = primes3();
-lastP = 0;
+// const blockSize = 1024;
+// function initBlock(sieve, n) {
+//   for (let i = 0; i < blockSize; i++) sieve[i] = n + i;
+// }
+
+// function* primes4() {
+//   let a1 = new Array(blockSize), a2 = new Array(blockSize);
+//   let buckets = new Array();
+// }
+
+const limit = 10000000;
+let time = performance.now();
+let sum = 0;
+const iterator = primes();
+let lastP = 0;
 while (lastP < limit) {
-  let p = iterator3.next().value;
-  console.log(p);
+  let p = iterator.next().value;
   sum += p;
   lastP = p;
 }
-console.log('primes3', 'lastP', 'sum: ', lastP, sum, performance.now() - time);
+console.log('primes', 'lastP', 'sum', lastP, sum, performance.now() - time);
+console.log('count', testPrimes.length);
+time = performance.now();
+sum = 0;
+let lastP2 = 0;
+const iterator2 = primes2(lastP + 1);
+for (let p of iterator2) {
+  sum += p;
+  lastP2 = p;
+}
+console.log('primes2', 'lastP', 'sum', lastP2, sum, performance.now() - time);
 
+// time = performance.now();
+// sum = 0;
+// const iterator3 = primes3();
+// lastP = 0;
+// while (lastP < limit) {
+//   let p = iterator3.next().value;
+//   sum += p;
+//   lastP = p;
+// }
+// console.log('primes3', 'lastP', 'sum', lastP, sum, performance.now() - time);
+
+// let primorial = 2 * 3 * 5 * 7 * 11;
+//  sum = 1/2 + 1/6 + 1/30 + 1/210 + 1/2310;
+// for (let i = 1; i < 10; i++) {
+//   console.log(testPrimes[i]);
+//   primorial *= testPrimes[i];
+//   sum += 1 / primorial;
+// }
+// console.log(sum);
 
 function q(a, b, c, x) {
   return (a * x + b) * x + c;
@@ -185,7 +270,7 @@ function partition(a, lo, hi) {
   }
 }
 
-function p(a, i, j) {
+function partition(a, i, j) {
   let p = a[i];
   while (1) {
     while (a[i] < p) i++;
@@ -195,9 +280,10 @@ function p(a, i, j) {
     i++; j--;
   }
 }
+
 function q(a, i, j) {
   if (i >= j) return;
-  let k = p(a, i, j);
+  let k = partition(a, i, j);
   q(a, i, k);
   q(a, k + 1, j);
 }
@@ -234,11 +320,11 @@ for (let i = 0; i < 10000; i++) {
 }
 console.log("sorted 10000");
 
-console.log(0 + 0, 0 + -0, -0 + 0, -0 + -0);
-console.log(0 - 0, 0 - -0, -0 - 0, -0 - -0);
-console.log(0 * 0, 0 * -0, -0 * 0, -0 * -0);
-console.log(Number.POSITIVE_INFINITY * Number.POSITIVE_INFINITY);
-console.log(Number.POSITIVE_INFINITY * 0);
+// console.log(0 + 0, 0 + -0, -0 + 0, -0 + -0);
+// console.log(0 - 0, 0 - -0, -0 - 0, -0 - -0);
+// console.log(0 * 0, 0 * -0, -0 * 0, -0 * -0);
+// console.log(Number.POSITIVE_INFINITY * Number.POSITIVE_INFINITY);
+// console.log(Number.POSITIVE_INFINITY * 0);
 
 
 let random_array = [4, 4, 4, 4, 4, 4, 4];
