@@ -772,7 +772,8 @@ const editingModel = (function() {
 
 const normalMode = 1,
       highlightMode = 2,
-      hotTrackMode = 3;
+      hotTrackMode = 3,
+      printMode = 4;
 
 function Renderer(model, theme) {
   this.model = model;
@@ -1451,6 +1452,23 @@ Editor.prototype.draw = function() {
   renderer.end();
 }
 
+Editor.prototype.print = function(ctx) {
+  const renderer = this.renderer, statechart = this.statechart,
+        model = this.model,
+        canvasController = this.canvasController;
+  renderer.begin(ctx);
+  canvasController.applyTransform();
+
+  visitItem(statechart, function(item) {
+    renderer.draw(item, normalMode);
+  }, isContainable);
+  visitItem(statechart, function(transition) {
+    renderer.draw(transition, normalMode);
+  }, isTransition);
+
+  renderer.end();
+}
+
 Editor.prototype.hitTest = function(p) {
   const renderer = this.renderer,
         model = this.model,
@@ -1581,7 +1599,7 @@ Editor.prototype.onBeginDrag = function(p0) {
       srcId: stateId,
       t1: 0,
       [_p2]: cp0,
-      pt: 0,  // initial attachment point.
+      pt: 0.5,  // initial property attachment at midpoint.
     };
     drag = {
       type: connectTransitionDst,
@@ -1843,18 +1861,51 @@ Editor.prototype.onKeyDown = function(e) {
         editingModel.doTogglePalette();
         return true;
       case 83:  // 's'
-        var text = JSON.stringify(
-          statechart,
-          function(key, value) {
-            if (key.toString().charAt(0) === '_')
-              return;
-            if (value === undefined || value === null)
-              return;
-            return value;
-          },
-          2);
-        // Writes statechart as JSON to console.
-        console.log(text);
+        // var text = JSON.stringify(
+        //   statechart,
+        //   function(key, value) {
+        //     if (key.toString().charAt(0) === '_')
+        //       return;
+        //     if (value === undefined || value === null)
+        //       return;
+        //     return value;
+        //   },
+        //   2);
+        // // Writes statechart as JSON to console.
+        // console.log(text);
+
+        // var ctx = new canvas2pdf.PdfContext(blobStream());
+        // this.print(ctx);
+        // // //draw your canvas like you would normally
+        // // ctx.fillStyle='yellow';
+        // // ctx.fillRect(100,100,100,100);
+        // // // more canvas drawing, etc...
+
+        // //convert your PDF to a Blob and save to file
+        // ctx.stream.on('finish', function () {
+        //     var blob = ctx.stream.toBlob('application/pdf');
+        //     saveAs(blob, 'example.pdf', true);
+        // });
+        // ctx.end();
+
+        //Create a new mock canvas context. Pass in your desired width and height for your svg document.
+        let canvas = this.canvasController.canvas;
+        var ctx = new C2S(canvas.width, canvas.height);
+
+        this.print(ctx);
+
+        // //draw your canvas like you would normally
+        // ctx.fillStyle="red";
+        // ctx.fillRect(100,100,100,100);
+        // //etc...
+
+        //serialize your SVG
+        var mySerializedSVG = ctx.getSerializedSvg(); //true here, if you need to convert named to numbered entities.
+        var blob = new Blob([mySerializedSVG], {
+          type: 'text/plain'
+      });
+              saveAs(blob, 'example.svg', true);
+
         return true;
     }
   }
