@@ -196,18 +196,29 @@ class PriorityQueue {
     const array = this.array;
     if (!array.length)
       return null;
-    const value = array[0];
-    let i = 1;
-    while (i < array.length) {
-      const parentIndex = Math.floor((i - 1) / 2);
-      let largestChild = i;
-      if (i + 1 < array.length && this.compareFn_(array[i], array[i + 1]) < 0)
-        largestChild = i + 1;
-      array[parentIndex] = array[largestChild];
-      i = largestChild * 2 + 1;
+    const result = array[0];
+    const last = array.pop();  // take the last element to avoid a hole in the last generation.
+    if (!array.length)
+      return result;
+    array[0] = last;
+    // Sift down.
+    let i = 0;
+    while (true) {
+      const first = i * 2 + 1;
+      if (first >= array.length)
+        break;
+      const second = first + 1;
+      let child = first;
+      if (second < array.length && this.compareFn_(array[first], array[second]) < 0) {
+        child = second;
+      }
+      if (this.compareFn_(array[i], array[child]) >= 0)
+        break;
+      // swap parent and child and continue.
+      [array[i], array[child]] = [array[child], array[i]];
+      i = child;
     }
-    array.pop();
-    return value;
+    return result;
   }
 
   heapify_() {

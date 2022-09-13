@@ -189,20 +189,33 @@ test("PriorityQueue constructor", function() {
 
   const test2 = new diagrammar.collections.PriorityQueue(pqCompareFn, [1, 0, 2, 3]);
   ok(!test2.empty());
-  pqContents(test2, 3, 2, 1, 0);
+  ok(pqContents(test2, 3, 2, 1, 0));
 });
 
 test("PriorityQueue push", function() {
   const test1 = new diagrammar.collections.PriorityQueue(pqCompareFn);
-  ok(test1.empty());
-  deepEqual(test1.pop(), null);
+  test1.push(0);
+  test1.push(2);
+  test1.push(1);
+  test1.push(3);
+  ok(pqContents(test1, 3, 2, 1, 0));
+});
 
-  const test2 = new diagrammar.collections.PriorityQueue(pqCompareFn);
-  test2.push(0);
-  test2.push(2);
-  test2.push(1);
-  test2.push(3);
-  pqContents(test2, 3, 2, 1, 0);
+test("PriorityQueue pop", function() {
+  const test1 = new diagrammar.collections.PriorityQueue(pqCompareFn);
+  test1.push(0);
+  test1.push(2);
+  test1.push(1);
+  test1.push(3);
+  let value = test1.pop();
+  strictEqual(value, 3);
+  value = test1.pop();
+  strictEqual(value, 2);
+  value = test1.pop();
+  strictEqual(value, 1);
+  value = test1.pop();
+  strictEqual(value, 0);
+  ok(test1.empty());
 });
 
 //------------------------------------------------------------------------------
