@@ -26,21 +26,21 @@ class LinkedList {
   }
 
   pushBack(value) {
-    return this.insertAfter(value, null);
+    return this.insertAfter(value, undefined);
   }
 
   pushFront(value) {
-    return this.insertBefore(value, null);
+    return this.insertBefore(value, undefined);
   }
 
   popBack() {
     const node = this.back;
-    return node ? this.remove(node) : null;
+    return node ? this.remove(node) : undefined;
   }
 
   popFront() {
     const node = this.front;
-    return node ? this.remove(node) : null;
+    return node ? this.remove(node) : undefined;
   }
 
   remove(node) {
@@ -118,7 +118,7 @@ class LinkedList {
         return node;
       node = node.next;
     }
-    return null;
+    return undefined;
   }
 }
 
@@ -184,27 +184,43 @@ class PriorityQueue {
   }
 
   front() {
-    return !empty() ? this.array[0] : null;
+    return !empty() ? this.array[0] : undefined;
   }
 
   push(value) {
-    this.array.push(value);
-    this.siftUp_();
+    const array = this.array,
+          end = array.length;;
+    array.push(value);
+    [array[0], array[end]] = [array[end], array[0]];
+    this.siftDown_(0);
   }
 
   pop() {
     const array = this.array;
     if (!array.length)
-      return null;
+      return undefined;
     const result = array[0];
     const last = array.pop();  // take the last element to avoid a hole in the last generation.
-    if (!array.length)
-      return result;
-    array[0] = last;
-    // Sift down.
-    let i = 0;
+    if (array.length) {
+      array[0] = last;
+      this.siftDown_(0);
+    }
+    return result;
+  }
+
+  heapify_() {
+    const array = this.array;
+    let parent = Math.floor((array.length - 1) / 2);  // the last parent in the heap.
+    while (parent >= 0) {
+      this.siftDown_(parent);
+      parent--;
+    }
+  }
+
+  siftDown_(parent) {
+    const array = this.array;
     while (true) {
-      const first = i * 2 + 1;
+      const first = parent * 2 + 1;
       if (first >= array.length)
         break;
       const second = first + 1;
@@ -212,25 +228,11 @@ class PriorityQueue {
       if (second < array.length && this.compareFn_(array[first], array[second]) < 0) {
         child = second;
       }
-      if (this.compareFn_(array[i], array[child]) >= 0)
+      if (this.compareFn_(array[parent], array[child]) >= 0)
         break;
       // swap parent and child and continue.
-      [array[i], array[child]] = [array[child], array[i]];
-      i = child;
-    }
-    return result;
-  }
-
-  heapify_() {
-    const array = this.array;
-    for (let i = array.length - 1; i > 0; i--) {
-      const value = array[i],
-            parentIndex = Math.floor((i - 1) / 2),
-            parent = array[parentIndex];
-      if (this.compareFn_(parent, value) < 0) {
-        array[i] = parent;
-        array[parentIndex] = value;
-      }
+      [array[parent], array[child]] = [array[child], array[parent]];
+      parent = child;
     }
   }
 
@@ -270,7 +272,7 @@ class SelectionSet {
   }
 
   lastSelected() {
-    return !this.list.empty() ? this.list.front.value : null;
+    return !this.list.empty() ? this.list.front.value : undefined;
   }
 
   add(element) {

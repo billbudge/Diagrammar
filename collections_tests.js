@@ -225,7 +225,7 @@ test("SelectionSet constructor", function() {
   const test = new diagrammar.collections.SelectionSet();
   deepEqual(test.length, 0);
   ok(test.empty());
-  deepEqual(test.lastSelected(), null);
+  deepEqual(test.lastSelected(), undefined);
   deepEqual(stringify(test), '');
 });
 
@@ -267,7 +267,7 @@ test("SelectionSet toggle", function() {
   deepEqual(test.lastSelected(), 'a');
   test.toggle('a');
   deepEqual(test.length, 0);
-  deepEqual(test.lastSelected(), null);
+  deepEqual(test.lastSelected(), undefined);
 });
 
 test("SelectionSet map", function() {
