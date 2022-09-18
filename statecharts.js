@@ -39,6 +39,10 @@ function isContainable(item) {
   return isState(item) || isProperty(item);
 }
 
+function isPrintableContainable(item) {
+  return !isPaletted(item) && (isState(item) || isProperty(item));
+}
+
 function isPaletted(item) {
   return item.state === 'palette';
 }
@@ -772,8 +776,7 @@ const editingModel = (function() {
 
 const normalMode = 1,
       highlightMode = 2,
-      hotTrackMode = 3,
-      printMode = 4;
+      hotTrackMode = 3;
 
 function Renderer(model, theme) {
   this.model = model;
@@ -1461,7 +1464,7 @@ Editor.prototype.print = function(ctx) {
 
   visitItem(statechart, function(item) {
     renderer.draw(item, normalMode);
-  }, isContainable);
+  }, isPrintableContainable);
   visitItem(statechart, function(transition) {
     renderer.draw(transition, normalMode);
   }, isTransition);

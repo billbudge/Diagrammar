@@ -1,0 +1,6 @@
+[submodule "third_party/canvas2svg"]
+	path = third_party/canvas2svg
+	url = https://github.com/gliffy/canvas2svg
+[submodule "third_party/canvas2pdf"]
+	path = third_party/canvas2pdf
+	url = https://github.com/joshua-gould/canvas2pdf
