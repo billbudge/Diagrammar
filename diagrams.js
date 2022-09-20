@@ -155,7 +155,7 @@ function rectPointToParam(left, top, width, height, p) {
 
 function diskPath(x, y, r, ctx) {
   ctx.beginPath();
-  ctx.arc(x, y, r, 0, 360, false);
+  ctx.arc(x, y, r, 0, 2 * Math.PI, false);
 }
 
 // p1, p2 have x, y, nx, ny.
