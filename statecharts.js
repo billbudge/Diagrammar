@@ -776,7 +776,8 @@ const editingModel = (function() {
 
 const normalMode = 1,
       highlightMode = 2,
-      hotTrackMode = 3;
+      hotTrackMode = 3,
+      printMode = 4;
 
 function Renderer(model, theme) {
   this.model = model;
@@ -1054,6 +1055,7 @@ Renderer.prototype.drawState = function(state, mode) {
   diagrams.roundRectPath(x, y, w, h, r, ctx);
   switch (mode) {
     case normalMode:
+    case printMode:
       ctx.fillStyle = state.state === 'palette' ? theme.altBgColor : theme.bgColor;
       ctx.fill();
       ctx.strokeStyle = theme.strokeColor;
@@ -1095,7 +1097,9 @@ Renderer.prototype.drawState = function(state, mode) {
       ctx.stroke();
       break;
   }
-  drawArrow(this, x + w + theme.arrowSize, lineBase);
+  if (mode !== printMode) {
+    drawArrow(this, x + w + theme.arrowSize, lineBase);
+  }
 }
 
 Renderer.prototype.hitTestState = function(state, p, tol, mode) {
@@ -1119,6 +1123,7 @@ Renderer.prototype.drawPseudoState = function(state, mode) {
   diagrams.diskPath(x + r, y + r, r, ctx);
   switch (mode) {
     case normalMode:
+    case printMode:
       ctx.fillStyle = state.state === 'palette' ? theme.altBgColor : theme.strokeColor;
       ctx.fill();
       // Render knobbies, faintly.
@@ -1136,7 +1141,9 @@ Renderer.prototype.drawPseudoState = function(state, mode) {
       ctx.stroke();
       break;
   }
-  drawArrow(this, x + 2 * r + theme.arrowSize, y + r);
+  if (mode !== printMode) {
+    drawArrow(this, x + 2 * r + theme.arrowSize, y + r);
+  }
 }
 
 Renderer.prototype.hitTestPseudoState = function(state, p, tol, mode) {
@@ -1156,7 +1163,7 @@ Renderer.prototype.drawStatechart = function(statechart, mode) {
 
   switch (mode) {
     case normalMode:
-      break;
+    case printMode:
     case highlightMode:
       break;
     case hotTrackMode:
@@ -1189,6 +1196,7 @@ Renderer.prototype.drawProperty = function(property, mode) {
   ctx.rect(x, y, w, h);
   switch (mode) {
     case normalMode:
+    case printMode:
       ctx.fillStyle = property.state === 'palette' ? theme.altBgColor : theme.bgColor;
       ctx.fill();
       ctx.lineWidth = 0.25;
@@ -1228,11 +1236,12 @@ Renderer.prototype.drawTransition = function(transition, mode) {
   diagrams.bezierEdgePath(bezier, ctx, theme.arrowSize);
   switch (mode) {
     case normalMode:
+    case printMode:
       ctx.strokeStyle = theme.strokeColor;
       ctx.lineWidth = 1;
       ctx.stroke();
       let src = this.getTransitionSrc(transition);
-      if (src && !isPseudostate(src)) {
+      if (src && !isPseudostate(src) && mode !== printMode) {
         const pt = transition[_pt];
         diagrams.roundRectPath(pt.x - theme.radius,
                                pt.y - theme.radius,
@@ -1463,10 +1472,10 @@ Editor.prototype.print = function(ctx) {
   canvasController.applyTransform();
 
   visitItem(statechart, function(item) {
-    renderer.draw(item, normalMode);
+    renderer.draw(item, printMode);
   }, isPrintableContainable);
   visitItem(statechart, function(transition) {
-    renderer.draw(transition, normalMode);
+    renderer.draw(transition, printMode);
   }, isTransition);
 
   renderer.end();
