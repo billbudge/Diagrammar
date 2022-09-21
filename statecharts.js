@@ -1900,25 +1900,27 @@ Editor.prototype.onKeyDown = function(e) {
         // });
         // ctx.end();
 
-        //Create a new mock canvas context. Pass in your desired width and height for your svg document.
-        let canvas = this.canvasController.canvas;
-        var ctx = new C2S(canvas.width, canvas.height);
+        {
+          //Create a new mock canvas context. Pass in your desired width and height for your svg document.
+          let canvas = this.canvasController.canvas;
+          var ctx = new C2S(canvas.width, canvas.height);
 
-        this.print(ctx);
+          this.print(ctx);
 
-        // //draw your canvas like you would normally
-        // ctx.fillStyle="red";
-        // ctx.fillRect(100,100,100,100);
-        // //etc...
+          // //draw your canvas like you would normally
+          // ctx.fillStyle="red";
+          // ctx.fillRect(100,100,100,100);
+          // //etc...
 
-        //serialize your SVG
-        var mySerializedSVG = ctx.getSerializedSvg(); //true here, if you need to convert named to numbered entities.
-        var blob = new Blob([mySerializedSVG], {
-          type: 'text/plain'
-      });
-              saveAs(blob, 'example.svg', true);
+          //serialize your SVG
+          var mySerializedSVG = ctx.getSerializedSvg(); //true here, if you need to convert named to numbered entities.
+          var blob = new Blob([mySerializedSVG], {
+            type: 'text/plain'
+          });
+          saveAs(blob, 'example.svg', true);
 
-        return true;
+          return true;
+        }
     }
   }
 }

@@ -23,6 +23,10 @@ function isElementOrGroup(item) {
   return isElement(item) || isGroup(item);
 }
 
+function isPrintableElementOrGroup(item) {
+  return isElementOrGroup(item) && !isPaletted(item);
+}
+
 function isGroupInstance(item) {
   return isElement(item) && item.definitionId;
 }
@@ -1766,7 +1770,8 @@ class Renderer {
   }
 
   drawPin(pin, x, y, fill) {
-    const theme = this.theme;
+    const ctx = this.ctx,
+          theme = this.theme;
     ctx.strokeStyle = theme.strokeColor;
     if (pin.type === 'v' || pin.type === '*') {
       const r = theme.knobbyRadius;
@@ -2246,6 +2251,38 @@ Editor.prototype.draw = function() {
   renderer.end();
 }
 
+Editor.prototype.print = function(ctx) {
+  let diagram = this.diagram,
+      canvasController = this.canvasController,
+      model = this.model,
+      renderer = model.renderer;
+  // Update wires as elements are dragged.
+  model.circuitModel.updateLayout();
+  renderer.begin(ctx);
+  canvasController.applyTransform();
+
+  // // Draw registration frame for generating screen shots.
+  // ctx.strokeStyle = renderer.theme.dimColor;
+  // ctx.lineWidth = 0.5;
+  // ctx.strokeRect(300, 10, 700, 300);
+
+  visitItems(diagram.items,
+    function(item) {
+      renderer.draw(item, normalMode);
+    }, isPrintableElementOrGroup);
+  visitItems(diagram.items,
+    function(wire) {
+      renderer.draw(wire, normalMode);
+    }, isWire);
+
+
+  // let hoverHitInfo = this.hoverHitInfo;
+  // if (hoverHitInfo) {
+  //   renderer.drawHoverInfo(hoverHitInfo.item, hoverHitInfo.p);
+  // }
+  renderer.end();
+}
+
 Editor.prototype.hitTest = function(p) {
   let model = this.model,
       renderer = model.renderer,
@@ -2644,6 +2681,7 @@ Editor.prototype.onEndHover = function(p) {
 Editor.prototype.onKeyDown = function(e) {
   let diagram = this.diagram,
       model = this.model,
+      ctx = this.ctx,
       renderer = model.renderer,
       selectionModel = model.selectionModel,
       editingModel = model.editingModel,
@@ -2712,20 +2750,39 @@ Editor.prototype.onKeyDown = function(e) {
       case 71:  // 'g'
         editingModel.doGroup();
         return true;
-      case 83:  // 's'
-        let text = JSON.stringify(
-          diagram,
-          function(key, value) {
-            if (key.toString().charAt(0) === '_')
-              return;
-            if (value === undefined || value === null)
-              return;
-            return value;
-          },
-          2);
-        // Writes diagram as JSON to console.
-        console.log(text);
-        return true;
+      case 83:  // 's':
+        // let text = JSON.stringify(
+        //   diagram,
+        //   function(key, value) {
+        //     if (key.toString().charAt(0) === '_')
+        //       return;
+        //     if (value === undefined || value === null)
+        //       return;
+        //     return value;
+        //   },
+        //   2);
+        // // Writes diagram as JSON to console.
+        // console.log(text);
+        {
+          //Create a new mock canvas context. Pass in your desired width and height for your svg document.
+          let canvas = this.canvasController.canvas;
+          let ctx = new C2S(canvas.width, canvas.height);
+
+          this.print(ctx);
+
+          // //draw your canvas like you would normally
+          // ctx.fillStyle="red";
+          // ctx.fillRect(100,100,100,100);
+          // //etc...
+
+          //serialize your SVG
+          let mySerializedSVG = ctx.getSerializedSvg(); //true here, if you need to convert named to numbered entities.
+          let blob = new Blob([mySerializedSVG], {
+            type: 'text/plain'
+          });
+          saveAs(blob, 'example.svg', true);
+          return true;
+      }
     }
   }
   renderer.end();
