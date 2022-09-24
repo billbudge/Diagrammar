@@ -32,7 +32,7 @@ We can combine these primitive functions to compute simple expressions. In the d
 1. A 3-ary and 4-ary addition operation by cascading binary additions.
 
 <figure>
-  <img src="/resources/basic_expressions.png"  alt="" title="Basic Expressions">
+  <img src="/resources/statechart.svg"  alt="" title="Statechart experiment">
 </figure>
 
 Note that there is fan-out but no fan-in in our circuit graphs. There are no cycles, so the circuit is a DAG (directed acyclic graph). Each circuit element is conceptually a function and wires connect outputs of one function to inputs of another. Evaluation proceeds left-to-right, since inputs must be evaluated before producing outputs. The evaluation order of the graph is only partially ordered (by topologically sorting) so we have to take extra care when a specific sequential evaluation order is required.
