@@ -2764,23 +2764,18 @@ Editor.prototype.onKeyDown = function(e) {
         // // Writes diagram as JSON to console.
         // console.log(text);
         {
-          //Create a new mock canvas context. Pass in your desired width and height for your svg document.
-          let canvas = this.canvasController.canvas;
-          let ctx = new C2S(canvas.width, canvas.height);
-
+          // Render the selected elements using Canvas2SVG to convert to SVG format.
+          let bounds = renderer.getUnionBounds(selectionModel.contents());
+          let ctx = new C2S(bounds.w, bounds.h);
+          ctx.translate(-bounds.x, -bounds.y);
           this.print(ctx);
 
-          // //draw your canvas like you would normally
-          // ctx.fillStyle="red";
-          // ctx.fillRect(100,100,100,100);
-          // //etc...
-
-          //serialize your SVG
-          let mySerializedSVG = ctx.getSerializedSvg(); //true here, if you need to convert named to numbered entities.
-          let blob = new Blob([mySerializedSVG], {
+          // Write out the SVG file.
+          let serializedSVG = ctx.getSerializedSvg();
+          let blob = new Blob([serializedSVG], {
             type: 'text/plain'
           });
-          saveAs(blob, 'example.svg', true);
+          saveAs(blob, 'circuit.svg', true);
           return true;
       }
     }
