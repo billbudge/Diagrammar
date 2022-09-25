@@ -13,7 +13,7 @@ Most data flow systems model restricted domains, and have limited ability to rep
 For now, let's imagine a language with one value type, which can represent numbers, strings, arrays, or other types of objects. This makes our circuits simpler, with only one primitive wire and pin type. Circuit elements for built-in operations can be provided by the language, and combined to form useful expressions.
 
 <figure>
-  <img src="/resources/palette.png"  alt="" title="Primitive elements (literal and functions)">
+  <img src="/resources/palette.svg"  alt="" title="Primitive elements (literal and functions)">
 </figure>
 
 On the top row is the literal element, with no inputs and a single output. Literals can represent numbers, strings and other value types. Next are the unary and binary functions, and the only 3-ary function, the conditional operator.
@@ -21,7 +21,7 @@ On the top row is the literal element, with no inputs and a single output. Liter
 In addition there are "junction" elements, which are used to describe imports and exports.
 
 <figure>
-  <img src="/resources/palette2.png"  alt="" title="Primitive elements (junctions)">
+  <img src="/resources/palette2.svg"  alt="" title="Primitive elements (junctions)">
 </figure>
 
 We can combine these primitive functions to compute simple expressions. In the diagrams below, we are creating:
