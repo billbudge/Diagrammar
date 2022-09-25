@@ -23,10 +23,6 @@ function isElementOrGroup(item) {
   return isElement(item) || isGroup(item);
 }
 
-function isPrintableElementOrGroup(item) {
-  return isElementOrGroup(item) && !isPaletted(item);
-}
-
 function isGroupInstance(item) {
   return isElement(item) && item.definitionId;
 }
@@ -2269,7 +2265,7 @@ Editor.prototype.print = function(ctx) {
   visitItems(diagram.items,
     function(item) {
       renderer.draw(item, normalMode);
-    }, isPrintableElementOrGroup);
+    }, isElementOrGroup);
   visitItems(diagram.items,
     function(wire) {
       renderer.draw(wire, normalMode);
