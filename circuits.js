@@ -2251,9 +2251,10 @@ Editor.prototype.print = function(ctx) {
   let diagram = this.diagram,
       canvasController = this.canvasController,
       model = this.model,
+      selectionModel = model.selectionModel,
+      editingModel = model.editingModel,
       renderer = model.renderer;
-  // Update wires as elements are dragged.
-  model.circuitModel.updateLayout();
+
   renderer.begin(ctx);
   canvasController.applyTransform();
 
@@ -2262,14 +2263,23 @@ Editor.prototype.print = function(ctx) {
   // ctx.lineWidth = 0.5;
   // ctx.strokeRect(300, 10, 700, 300);
 
+  editingModel.selectInteriorWires();
+  function isSelectedElementOrGroup(item) {
+    return selectionModel.contains(item) && isElementOrGroup(item);
+  }
+
+  function isSelectedWire(item) {
+    return selectionModel.contains(item) && isWire(item);
+  }
+
   visitItems(diagram.items,
     function(item) {
       renderer.draw(item, normalMode);
-    }, isElementOrGroup);
+    }, isSelectedElementOrGroup);
   visitItems(diagram.items,
     function(wire) {
       renderer.draw(wire, normalMode);
-    }, isWire);
+    }, isSelectedWire);
 
 
   // let hoverHitInfo = this.hoverHitInfo;
@@ -2761,6 +2771,7 @@ Editor.prototype.onKeyDown = function(e) {
         // console.log(text);
         {
           // Render the selected elements using Canvas2SVG to convert to SVG format.
+          // Clip to the selection bounding box.
           let bounds = renderer.getUnionBounds(selectionModel.contents());
           let ctx = new C2S(bounds.w, bounds.h);
           ctx.translate(-bounds.x, -bounds.y);

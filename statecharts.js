@@ -39,10 +39,6 @@ function isContainable(item) {
   return isState(item) || isProperty(item);
 }
 
-function isPrintableContainable(item) {
-  return !isPaletted(item) && (isState(item) || isProperty(item));
-}
-
 function isPaletted(item) {
   return item.state === 'palette';
 }
@@ -1467,16 +1463,28 @@ Editor.prototype.draw = function() {
 Editor.prototype.print = function(ctx) {
   const renderer = this.renderer, statechart = this.statechart,
         model = this.model,
+        selectionModel = model.selectionModel,
+        editingModel = model.editingModel,
         canvasController = this.canvasController;
+
   renderer.begin(ctx);
   canvasController.applyTransform();
 
+  editingModel.selectInteriorTransitions();
+  function isSelectedContainable(item) {
+    return selectionModel.contains(item) && (isState(item) || isProperty(item));
+  }
+
+  function isSelectedTransition(item) {
+    return selectionModel.contains(item) && isTransition(item);
+  }
+  
   visitItem(statechart, function(item) {
     renderer.draw(item, printMode);
-  }, isPrintableContainable);
+  }, isSelectedContainable);
   visitItem(statechart, function(transition) {
     renderer.draw(transition, printMode);
-  }, isTransition);
+  }, isSelectedTransition);
 
   renderer.end();
 }
@@ -1822,6 +1830,7 @@ Editor.prototype.onEndHover = function(p) {
 Editor.prototype.onKeyDown = function(e) {
   const model = this.model,
         statechart = this.statechart,
+        renderer = model.renderer,
         selectionModel = model.selectionModel,
         editingModel = model.editingModel,
         transactionHistory = model.transactionHistory,
@@ -1902,9 +1911,11 @@ Editor.prototype.onKeyDown = function(e) {
 
         {
           // Render the selected elements using Canvas2SVG to convert to SVG format.
-          let bounds = this.renderer.getBounds(selectionModel.contents());
+          // Clip to the selection bounding box.
+          let bounds = renderer.getBounds(selectionModel.contents());
           let ctx = new C2S(bounds.width, bounds.height);
           ctx.translate(-bounds.x, -bounds.y);
+
           this.print(ctx);
 
           // Write out the SVG file.
