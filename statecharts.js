@@ -1004,23 +1004,29 @@ Renderer.prototype.layoutStatechart = function(statechart) {
 
 Renderer.prototype.layoutTransition = function(transition) {
   assert(!transition[_hasLayout]);
-  const src = this.getTransitionSrc(transition),
+  const self = this,
+        src = this.getTransitionSrc(transition),
         dst = this.getTransitionDst(transition),
         p1 = src ? this.stateParamToPoint(src, transition.t1) : transition[_p1],
         p2 = dst ? this.stateParamToPoint(dst, transition.t2) : transition[_p2];
   assert(p1 && p2);
   // TODO project points onto the circumference
+  function projectToCircle(pseudoState, p1, p2) {
+    const length = geometry.lineLength(p1.x, p1.y, p2.x, p2.y),
+          nx = (p2.x - p1.x) / length,
+          ny = (p2.y - p1.y) / length,
+          radius = self.theme.radius,
+          bbox = self.getItemRect(pseudoState);
+    p1.x = bbox.x + bbox.width / 2 + nx * radius;
+    p1.y = bbox.y + bbox.height / 2 + ny * radius;
+    p1.nx = nx;
+    p1.ny = ny;
+  }
   if (src && isPseudostate(src)) {
-    const bbox = this.getItemRect(src);
-    p1.x = bbox.x + bbox.width / 2;
-    p1.y = bbox.y + bbox.height / 2;
-    p1.nx = p1.ny = 0;
+    projectToCircle(src, p1, p2);
   }
   if (dst && isPseudostate(dst)) {
-    const bbox = this.getItemRect(dst);
-    p2.x = bbox.x + bbox.width / 2;
-    p2.y = bbox.y + bbox.height / 2;
-    p2.nx = p2.ny = 0;
+    projectToCircle(dst, p2, p1);
   }
   transition[_bezier] = diagrams.getEdgeBezier(p1, p2);
   transition[_pt] = geometry.evaluateBezier(transition[_bezier], transition.pt);
