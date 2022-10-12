@@ -36,7 +36,7 @@ function isProperty(item) {
 }
 
 function isContainable(item) {
-  return isState(item) || isProperty(item);
+  return isStateOrStatechart(item) || isProperty(item);
 }
 
 function isPaletted(item) {
@@ -717,6 +717,7 @@ const editingModel = (function() {
           return;
         }
         // Make sure transitions belong to lowest common statechart.
+        // TODO no transitions into start state, out of end state.
         const lca = hierarchicalModel.getLowestCommonAncestor(src, dst);
         if (self.getParent(transition) !== lca) {
           self.deleteItem(transition);
@@ -1007,24 +1008,36 @@ Renderer.prototype.layoutTransition = function(transition) {
         dst = this.getTransitionDst(transition),
         p1 = src ? this.stateParamToPoint(src, transition.t1) : transition[_p1],
         p2 = dst ? this.stateParamToPoint(dst, transition.t2) : transition[_p2];
-  if (p1 && p2) {
-    transition[_bezier] = diagrams.getEdgeBezier(p1, p2);
-    transition[_pt] = geometry.evaluateBezier(transition[_bezier], transition.pt);
-    let text = "";
-    if (transition.event) {
-      this.layoutProperty(transition.event);
-      text += transition.event[_text];
-    }
-    if (transition.guard) {
-      this.layoutProperty(transition.guard);
-      text += transition.guard[_text];
-    }
-    if (transition.action) {
-      this.layoutProperty(transition.action);
-      text += transition.action[_text];
-    }
-    transition[_text] = text;
+  assert(p1 && p2);
+  // TODO project points onto the circumference
+  if (src && isPseudostate(src)) {
+    const bbox = this.getItemRect(src);
+    p1.x = bbox.x + bbox.width / 2;
+    p1.y = bbox.y + bbox.height / 2;
+    p1.nx = p1.ny = 0;
   }
+  if (dst && isPseudostate(dst)) {
+    const bbox = this.getItemRect(dst);
+    p2.x = bbox.x + bbox.width / 2;
+    p2.y = bbox.y + bbox.height / 2;
+    p2.nx = p2.ny = 0;
+  }
+  transition[_bezier] = diagrams.getEdgeBezier(p1, p2);
+  transition[_pt] = geometry.evaluateBezier(transition[_bezier], transition.pt);
+  let text = "";
+  if (transition.event) {
+    this.layoutProperty(transition.event);
+    text += transition.event[_text];
+  }
+  if (transition.guard) {
+    this.layoutProperty(transition.guard);
+    text += transition.guard[_text];
+  }
+  if (transition.action) {
+    this.layoutProperty(transition.action);
+    text += transition.action[_text];
+  }
+  transition[_text] = text;
   transition[_hasLayout] = true;
 }
 
@@ -1460,33 +1473,46 @@ Editor.prototype.draw = function() {
   renderer.end();
 }
 
-Editor.prototype.print = function(ctx) {
-  const renderer = this.renderer, statechart = this.statechart,
+Editor.prototype.print = function() {
+  const renderer = this.renderer,
+        statechart = this.statechart,
         model = this.model,
         selectionModel = model.selectionModel,
         editingModel = model.editingModel,
         canvasController = this.canvasController;
 
+  function isPrintableState(item) {
+    return !isPaletted(item) && (isState(item) || isProperty(item));
+  }
+
+  // Calculate document bounds.
+  const states = new Array();
+  visitItem(statechart, function(item) {
+    states.push(item);
+  }, isPrintableState);
+
+  const bounds = renderer.getBounds(states);
+  const ctx = new C2S(bounds.width, bounds.height);
+  ctx.translate(-bounds.x, -bounds.y);
+
   renderer.begin(ctx);
   canvasController.applyTransform();
 
-  editingModel.selectInteriorTransitions();
-  function isSelectedContainable(item) {
-    return selectionModel.contains(item) && (isState(item) || isProperty(item));
-  }
-
-  function isSelectedTransition(item) {
-    return selectionModel.contains(item) && isTransition(item);
-  }
-  
   visitItem(statechart, function(item) {
     renderer.draw(item, printMode);
-  }, isSelectedContainable);
+  }, isPrintableState);
   visitItem(statechart, function(transition) {
     renderer.draw(transition, printMode);
-  }, isSelectedTransition);
+  }, isTransition);
 
   renderer.end();
+
+  // Write out the SVG file.
+  const serializedSVG = ctx.getSerializedSvg();
+  const blob = new Blob([serializedSVG], {
+    type: 'text/plain'
+  });
+  saveAs(blob, 'statechart.svg', true);
 }
 
 Editor.prototype.hitTest = function(p) {
@@ -1910,21 +1936,7 @@ Editor.prototype.onKeyDown = function(e) {
         // ctx.end();
 
         {
-          // Render the selected elements using Canvas2SVG to convert to SVG format.
-          // Clip to the selection bounding box.
-          let bounds = renderer.getBounds(selectionModel.contents());
-          let ctx = new C2S(bounds.width, bounds.height);
-          ctx.translate(-bounds.x, -bounds.y);
-
-          this.print(ctx);
-
-          // Write out the SVG file.
-          var serializedSVG = ctx.getSerializedSvg();
-          var blob = new Blob([serializedSVG], {
-            type: 'text/plain'
-          });
-          saveAs(blob, 'statechart.svg', true);
-
+          this.print();
           return true;
         }
     }
