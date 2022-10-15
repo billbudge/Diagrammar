@@ -2310,6 +2310,7 @@ Editor.prototype.hitTest = function(p) {
   model.selectionModel.forEach(function(item) {
     item => pushHit(renderer.hitTest(item, cp, cTol, normalMode));
   });
+  // Skip the root circuit, as hits there should go to the underlying canvas controller.
   reverseVisitItems(diagram.items,
     item => pushHit(renderer.hitTest(item, cp, cTol, normalMode)), isWire);
   reverseVisitItems(diagram.items,

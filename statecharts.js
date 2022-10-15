@@ -3,8 +3,20 @@
 const statecharts = (function() {
 'use strict';
 
-function isPseudostate(item) {
+function isStartState(item) {
   return item.type === 'start';
+}
+
+function isStopState(item) {
+  return item.type === 'stop';
+}
+
+function isHistoryState(item) {
+  return item.type === 'history' || item.type === 'history*';
+}
+
+function isPseudostate(item) {
+  return isStartState(item) || isStopState(item) || isHistoryState(item);
 }
 
 function isState(item) {
@@ -82,8 +94,11 @@ const _bezier = Symbol('bezier'),
       _hasLayout = Symbol('hasLayout');
 
 function extendTheme(theme) {
+  const r = 8,
+        v = r / 2,
+        h = r / 3;
   const extensions = {
-    radius: 8,
+    radius: r,
     textIndent: 8,
     textLeading: 6,
     arrowSize: 8,
@@ -92,6 +107,11 @@ function extendTheme(theme) {
 
     stateMinWidth: 100,
     stateMinHeight: 60,
+
+    // Rather than try to render actual text for H and H* into the pseudostate disk,
+    // render the glyphs as moveto/lineto pairs.
+    HGlyph: [-h, -v, -h, v, -h, 0, h, 0, h, -v, h, v],
+    StarGlyph: [-h, -v / 3, h, v / 3, -h, v / 3, h, -v / 3, 0, -v / 1.5, 0, v / 1.5],
   }
   return Object.assign(diagrams.theme.createDefault(), extensions, theme);
 }
@@ -525,11 +545,14 @@ const editingModel = (function() {
 
       switch (newItem.type) {
         case 'state':
+        case 'stop':          
         case 'transition':
           return true;
-        case 'start': {
+        case 'start':
+        case 'history':
+        case 'history*': {
           for (let item of statechart.items) {
-            if (item.type == 'start' && item !== newItem)
+            if (item.type == newItem.type && item !== newItem)
               return false;
           }
           return true;
@@ -829,6 +852,9 @@ Renderer.prototype.getSize = function(item) {
       height = item.height;
       break;
     case 'start':
+    case 'stop':
+    case 'history':
+    case 'history*':
       width = height = 2 * this.theme.radius;
       break;
     case 'event':
@@ -1010,7 +1036,6 @@ Renderer.prototype.layoutTransition = function(transition) {
         p1 = src ? this.stateParamToPoint(src, transition.t1) : transition[_p1],
         p2 = dst ? this.stateParamToPoint(dst, transition.t2) : transition[_p2];
   assert(p1 && p2);
-  // TODO project points onto the circumference
   function projectToCircle(pseudoState, p1, p2) {
     const length = geometry.lineLength(p1.x, p1.y, p2.x, p2.y),
           nx = (p2.x - p1.x) / length,
@@ -1071,7 +1096,7 @@ Renderer.prototype.drawState = function(state, mode) {
   switch (mode) {
     case normalMode:
     case printMode:
-      ctx.fillStyle = state.state === 'palette' ? theme.altBgColor : theme.bgColor;
+      ctx.fillStyle = isPaletted(state) ? theme.altBgColor : theme.bgColor;
       ctx.fill();
       ctx.strokeStyle = theme.strokeColor;
       ctx.lineWidth = 0.5;
@@ -1133,17 +1158,55 @@ Renderer.prototype.hitTestState = function(state, p, tol, mode) {
 Renderer.prototype.drawPseudoState = function(state, mode) {
   const ctx = this.ctx, theme = this.theme, r = theme.radius,
         rect = this.getItemRect(state),
-        x = rect.x, y = rect.y;
-  // TODO handle other psuedo state types.
-  diagrams.diskPath(x + r, y + r, r, ctx);
+        x = rect.x, y = rect.y,
+        cx = x + r, cy = y + r;
+  function drawGlyph(glyph, cx, cy) {
+    for (let i = 0; i < glyph.length; i += 4) {
+      ctx.moveTo(cx + glyph[i], cy + glyph[i + 1]);
+      ctx.lineTo(cx + glyph[i + 2], cy + glyph[i + 3]);
+    }
+  }
+  diagrams.diskPath(cx, cy, r, ctx);
   switch (mode) {
     case normalMode:
     case printMode:
-      ctx.fillStyle = state.state === 'palette' ? theme.altBgColor : theme.strokeColor;
-      ctx.fill();
-      // Render knobbies, faintly.
       ctx.lineWidth = 0.25;
-      ctx.stroke()
+      switch (state.type) {
+        case 'start':
+          ctx.fillStyle = isPaletted(state) ? theme.altBgColor : theme.strokeColor;
+          ctx.fill();
+          ctx.stroke();
+          break;
+        case 'stop':
+          ctx.fillStyle = isPaletted(state) ? theme.altBgColor : theme.bgColor;
+          ctx.fill();
+          ctx.stroke();
+          diagrams.diskPath(cx, cy, r / 2, ctx);
+          ctx.fillStyle = theme.strokeColor;
+          ctx.fill();
+          break;
+        case 'history':
+          ctx.fillStyle = isPaletted(state) ? theme.altBgColor : theme.bgColor;
+          ctx.fill();
+          ctx.stroke();
+          ctx.beginPath();
+          drawGlyph(theme.HGlyph, cx, cy);
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          ctx.lineWidth = 0.25;
+          break;
+        case 'history*':
+          ctx.fillStyle = isPaletted(state) ? theme.altBgColor : theme.bgColor;
+          ctx.fill();
+          ctx.stroke();
+          ctx.beginPath();
+          drawGlyph(theme.HGlyph, cx - r / 3, cy);
+          drawGlyph(theme.StarGlyph, cx + r / 2, cy);
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          ctx.lineWidth = 0.25;
+          break;
+      }
       break;
     case highlightMode:
       ctx.strokeStyle = theme.highlightColor;
@@ -1156,7 +1219,7 @@ Renderer.prototype.drawPseudoState = function(state, mode) {
       ctx.stroke();
       break;
   }
-  if (mode !== printMode) {
+  if (mode !== printMode && !isStopState(state)) {
     drawArrow(this, x + 2 * r + theme.arrowSize, y + r);
   }
 }
@@ -1166,7 +1229,7 @@ Renderer.prototype.hitTestPseudoState = function(state, p, tol, mode) {
         r = theme.radius,
         rect = this.getItemRect(state),
         x = rect.x, y = rect.y;
-  if (hitTestArrow(this, x + 2 * r + theme.arrowSize, y + r, p, tol))
+  if (!isStopState(state) && hitTestArrow(this, x + 2 * r + theme.arrowSize, y + r, p, tol))
     return { arrow: true };
 
   return diagrams.hitTestDisk(x + r, y + r, r, p, tol);
@@ -1295,6 +1358,9 @@ Renderer.prototype.draw = function(item, mode) {
       this.drawState(item, mode);
       break;
     case 'start':
+    case 'stop':
+    case 'history':
+    case 'history*':
       this.drawPseudoState(item, mode);
       break;
     case 'transition':
@@ -1318,6 +1384,9 @@ Renderer.prototype.hitTest = function(item, p, tol, mode) {
       hitInfo = this.hitTestState(item, p, tol, mode);
       break;
     case 'start':
+    case 'stop':
+    case 'history':
+    case 'history*':
       hitInfo = this.hitTestPseudoState(item, p, tol, mode);
       break;
     case 'transition':
@@ -1399,7 +1468,25 @@ function Editor(model, theme, textInputController) {
     {
       type: 'start',
       state: 'palette',
-      x: 48,
+      x: 8,
+      y: 8,
+    },
+    {
+      type: 'stop',
+      state: 'palette',
+      x: 40,
+      y: 8,
+    },
+    {
+      type: 'history',
+      state: 'palette',
+      x: 72,
+      y: 8,
+    },
+    {
+      type: 'history*',
+      state: 'palette',
+      x: 104,
       y: 8,
     },
     {
@@ -1537,10 +1624,11 @@ Editor.prototype.hitTest = function(p) {
   }
   renderer.begin(ctx);
   // TODO hit test selection first, in highlight, first.
-  reverseVisitItem(statechart, function(transition) {
+  // Skip the root statechart, as hits there should go to the underlying canvas controller.
+  reverseVisitItems(statechart.items, function(transition) {
     pushInfo(renderer.hitTest(transition, cp, cTol, normalMode));
   }, isTransition);
-  reverseVisitItem(statechart, function(item) {
+  reverseVisitItems(statechart.items, function(item) {
     pushInfo(renderer.hitTest(item, cp, cTol, normalMode));
   }, isContainable);
   renderer.end();
@@ -1555,6 +1643,7 @@ Editor.prototype.getFirstHit = function(hitList, filterFn) {
         return hitInfo;
     }
   }
+  return null;
 }
 
 function isStateBorder(hitInfo, model) {
@@ -1662,6 +1751,9 @@ Editor.prototype.onBeginDrag = function(p0) {
     switch (dragItem.type) {
       case 'state':
       case 'start':
+      case 'stop':
+      case 'history':
+      case 'history*':
       case 'event':
       case 'guard':
       case 'action':
