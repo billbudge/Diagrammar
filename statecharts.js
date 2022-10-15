@@ -741,7 +741,9 @@ const editingModel = (function() {
         }
         // Make sure transitions belong to lowest common statechart.
         // TODO no transitions into start state, out of end state.
-        const lca = hierarchicalModel.getLowestCommonAncestor(src, dst);
+        const srcParent = hierarchicalModel.getParent(src),
+              dstParent = hierarchicalModel.getParent(dst),
+              lca = hierarchicalModel.getLowestCommonAncestor(srcParent, dstParent);
         if (self.getParent(transition) !== lca) {
           self.deleteItem(transition);
           self.addItem(transition, lca);
