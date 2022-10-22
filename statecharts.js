@@ -1957,7 +1957,8 @@ Editor.prototype.onEndDrag = function(p) {
         dragItem = drag.item;
   if (isTransition(dragItem)) {
     dragItem[_p1] = dragItem[_p2] = undefined;
-  } else if (drag.type === moveSelection || drag.type === moveCopySelection) {
+  } else if (drag.type == copyPaletteItem || drag.type === moveSelection ||
+             drag.type === moveCopySelection) {
     // Find state beneath mouse.
     const hitList = this.hitTest(p),
           hitInfo = this.getFirstHit(hitList,
