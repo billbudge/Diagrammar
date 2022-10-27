@@ -88,8 +88,7 @@ const _bezier = Symbol('bezier'),
       _p2 = Symbol('p2'),
       _pt = Symbol('pt'),  // transition attachment point;
       _text = Symbol('text'),
-      _textWidth = Symbol('textWidth'),
-      _hasLayout = Symbol('hasLayout');
+      _textWidth = Symbol('textWidth');
 
 function extendTheme(theme) {
   const r = 8,
@@ -313,6 +312,14 @@ const statechartModel = (function() {
       }
     },
 
+    insertProperty_: function(property) {
+      this.properties_.add(property);
+    },
+
+    removeProperty_: function(property) {
+      this.properties_.delete(property);
+    },
+
     insertItem_: function(item) {
       if (isState(item)) {
         this.insertState_(item);
@@ -320,6 +327,8 @@ const statechartModel = (function() {
         this.insertTransition_(item);
       } else if (isStatechart(item)) {
         this.insertStatechart_(item);
+      } else if (isProperty(item)) {
+        this.insertProperty_(item);
       }
     },
 
@@ -330,71 +339,14 @@ const statechartModel = (function() {
         this.removeTransition_(item);
       } else if (isStatechart(item)) {
         this.removeStatechart_(item);
-      }
-    },
-
-    // Call during editing for updating the layout of transitions.
-    updateLayout: function() {
-      const self = this,
-            statechartModel = this.model.statechartModel;
-      this.changedStates_.forEach(function(state) {
-        function markTransition(transition) {
-          transition[_hasLayout] = false;
-        }
-        statechartModel.forInTransitions(state, markTransition);
-        statechartModel.forOutTransitions(state, markTransition);
-      });
-      this.changedStates_.clear();
-
-      this.changedProperties_.forEach(
-          property => { property[_hasLayout] = false; });
-      this.changedProperties_.clear();
-    },
-
-    // Call after transactions to update statechart bounds.
-    updateStatechartLayout: function() {
-      const self = this;
-      // Mark all states and statecharts that require layout.
-      this.changedTopLevelStates_.forEach(
-        state => visitItem(state, item => item[_hasLayout] = false ));
-      this.changedTopLevelStates_.clear();
-    },
-
-    addTopLevelState_: function(item) {
-      let hierarchicalModel = this.model.hierarchicalModel,
-          statechart = this.statechart,
-          ancestor = item;
-      do {
-        item = ancestor;
-        ancestor = hierarchicalModel.getParent(ancestor);
-      } while (ancestor && ancestor !== statechart);
-
-      if (ancestor === statechart) {
-        this.changedTopLevelStates_.add(item);
-      }
-    },
-
-    update_: function (item) {
-      const self = this;
-      if (isTransition(item)) {
-        item[_hasLayout] = false;
-      } else if (isState(item)) {
-        visitItem(item, function(state) {
-          self.changedStates_.add(state);
-        }, isState);
-        this.addTopLevelState_(item);
-      } else if (isStatechart(item)) {
-        this.addTopLevelState_(item);
-        item.items.forEach(subItem => self.update_(subItem));
       } else if (isProperty(item)) {
-        this.changedProperties_.add(item);
+        this.removeProperty_(item);
       }
     },
 
     onChanged_: function (change) {
       const item = change.item,
             attr = change.attr;
-      this.update_(item);
       switch (change.type) {
         case 'change': {
           if (isTransition(item)) {
@@ -407,7 +359,6 @@ const statechartModel = (function() {
         case 'insert': {
           const newValue = item[attr][change.index];
           this.insertItem_(newValue);
-          this.update_(newValue);
           break;
         }
         case 'remove': {
@@ -432,9 +383,8 @@ const statechartModel = (function() {
 
     instance.statesAndStatecharts_ = new Set();
     instance.transitions_ = new Set();
-    instance.changedStates_ = new Set();
+    instance.properties_ = new Set();
     instance.changedTopLevelStates_ = new Set();
-    instance.changedProperties_ = new Set();
 
     model.observableModel.addHandler('changed',
                                      change => instance.onChanged_(change));
@@ -442,13 +392,10 @@ const statechartModel = (function() {
     instance.getTransitionSrc = model.referencingModel.getReferenceFn('srcId');
     instance.getTransitionDst = model.referencingModel.getReferenceFn('dstId');
 
-    // Initialize states and transitions.
-    visitItem(instance.statechart, function(state) {
-      instance.insertState_(state);
-    }, isState);
-    visitItem(instance.statechart, function(transition) {
-      instance.insertTransition_(transition);
-    }, isTransition);
+    // Initialize tracking of all items.
+    visitItem(instance.statechart, function(item) {
+      instance.insertItem_(item);
+    });
 
     model.statechartModel = instance;
     return instance;
@@ -838,8 +785,6 @@ function hitTestArrow(renderer, x, y, p, tol) {
 }
 
 Renderer.prototype.getSize = function(item) {
-  if (!item[_hasLayout])
-    this.layout(item);
   let width, height;
   switch (item.type) {
     case 'state':
@@ -864,8 +809,6 @@ Renderer.prototype.getSize = function(item) {
 }
 
 Renderer.prototype.getItemRect = function (item) {
-  if (!item[_hasLayout])
-    this.layout(item);
   const size = this.getSize(item),
         translatableModel = this.model.translatableModel,
         x = translatableModel.globalX(item),
@@ -948,7 +891,6 @@ Renderer.prototype.layoutProperty = function(property) {
 
 // Layout a state.
 Renderer.prototype.layoutState = function(state) {
-  assert(!state[_hasLayout]);
   const self = this,
         theme = this.theme,
         observableModel = this.model.observableModel;
@@ -983,13 +925,11 @@ Renderer.prototype.layoutState = function(state) {
   height = Math.max(height, state.height);
   observableModel.changeValue(state, 'width', width);
   observableModel.changeValue(state, 'height', height);
-  state[_hasLayout] = true;
 }
 
 // Make sure a statechart is big enough to enclose its contents. Statecharts
 // are always sized automatically.
 Renderer.prototype.layoutStatechart = function(statechart) {
-  assert(!statechart[_hasLayout]);
   const padding = this.theme.padding,
         items = statechart.items;
   if (items) {
@@ -1021,17 +961,17 @@ Renderer.prototype.layoutStatechart = function(statechart) {
     observableModel.changeValue(statechart, 'width', xMax - xMin);
     observableModel.changeValue(statechart, 'height', yMax - yMin);
   }
-  statechart[_hasLayout] = true;
 }
 
 Renderer.prototype.layoutTransition = function(transition) {
-  assert(!transition[_hasLayout]);
   const self = this,
         src = this.getTransitionSrc(transition),
         dst = this.getTransitionDst(transition),
         p1 = src ? this.stateParamToPoint(src, transition.t1) : transition[_p1],
         p2 = dst ? this.stateParamToPoint(dst, transition.t2) : transition[_p2];
-  assert(p1 && p2);
+  // If we're in an intermediate state, don't layout.
+  if (!p1 || !p2)
+    return;
   function projectToCircle(pseudoState, p1, p2) {
     const length = geometry.lineLength(p1.x, p1.y, p2.x, p2.y),
           nx = (p2.x - p1.x) / length,
@@ -1065,10 +1005,9 @@ Renderer.prototype.layoutTransition = function(transition) {
     text += transition.action[_text];
   }
   transition[_text] = text;
-  transition[_hasLayout] = true;
 }
 
-// Layout a state or statechart.
+// Layout a statechart item.
 Renderer.prototype.layout = function(item) {
   if (isTrueState(item)) {
     this.layoutState(item);
@@ -1076,13 +1015,11 @@ Renderer.prototype.layout = function(item) {
     this.layoutStatechart(item);
   } else if (isProperty(item)) {
     this.layoutProperty(item);
-  }
+  } else if (isTransition(item))
+    this.layoutTransition(item);
 }
 
 Renderer.prototype.drawState = function(state, mode) {
-  if (!state[_hasLayout])
-    this.layoutState(state);
-
   const ctx = this.ctx, theme = this.theme, r = theme.radius,
         rect = this.getItemRect(state),
         x = rect.x, y = rect.y, w = rect.width, h = rect.height,
@@ -1232,9 +1169,6 @@ Renderer.prototype.hitTestPseudoState = function(state, p, tol, mode) {
 }
 
 Renderer.prototype.drawStatechart = function(statechart, mode) {
-  if (!statechart[_hasLayout])
-    this.layoutStatechart(statechart);
-
   switch (mode) {
     case normalMode:
     case printMode:
@@ -1300,9 +1234,6 @@ Renderer.prototype.hitTestProperty = function(property, p, tol, mode) {
 }
 
 Renderer.prototype.drawTransition = function(transition, mode) {
-  if (!transition[_hasLayout])
-    this.layoutTransition(transition);
-
   const ctx = this.ctx,
         theme = this.theme,
         r = theme.knobbyRadius,
@@ -1342,9 +1273,6 @@ Renderer.prototype.drawTransition = function(transition, mode) {
 }
 
 Renderer.prototype.hitTestTransition = function(transition, p, tol, mode) {
-  // TODO fix layout
-  if (!transition[_bezier])
-    return;
   return diagrams.hitTestBezier(transition[_bezier], p, tol);
 }
 
@@ -1439,26 +1367,16 @@ function Editor(model, theme, textInputController) {
 
   this.hitTolerance = 8;
 
+  // Change tracking for layout.
+  // Changed items that must be updated before drawing and hit testing.
+  this.changedItems_ = new Set();
+  // Changed top level states that must be updated during transactions and undo/redo.
+  this.changedTopLevelStates_ = new Set();
+
   statechartModel.extend(model);
   editingModel.extend(model);
 
   this.renderer = new Renderer(model, this.theme);
-
-  model.dataModel.initialize();
-
-  this.getTransitionSrc = model.referencingModel.getReferenceFn('srcId');
-  this.getTransitionDst = model.referencingModel.getReferenceFn('dstId');
-
-  function updateLayout() {
-    self.model.statechartModel.updateLayout();
-  }
-  function updateBounds() {
-    self.model.statechartModel.updateStatechartLayout();
-  }
-  const transactionModel = model.transactionModel;
-  transactionModel.addHandler('transactionEnding', updateBounds);
-  transactionModel.addHandler('didUndo', updateLayout);
-  transactionModel.addHandler('didRedo', updateLayout);
 
   this.palette = [
     {
@@ -1510,30 +1428,149 @@ function Editor(model, theme, textInputController) {
   ];
 }
 
+/*
+    addTopLevelState_: function(item) {
+      let hierarchicalModel = this.model.hierarchicalModel,
+          statechart = this.statechart,
+          ancestor = item;
+      do {
+        item = ancestor;
+        ancestor = hierarchicalModel.getParent(ancestor);
+      } while (ancestor && ancestor !== statechart);
+
+      if (ancestor === statechart) {
+        this.changedTopLevelStates_.add(item);
+      }
+    },
+
+    update_: function (item) {
+      const self = this;
+      if (isState(item)) {
+        this.addTopLevelState_(item);
+      } else if (isStatechart(item)) {
+        this.addTopLevelState_(item);
+        item.items.forEach(subItem => self.update_(subItem));
+      }
+    },
+
+*/
+
 Editor.prototype.initialize = function(canvasController) {
   this.canvasController = canvasController;
   this.canvas = canvasController.canvas;
   this.ctx = canvasController.ctx;
 
-  const model = this.model,
+  const self = this,
         ctx = this.ctx,
+        renderer = this.renderer,
+        model = this.model,
+        statechart = this.statechart,
         editingModel = model.editingModel,
-        statechart = this.statechart;
+        transactionModel = model.transactionModel,
+        transactionHistory = model.transactionHistory;
 
-    // Add palette items to the new statechart. This has to change if we load an existing statechart.
-    this.palette.forEach(function(item) {
-    editingModel.addItem(item, statechart, true);
-  });
+  model.dataModel.initialize();
+
+  this.getTransitionSrc = model.referencingModel.getReferenceFn('srcId');
+  this.getTransitionDst = model.referencingModel.getReferenceFn('dstId');
+
+  // On attribute changes and item insertions, dynamically layout affected items.
+  // This allows us to layout transitions as their src or dst states are dragged.
+  model.observableModel.addHandler('changed', change => self.onChanged_(change));
+
+  // On ending transactions and undo/redo, layout the changed top level states.
+  function updateBounds() {
+    self.updateBounds_();
+  }
+  transactionModel.addHandler('transactionEnding', updateBounds);
+  transactionModel.addHandler('didUndo', updateBounds);
+  transactionModel.addHandler('didRedo', updateBounds);
+  
+  // Add palette items to the new statechart. This has to change if we load an existing statechart.
+  this.palette.forEach(item => editingModel.addItem(item, statechart, true));
+
+  // Layout everything in the palette and statechart.
+  reverseVisitItem(statechart, item => renderer.layout(item));
+}
+
+Editor.prototype.updateLayout_ = function() {
+  const renderer = this.renderer,
+        changedItems = this.changedItems_;
+  changedItems.forEach(
+    item => renderer.layout(item));
+  changedItems.clear();
+}
+
+Editor.prototype.updateBounds_ = function() {
+  const ctx = this.ctx,
+        renderer = this.renderer,
+        changedTopLevelStates = this.changedTopLevelStates_;
+  renderer.begin(ctx);
+  changedTopLevelStates.forEach(
+    state => reverseVisitItem(state, item => renderer.layout(item), isStateOrStatechart));
+  renderer.end();
+  changedTopLevelStates.clear();
+}
+
+Editor.prototype.onChanged_ = function(change) {
+  const statechart = this.statechart,
+        statechartModel = this.model.statechartModel,
+        hierarchicalModel = this.model.hierarchicalModel,
+        changedItems = this.changedItems_,
+        changedTopLevelStates = this.changedTopLevelStates_,
+        item = change.item,
+        attr = change.attr;
+
+  // Track all top level states which contain changes. On ending a transaction,
+  // update the layout of states and statecharts.
+  let ancestor = change.item,
+      topLevel = ancestor;
+  do {
+    topLevel = ancestor;
+    ancestor = hierarchicalModel.getParent(ancestor);
+  } while (ancestor && ancestor !== statechart);
+
+  if (ancestor === statechart) {
+    assert(topLevel);
+    changedTopLevelStates.add(topLevel);
+  }
+
+  function addItems(item) {
+    if (isState(item)) {
+      // Layout the state's incoming and outgoing transitions.
+      statechartModel.forInTransitions(item, addItems);
+      statechartModel.forOutTransitions(item, addItems);
+    }
+    // Update the item, except for statecharts, so it's possible to drag states out of a superstate.
+    if (!isStatechart(item))
+      changedItems.add(item);
+  }
+
+  switch (change.type) {
+    case 'change': {
+      // For changes to x, y, width, or height, layout affected transitions.
+      if (attr == 'x' || attr == 'y' || attr == 'width' || attr == 'height') {
+        // Visit item and sub-items to layout all affected transitions.
+        visitItem(item, addItems);
+      } else if (isTransition(item) || isProperty(item)) {
+        addItems(item);
+      }
+      break;
+    }
+    case 'insert': {
+      // Update item subtrees as they are inserted.
+      reverseVisitItem(item[attr][change.index], addItems);
+      break;
+    }
+  }
 }
 
 Editor.prototype.draw = function() {
   const renderer = this.renderer, statechart = this.statechart,
         model = this.model,
         ctx = this.ctx, canvasController = this.canvasController;
-  // Update transitions and properties as states are dragged.
-  model.statechartModel.updateLayout();
-
   renderer.begin(ctx);
+  this.updateLayout_();
   canvasController.applyTransform();
 
   visitItem(statechart, function(item) {
@@ -1582,6 +1619,7 @@ Editor.prototype.print = function() {
   ctx.translate(-bounds.x, -bounds.y);
 
   renderer.begin(ctx);
+  this.updateLayout_();
   canvasController.applyTransform();
 
   visitItems(statechart.items, function(item) {
@@ -1616,6 +1654,7 @@ Editor.prototype.hitTest = function(p) {
       hitList.push(info);
   }
   renderer.begin(ctx);
+  this.updateLayout_();
   // TODO hit test selection first, in highlight, first.
   // Skip the root statechart, as hits there should go to the underlying canvas controller.
   reverseVisitItems(statechart.items, function(transition) {
