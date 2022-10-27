@@ -1541,9 +1541,7 @@ Editor.prototype.onChanged_ = function(change) {
       statechartModel.forInTransitions(item, addItems);
       statechartModel.forOutTransitions(item, addItems);
     }
-    // Update the item, except for statecharts, so it's possible to drag states out of a superstate.
-    if (!isStatechart(item))
-      changedItems.add(item);
+    changedItems.add(item);
   }
 
   switch (change.type) {
